@@ -149,7 +149,7 @@
   .panelbar{display:none}
   body.noscroll{overflow:hidden}
   @media(max-width:860px){
-    .wrap{flex-direction:column;padding:14px}
+    .wrap{flex-direction:column;align-items:stretch;padding:14px}  /* 直向時 main 撐滿寬度,避免橫向卡片列把整頁撐寬溢出 */
     .panel{display:none}
     /* 手機:篩選改全螢幕乾淨面板(像 App 的「分類」頁)*/
     .panel.open{display:block;position:fixed;inset:0;z-index:60;width:auto;max-height:none;
@@ -183,7 +183,8 @@
     .close{width:40px;height:40px;font-size:18px;top:14px;right:14px}     /* 關閉鍵加大、好點 */
     .wrap{padding:12px}
     .brand{font-size:14px;letter-spacing:0}
-    .sech{font-size:17px}
+    .sech{font-size:20px}                        /* 區塊標題加大 */
+    .ctl{font-size:15px;padding:9px 14px}        /* 功能按鈕(篩選/排序/隨機/重設)加大 */
     .card .t{font-size:17.5px}
     .card .t .no{font-size:12px}
     .badge{font-size:12.5px;padding:2px 9px}
