@@ -62,6 +62,11 @@ def p_url(pr):
     return ''
 def p_date_start(pr):
     return pr['date']['start'] if pr and pr.get('type') == 'date' and pr['date'] else ''
+def is_red(pg):
+    """頁面圖示為紅色 = 標記(文章:原文已刪;作者:已刪帳號)。"""
+    ic = pg.get('icon')
+    return bool(ic and ic.get('type') == 'icon' and (ic.get('icon') or {}).get('color') == 'red')
+
 def read_no(pg):
     pr = p(pg, 'No'); t = pr['type'] if pr else ''
     if t == 'number' and pr['number'] is not None:
@@ -115,8 +120,8 @@ for pg in query_all(authors_db):
     name = p_title(p(pg, '作者名稱'))
     if not name: continue
     id2name[pg['id'].replace('-', '')] = name
-    author_rows.append([name] + [p_url(p(pg, col)) for _, col in PLAT])
-author_header = ['作者名稱'] + [col for _, col in PLAT]
+    author_rows.append([name] + [p_url(p(pg, col)) for _, col in PLAT] + ['Y' if is_red(pg) else ''])
+author_header = ['作者名稱'] + [col for _, col in PLAT] + ['紅標']
 os.makedirs('_authors', exist_ok=True)
 for old in glob.glob('_authors/*_all.csv'): os.remove(old)
 atomic_write_csv('_authors/authors_all.csv', author_header, author_rows)
@@ -135,7 +140,7 @@ def author_cell(ids):
 FACET_COLS = ['CP配對', '情感梗', '背景設定', '類型世界觀', '題材梗', '分級', '形式/性質',
               '命定站賀文合集', '계간윶녕 : 𝐋𝐎𝐕𝐄 𝐆𝐀𝐌𝐄', '1st鳳梨汁推薦']
 MAIN_HEADER = ['文章名稱', 'No', '上次編輯時間', '人設(安、員)', '作者/譯者資料庫',
-               '建立時間', '文章標籤', '文章狀態', '文章篇幅', '文章類型', '結局'] + FACET_COLS
+               '建立時間', '文章標籤', '文章狀態', '文章篇幅', '文章類型', '結局'] + FACET_COLS + ['紅標']
 main_rows = []
 pages = query_all(MAIN_ID)
 for pg in pages:
@@ -151,7 +156,7 @@ for pg in pages:
         p_select(p(pg, '文章篇幅')),
         p_select(p(pg, '文章類型')),
         p_select(p(pg, '結局')),
-    ] + [p_multi(p(pg, c)) for c in FACET_COLS])
+    ] + [p_multi(p(pg, c)) for c in FACET_COLS] + ['Y' if is_red(pg) else ''])
 for old in glob.glob('*%s_all.csv' % MAIN_ID): os.remove(old)
 atomic_write_csv('Annyeongz_%s_all.csv' % MAIN_ID, MAIN_HEADER, main_rows)
 print('  文章:', len(main_rows), '篇')
