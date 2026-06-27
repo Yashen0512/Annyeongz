@@ -121,6 +121,8 @@
   .card{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer}
   .cst-done{border-left-color:var(--he)} .cst-ongoing{border-left-color:var(--be)} .cst-wip{border-left-color:var(--oe)}
   .cst-hiatus{border-left-color:var(--exc)} .cst-building{border-left-color:var(--muted)} .cst-irregular{border-left-color:var(--purp)}
+  .card.dead{opacity:.55;border-left-color:var(--exc)}   /* 原文已刪:淡化褪色 + 紅左邊 */
+  .card.dead:hover{opacity:.85}
   .sb-done{background:var(--he-bg);color:var(--he)} .sb-ongoing{background:var(--be-bg);color:var(--be)} .sb-wip{background:var(--oe-bg);color:var(--oe)}
   .sb-hiatus{background:var(--exc-soft);color:var(--exc)} .sb-irregular{background:var(--purp-bg);color:var(--purp)}
   .card:hover{border-color:var(--accent);box-shadow:0 2px 10px rgba(0,0,0,.04)}
@@ -476,7 +478,7 @@ function render(keepPage){
     syncStyles(); renderSelBar(); return;
   }
   const frag=document.createDocumentFragment();
-  hits.slice((page-1)*PER, page*PER).forEach(a=>{const c=document.createElement('div');const k=STKEY(sg(a,'文章狀態'));c.className='card'+(k?' cst-'+k:'');c.innerHTML=cardHTML(a);c.onclick=()=>openDetail(a);frag.appendChild(c);});
+  hits.slice((page-1)*PER, page*PER).forEach(a=>{const c=document.createElement('div');const k=STKEY(sg(a,'文章狀態'));c.className='card'+(k?' cst-'+k:'')+(a.dead?' dead':'');c.innerHTML=cardHTML(a);c.onclick=()=>openDetail(a);frag.appendChild(c);});
   list.appendChild(frag);
   renderPager(hits.length, pages);
   syncStyles(); renderSelBar();
