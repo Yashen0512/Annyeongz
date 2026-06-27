@@ -63,7 +63,28 @@ def author_names(s):
 f = glob.glob('*176a7213548080cda25dd9e1edd5b7a4_all.csv')[0]
 allrows = list(csv.reader(io.open(f, encoding='utf-8-sig')))
 C = F.cols(allrows[0])
+H = {n: i for i, n in enumerate(allrows[0])}   # 表頭名稱 → 欄位索引(用來讀各分面欄)
 rows = allrows[1:]
+
+def merge_facet_cols(b, r):
+    """把 Notion 各分面欄直接填的值,合併進 bucketize 結果(新文直接填分面欄時靠這個)。"""
+    for fac in list(F.FACETS.keys()) + F.EVENT_FACETS:
+        ci = H.get(fac, -1)
+        if ci < 0 or ci >= len(r):
+            continue
+        for raw in F.split_tags(r[ci]):
+            tag = F.REMAP.get(raw, raw)
+            if tag in F.DROP:
+                continue
+            if fac in F.FACETS and tag not in F.FACETS[fac]:
+                continue   # 不在該分面控制詞彙內,略過
+            if tag not in b[fac]:
+                b[fac].append(tag)
+    # 依分面定義順序重新排好
+    for fac, tags in F.FACETS.items():
+        order = {t: i for i, t in enumerate(tags)}
+        b[fac].sort(key=lambda t: order.get(t, 999))
+    return b
 
 # 作者/譯者資料庫 → 名字: {平台: 網址}(依標題名稱定位欄位)
 people = {}
@@ -99,6 +120,7 @@ SINGLE = [('文章類型', C.TYPE), ('文章篇幅', C.LENGTH), ('結局', C.END
 articles = []
 for r in rows:
     b = F.bucketize(r[C.TAGS], (r[C.NO] or '').strip())
+    b = merge_facet_cols(b, r)
     tags = OrderedDict()
     for k, idx in SINGLE:
         v = (r[idx] or '').strip()
