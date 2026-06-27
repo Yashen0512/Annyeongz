@@ -146,10 +146,28 @@
   .person{margin:4px 0;line-height:2}
   #filterToggle{display:none}
   /* 平板/手機 */
+  .panelbar{display:none}
+  body.noscroll{overflow:hidden}
   @media(max-width:860px){
     .wrap{flex-direction:column;padding:14px}
-    .panel{position:static;flex-basis:auto;max-height:none;width:100%;display:none;order:-1;margin-bottom:14px}
-    .panel.open{display:block}
+    .panel{display:none}
+    /* 手機:篩選改全螢幕乾淨面板(像 App 的「分類」頁)*/
+    .panel.open{display:block;position:fixed;inset:0;z-index:60;width:auto;max-height:none;
+      margin:0;border:none;border-radius:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+      padding:0 18px calc(env(safe-area-inset-bottom) + 24px)}
+    .panel.open .paneltitle{display:none}
+    .panelbar{display:flex;justify-content:space-between;align-items:center;
+      position:sticky;top:0;z-index:2;background:var(--card);
+      margin:0 -18px 8px;padding:16px 18px;border-bottom:1px solid var(--line);
+      font-size:19px;font-weight:800}
+    .pbdone{font-size:16px;padding:9px 22px;background:var(--accent);color:#fff;border:none;border-radius:999px;font-weight:700}
+    .panel .facet{padding:14px 0}
+    .panel .facet h3{font-size:17px;margin:6px 0}
+    .panel .facet h3 .arw{font-size:13px}
+    .panel .facet h3 .mode{font-size:13px}
+    .panel .opts{gap:9px;margin-top:10px}
+    .panel .opt{font-size:16px;padding:9px 16px;border-radius:999px}
+    .panel .opt .c{font-size:13px;margin-left:5px}
     #filterToggle{display:inline-block}
     .grid{grid-template-columns:1fr}
     .topbar{padding:10px 14px;gap:10px}
@@ -193,7 +211,7 @@
 </header>
 
 <div class="wrap">
-  <aside class="panel" id="panel"><div class="paneltitle">分類篩選</div></aside>
+  <aside class="panel" id="panel"><div class="panelbar"><span>🔧 分類篩選</span><button class="ctl pbdone" onclick="document.getElementById('panel').classList.remove('open');document.body.classList.remove('noscroll')">完成</button></div><div class="paneltitle">分類篩選</div></aside>
   <main class="main">
     <div id="ann"></div>
     <section id="latestSec">
@@ -383,6 +401,7 @@ function render(keepPage){
   const pages=Math.max(1,Math.ceil(hits.length/PER));
   if(page>pages) page=pages;
   document.getElementById('count').textContent=`共 ${hits.length} / ${D.total} 篇`;
+  {const pb=document.querySelector('.pbdone'); if(pb) pb.textContent=`看 ${hits.length} 篇 ✓`;}
   if(!hits.length){
     list.innerHTML='<div class="empty">🔍 找不到符合條件的文<br><span>試試放寬條件,或點上方條件標籤把它移除</span></div>';
     document.getElementById('pager').innerHTML='';
@@ -443,7 +462,10 @@ document.getElementById('reset').onclick=()=>{for(const k in state)delete state[
 q.oninput=render;
 document.getElementById('sort').onchange=render;
 document.getElementById('rand').onclick=()=>{const h=D.articles.filter(passes);if(h.length)openDetail(h[Math.floor(Math.random()*h.length)]);};
-document.getElementById('filterToggle').onclick=()=>document.getElementById('panel').classList.toggle('open');
+document.getElementById('filterToggle').onclick=()=>{
+  const p=document.getElementById('panel'); const open=p.classList.toggle('open');
+  document.body.classList.toggle('noscroll', open && window.innerWidth<=860);
+};
 document.querySelectorAll('.snav').forEach(btn=>{btn.onclick=()=>{const s=btn.parentElement.querySelector('.strip');const amt=Math.max(220,s.clientWidth*0.8);s.scrollBy({left:btn.classList.contains('l')?-amt:amt,behavior:'smooth'});};});
 const toTop=document.getElementById('toTop');
 window.addEventListener('scroll',()=>{toTop.classList.toggle('show',window.scrollY>400);});
