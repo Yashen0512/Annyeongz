@@ -241,8 +241,8 @@
         <h2 class="sech" style="margin:0">🌌 平行宇宙 🪐</h2>
         <button class="ctl" id="filterToggle">🔧 篩選</button>
         <select id="sort" class="ctl">
-          <option value="new">編號 大→小</option>
           <option value="old">編號 小→大</option>
+          <option value="new">編號 大→小</option>
         </select>
         <button class="ctl" id="rand">🎲 隨機看一篇</button>
         <button class="ctl" id="reset">重設篩選</button>
@@ -468,7 +468,7 @@ function openDetail(a){
 function closeDetail(){document.getElementById('modal').style.display='none';}
 document.getElementById('modal').onclick=(e)=>{if(e.target.id==='modal')closeDetail();};
 
-document.getElementById('reset').onclick=()=>{for(const k in state)delete state[k];for(const k in modes)delete modes[k];authorFilter=null;q.value='';document.getElementById('sort').value='new';render();};
+document.getElementById('reset').onclick=()=>{for(const k in state)delete state[k];for(const k in modes)delete modes[k];authorFilter=null;q.value='';document.getElementById('sort').value='old';render();};
 q.oninput=render;
 document.getElementById('sort').onchange=render;
 document.getElementById('rand').onclick=()=>{const h=D.articles.filter(passes);if(h.length)openDetail(h[Math.floor(Math.random()*h.length)]);};
