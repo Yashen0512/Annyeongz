@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>🐶❤️🐰 Annyeongz 平行宇宙 🐰❤️🐶</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>🍍</text></svg>">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#15161b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Annyeongz">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
   :root{
     --bg:#f6f4ef; --card:#fff; --line:#e6e0d5; --ink:#2c2a26; --muted:#8a8377;
@@ -547,6 +553,8 @@ window.addEventListener('scroll',()=>{toTop.classList.toggle('show',window.scrol
 toTop.onclick=()=>window.scrollTo({top:0,behavior:'smooth'});
 if(D.updated){document.getElementById('updatedNote').textContent='📅 資料更新:'+D.updated;}
 buildPanel(); renderAnn(); renderLatest(); renderStatus(); renderHot(); render();
+// PWA:註冊 service worker(可加到主畫面、離線可看)
+if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
 </script>
 </body>
 </html>
