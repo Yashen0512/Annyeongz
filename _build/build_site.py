@@ -88,6 +88,7 @@ def merge_facet_cols(b, r):
 
 # 作者/譯者資料庫 → 名字: {平台: 網址}(依標題名稱定位欄位)
 people = {}
+dead_authors = []   # 紅標作者(已刪帳號)
 afs = glob.glob('_authors/*_all.csv')
 if afs:
     arows = list(csv.reader(io.open(afs[0], encoding='utf-8-sig')))
@@ -96,10 +97,13 @@ if afs:
                'Lofter2': '作者平台(LFT2)', 'Postype': '作者平台(PT)', '微博': '作者平台(WB)',
                'X': '作者平台(X)', '其他': '作者平台(其他)'}
     ncol = ah.get('作者名稱', 0)
+    rcol = ah.get('紅標', -1)
     for ar in arows[1:]:
         name = (ar[ncol] or '').strip() if ncol < len(ar) else ''
         if not name:
             continue
+        if 0 <= rcol < len(ar) and ar[rcol].strip() == 'Y':
+            dead_authors.append(name)
         links = {}
         for lab, col in PLATCOL.items():
             ci = ah.get(col, -1)
@@ -153,6 +157,7 @@ for r in rows:
         'ck': cr_key,
         'tags': tags,
         'links': links or [],
+        'dead': (0 <= H.get('紅標', -1) < len(r) and r[H['紅標']].strip() == 'Y'),
     })
 
 # sort by No desc (newest first)
@@ -203,7 +208,8 @@ else:
     updated = ''
 
 DATA = {'total': len(articles), 'facets': facet_defs, 'articles': articles,
-        'people': people, 'announcements': anns, 'updated': updated}
+        'people': people, 'announcements': anns, 'updated': updated,
+        'dead_authors': dead_authors}
 
 # 輸出資料夾:本機預設 ../site;GitHub Action 設環境變數 SITE_OUT=.. 直接輸出到倉庫根目錄
 OUT = os.environ.get('SITE_OUT', '../site')
