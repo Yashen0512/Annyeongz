@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>🐶❤️🐰 Annyeongz 平行宇宙 🐰❤️🐶</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>🍍</text></svg>">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#15161b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Annyeongz">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
   :root{
     --bg:#f6f4ef; --card:#fff; --line:#e6e0d5; --ink:#2c2a26; --muted:#8a8377;
@@ -93,6 +99,15 @@
   .count{font-size:13px;color:var(--muted);margin-left:auto}
   .hint{font-size:12px;color:var(--muted);margin:2px 0 10px}
   .sel-bar{background:var(--accent-soft);border:1px solid var(--accent);border-radius:10px;padding:8px 10px;margin-bottom:12px;font-size:13px;display:none;flex-wrap:wrap;gap:6px;align-items:center}
+  /* 作者專頁標頭 */
+  .authorhead{background:var(--accent-soft);border:1px solid var(--accent);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+  .ah-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .ah-name{font-size:18px;font-weight:800;color:var(--accent)}
+  .ah-cnt{color:var(--muted);font-size:14px}
+  .ah-clear{margin-left:auto;border:1px solid var(--accent);background:var(--card);color:var(--accent);border-radius:999px;padding:6px 13px;cursor:pointer;font-size:13px}
+  .ah-links{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px}
+  .aname{cursor:pointer;border-bottom:1px dashed var(--accent)}
+  .aname:hover{color:var(--accent)}
   .fchip{display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--accent);color:var(--accent);border-radius:999px;padding:2px 10px;font-size:12px;cursor:pointer}
   .fchip:hover{background:var(--accent);color:#fff}
   .fchip.clr{border-color:var(--muted);color:var(--muted)}
@@ -257,6 +272,7 @@
         <span class="count" id="count"></span>
       </div>
       <div class="hint">同區點多個＝任一(OR)、跨區＝同時(AND)、再點一下＝排除(紅刪除線);區標題可切「任一/全部」。點書卡看詳情。</div>
+      <div class="authorhead" id="authorHead" style="display:none"></div>
       <div class="sel-bar" id="selbar"></div>
       <div id="list" class="grid"></div>
       <div id="pager" class="pager"></div>
@@ -376,7 +392,6 @@ function syncStyles(){
 function renderSelBar(){
   const bar=document.getElementById('selbar'); bar.innerHTML='';
   const chips=[];
-  if(authorFilter)chips.push({label:'作者:'+authorFilter, clear:()=>{authorFilter=null;}});
   for(const key in state)for(const v in state[key]){
     const exc=state[key][v]==='exc';
     chips.push({label:(exc?'排除 ':'')+v, clear:((k,val)=>()=>{delete state[k][val];if(!Object.keys(state[k]).length)delete state[k];})(key,v)});
@@ -388,6 +403,23 @@ function renderSelBar(){
   const all=document.createElement('span'); all.className='fchip clr'; all.textContent='清除全部 ✕';
   all.onclick=()=>{for(const k in state)delete state[k];for(const k in modes)delete modes[k];authorFilter=null;render();};
   bar.appendChild(all);
+}
+function authorWorks(name){
+  return D.articles.filter(a=>{
+    const ppl=(a.author||'').split('、').concat((a.translator||'').split('、'));
+    return ppl.includes(name);
+  });
+}
+function renderAuthorHead(){
+  const el=document.getElementById('authorHead');
+  if(!authorFilter){el.style.display='none';return;}
+  const n=authorFilter, cnt=authorWorks(n).length;
+  const p=(D.people&&D.people[n])||{};
+  const links=Object.keys(p).map(k=>`<a class="plat" href="${p[k]}" target="_blank" rel="noopener">${k}</a>`).join('');
+  el.style.display='block';
+  el.innerHTML=`<div class="ah-row"><span class="ah-name">✍️ ${n}</span><span class="ah-cnt">共 ${cnt} 篇</span>`
+    +`<button class="ah-clear" onclick="authorFilter=null;render();document.querySelector('.toolbar').scrollIntoView({behavior:'smooth'})">✕ 返回全部</button></div>`
+    +(links?`<div class="ah-links">${links}</div>`:'');
 }
 function cardHTML(a){
   const persona=(a.persona||'').replace(/\s*\n\s*/g,' ／ ').trim();
@@ -430,6 +462,7 @@ function render(keepPage){
   if(page>pages) page=pages;
   document.getElementById('count').textContent=`共 ${hits.length} / ${D.total} 篇`;
   {const pb=document.querySelector('.pbdone'); if(pb) pb.textContent=`看 ${hits.length} 篇 ✓`;}
+  renderAuthorHead();
   if(!hits.length){
     list.innerHTML='<div class="empty">🔍 找不到符合條件的文<br><span>試試放寬條件,或點上方條件標籤把它移除</span></div>';
     document.getElementById('pager').innerHTML='';
@@ -463,7 +496,7 @@ function personRow(label, namesStr){
     const p=(D.people&&D.people[nm])||{};
     const links=Object.keys(p).map(k=>`<a class="plat pp" href="${p[k]}" target="_blank" rel="noopener">${k}</a>`).join('');
     const see=`<a class="plat pp" href="#" onclick="filterName('${encodeURIComponent(nm)}');return false">看全部</a>`;
-    return `<div class="person"><b>${nm}</b> ${links} ${see}</div>`;
+    return `<div class="person"><b class="aname" onclick="filterName('${encodeURIComponent(nm)}')">${nm}</b> ${links} ${see}</div>`;
   }).join('');
   return `<div class="drow"><span class="dk">${label}</span><span class="dv">${inner}</span></div>`;
 }
@@ -520,6 +553,8 @@ window.addEventListener('scroll',()=>{toTop.classList.toggle('show',window.scrol
 toTop.onclick=()=>window.scrollTo({top:0,behavior:'smooth'});
 if(D.updated){document.getElementById('updatedNote').textContent='📅 資料更新:'+D.updated;}
 buildPanel(); renderAnn(); renderLatest(); renderStatus(); renderHot(); render();
+// PWA:註冊 service worker(可加到主畫面、離線可看)
+if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
 </script>
 </body>
 </html>
