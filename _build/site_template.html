@@ -108,6 +108,10 @@
   .ah-links{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px}
   .aname{cursor:pointer;border-bottom:1px dashed var(--accent)}
   .aname:hover{color:var(--accent)}
+  /* 紅標:原文已刪 / 作者已刪帳號 */
+  .badge.dead{background:var(--exc-soft);color:var(--exc);border:1px solid var(--exc);font-weight:700}
+  .deadauth{color:var(--exc);font-size:.82em;margin-left:3px}
+  .deadnote{color:var(--exc);font-size:12px;margin-top:6px}
   .fchip{display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--accent);color:var(--accent);border-radius:999px;padding:2px 10px;font-size:12px;cursor:pointer}
   .fchip:hover{background:var(--accent);color:#fff}
   .fchip.clr{border-color:var(--muted);color:var(--muted)}
@@ -295,6 +299,7 @@
 <script>/*__DATA__*/</script>
 <script>
 const D = window.DATA;
+const deadAuthors = new Set(D.dead_authors||[]);
 const state = {}, modes = {};
 let authorFilter = null, _cur = null;
 // 主題切換(深/淺,記憶於 localStorage,預設深色配合品牌)
@@ -373,6 +378,7 @@ function sortHits(hits){
 }
 function badges(a){
   const b=[];
+  if(a.dead)b.push('<span class="badge dead">原文已刪</span>');
   if(sg(a,'文章類型'))b.push(`<span class="badge type">${sg(a,'文章類型')}</span>`);
   if(sg(a,'文章篇幅'))b.push(`<span class="badge">${sg(a,'文章篇幅')}</span>`);
   if(sg(a,'結局'))b.push(`<span class="badge ${endCls(sg(a,'結局'))}">${sg(a,'結局')}</span>`);
@@ -417,7 +423,8 @@ function renderAuthorHead(){
   const p=(D.people&&D.people[n])||{};
   const links=Object.keys(p).map(k=>`<a class="plat" href="${p[k]}" target="_blank" rel="noopener">${k}</a>`).join('');
   el.style.display='block';
-  el.innerHTML=`<div class="ah-row"><span class="ah-name">✍️ ${n}</span><span class="ah-cnt">共 ${cnt} 篇</span>`
+  const deadTag=deadAuthors.has(n)?'<span class="deadauth">(已刪帳號)</span>':'';
+  el.innerHTML=`<div class="ah-row"><span class="ah-name">✍️ ${n}${deadTag}</span><span class="ah-cnt">共 ${cnt} 篇</span>`
     +`<button class="ah-clear" onclick="authorFilter=null;render();document.querySelector('.toolbar').scrollIntoView({behavior:'smooth'})">✕ 返回全部</button></div>`
     +(links?`<div class="ah-links">${links}</div>`:'');
 }
@@ -496,7 +503,8 @@ function personRow(label, namesStr){
     const p=(D.people&&D.people[nm])||{};
     const links=Object.keys(p).map(k=>`<a class="plat pp" href="${p[k]}" target="_blank" rel="noopener">${k}</a>`).join('');
     const see=`<a class="plat pp" href="#" onclick="filterName('${encodeURIComponent(nm)}');return false">看全部</a>`;
-    return `<div class="person"><b class="aname" onclick="filterName('${encodeURIComponent(nm)}')">${nm}</b> ${links} ${see}</div>`;
+    const dead=deadAuthors.has(nm)?'<span class="deadauth">(已刪帳號)</span>':'';
+    return `<div class="person"><b class="aname" onclick="filterName('${encodeURIComponent(nm)}')">${nm}</b>${dead} ${links} ${see}</div>`;
   }).join('');
   return `<div class="drow"><span class="dk">${label}</span><span class="dv">${inner}</span></div>`;
 }
@@ -513,7 +521,7 @@ function openDetail(a){
     ${personRow('譯者',a.translator)}
     ${a.persona?`<div class="drow"><span class="dk">人設</span><span class="dv">${a.persona.replace(/\n/g,'<br>')}</span></div>`:''}
     ${rows}
-    ${(a.links&&a.links.length)?`<div class="drow"><span class="dk">閱讀連結</span><span class="dv">${a.links.map(l=>`<a class="plat" href="${l[1]}" target="_blank" rel="noopener">${l[0]}</a>`).join('')}</span></div>`:'<div class="drow"><span class="dk">閱讀連結</span><span class="dv" style="color:var(--muted);font-size:13px">(這篇尚無連結)</span></div>'}`;
+    <div class="drow"><span class="dk">閱讀連結</span><span class="dv">${(a.links&&a.links.length)?a.links.map(l=>`<a class="plat" href="${l[1]}" target="_blank" rel="noopener">${l[0]}</a>`).join(''):'<span style="color:var(--muted);font-size:13px">(這篇尚無連結)</span>'}${a.dead?'<div class="deadnote">(原文已刪除,連結可能失效)</div>':''}</span></div>`;
   document.getElementById('modal').style.display='flex';
 }
 function closeDetail(){document.getElementById('modal').style.display='none';}
