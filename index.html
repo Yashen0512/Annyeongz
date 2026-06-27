@@ -27,6 +27,7 @@
   .banner{position:relative;width:100%;aspect-ratio:6/1;overflow:hidden;
           display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
   .banner .bblur{display:none}
+  .banner .bimg-m{display:none}   /* 手機專用方圖,僅手機顯示(見 @media) */
   .banner .bimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
   .banner .bov{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.08),rgba(0,0,0,.38))}
   .banner .bt{position:relative;z-index:2;font-size:30px;font-weight:800;color:#fff;letter-spacing:1px;text-shadow:0 2px 16px rgba(0,0,0,.85);padding:0 16px}
@@ -177,7 +178,10 @@
   /* 手機 */
   @media(max-width:560px){
     body{font-size:16px}                /* 整體字級提高 */
-    .banner{aspect-ratio:2.6/1}         /* 手機:banner 加高,合照放大不再變薄條 */
+    .banner{aspect-ratio:2.6/1}                 /* 退路:沒有手機專用圖時,用桌機6:1圖裁切加高 */
+    .banner .bimg-m{display:block;position:static;width:100%;height:auto}  /* 手機專用方圖:完整、不裁切 */
+    .banner:has(.bimg-m){aspect-ratio:auto}     /* 有方圖時高度跟著圖走 */
+    .banner:has(.bimg-m) .bimg{display:none}    /* 有方圖時隱藏桌機6:1圖 */
     .search{font-size:16px;padding:13px 18px}   /* 搜尋列加大 */
     #toTop{width:56px;height:56px;font-size:27px;right:16px;bottom:16px}  /* 置頂鍵加大 */
     .close{width:40px;height:40px;font-size:18px;top:14px;right:14px}     /* 關閉鍵加大、好點 */
@@ -208,6 +212,7 @@
 <body>
 <div class="banner" id="banner">
   <img class="bimg" src="banner.png" alt="🐶❤️🐰 Annyeongz 平行宇宙 🐰❤️🐶">
+  <img class="bimg-m" src="banner-mobile.png" alt="🐶❤️🐰 Annyeongz 平行宇宙 🐰❤️🐶" onerror="this.remove()">
 </div>
 <header class="topbar">
   <div class="brand">🐶❤️🐰 Annyeongz 平行宇宙 🐰❤️🐶</div>
