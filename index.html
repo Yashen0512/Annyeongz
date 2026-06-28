@@ -152,6 +152,13 @@
   .counter-card{max-width:720px;margin:0 auto}
   .counter-card iframe{width:100%;border:0;display:block}
   .foot-note{margin-top:14px;color:var(--muted);font-size:13px}
+  /* 自製瀏覽人次統計卡 */
+  .stats-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;text-align:left}
+  .stats-title{font-weight:700;color:var(--ink);margin-bottom:14px;display:flex;align-items:center;gap:6px}
+  .stats-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:14px}
+  .stat .sl{font-size:12px;color:var(--muted);white-space:nowrap}
+  .stat .sv{font-size:22px;font-weight:800;color:var(--accent);margin-top:2px}
+  @media(max-width:560px){.stats-grid{grid-template-columns:repeat(3,1fr);gap:14px 10px}.stat .sv{font-size:20px}}
   #toTop:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
   .pager{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;align-items:center;margin:20px 0 6px}
   .pg{min-width:34px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);cursor:pointer;font-size:13px;text-align:center}
@@ -287,13 +294,11 @@
 </div>
 
 <footer class="site-footer">
-  <div class="counter-card">
-    <div class="commonninja_component pid-3024c7f0-6067-4a77-a223-b11e0e0b5c0e"></div>
-  </div>
+  <div class="counter-card" id="statsCard"></div>
   <div class="foot-note" id="updatedNote"></div>
   <div class="foot-note">🐶❤️🐰 Annyeongz 平行宇宙 🐰❤️🐶</div>
 </footer>
-<script src="https://cdn.commoninja.com/sdk/latest/commonninja.js" defer></script>
+<script data-goatcounter="https://yashen0512.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 
 <div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
 <button id="toTop" title="回到頂部">↑</button>
@@ -561,8 +566,17 @@ document.querySelectorAll('.snav').forEach(btn=>{btn.onclick=()=>{const s=btn.pa
 const toTop=document.getElementById('toTop');
 window.addEventListener('scroll',()=>{toTop.classList.toggle('show',window.scrollY>400);});
 toTop.onclick=()=>window.scrollTo({top:0,behavior:'smooth'});
+function renderStats(){
+  const el=document.getElementById('statsCard'); if(!el)return;
+  const s=D.stats;
+  if(!s){el.innerHTML='<div class="stats-card"><div class="stats-title">👤 瀏覽人次統計</div><div style="color:var(--muted);font-size:13px">統計建置中,稍後顯示…</div></div>';return;}
+  const cells=[['Today',s.today],['This Week',s.week],['This Month',s.month],['Last Month',s.lastmonth],['This Year',s.year],['Total',s.total]];
+  el.innerHTML='<div class="stats-card"><div class="stats-title">👤 瀏覽人次統計</div><div class="stats-grid">'
+    +cells.map(([l,v])=>`<div class="stat"><div class="sl">${l}</div><div class="sv">${(v||0).toLocaleString()}</div></div>`).join('')
+    +'</div></div>';
+}
 if(D.updated){document.getElementById('updatedNote').textContent='📅 資料更新:'+D.updated;}
-buildPanel(); renderAnn(); renderLatest(); renderStatus(); renderHot(); render();
+buildPanel(); renderAnn(); renderLatest(); renderStatus(); renderHot(); renderStats(); render();
 // PWA:註冊 service worker(可加到主畫面、離線可看)
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
 </script>
