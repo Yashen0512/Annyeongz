@@ -117,6 +117,12 @@
   .readmark{font-size:11px;color:var(--he);font-weight:700;margin-left:4px;white-space:nowrap}
   .detail-actions{display:flex;gap:8px;margin:4px 0 12px}
   .detail-actions .ctl{font-size:13px}
+  /* 類似的文 */
+  .related{display:flex;flex-direction:column;gap:7px}
+  .relitem{cursor:pointer;color:var(--ink);font-size:14px;line-height:1.4}
+  .relitem:hover{color:var(--accent)}
+  .relitem .rno{color:var(--muted);font-size:12px;margin-left:4px}
+  .relitem .rshare{color:var(--muted);font-size:12px;margin-left:6px}
   .count{font-size:13px;color:var(--muted);margin-left:auto}
   .hint{font-size:12px;color:var(--muted);margin:2px 0 10px}
   .sel-bar{background:var(--accent-soft);border:1px solid var(--accent);border-radius:10px;padding:8px 10px;margin-bottom:12px;font-size:13px;display:none;flex-wrap:wrap;gap:6px;align-items:center}
@@ -304,6 +310,7 @@
         <button class="ctl" id="rand">🎲 隨機看一篇</button>
         <button class="ctl" id="shelfBtn">📚 書架</button>
         <label class="ctl chk"><input type="checkbox" id="hideRead">隱藏已讀</label>
+        <button class="ctl" id="shareBtn" title="複製目前篩選的網址,分享給別人">🔗 複製篩選</button>
         <button class="ctl" id="reset">重設篩選</button>
         <span class="count" id="count"></span>
       </div>
@@ -552,6 +559,21 @@ function personRow(label, namesStr){
   }).join('');
   return `<div class="drow"><span class="dk">${label}</span><span class="dv">${inner}</span></div>`;
 }
+function openByNo(no){const a=D.articles.find(x=>x.no===no);if(a)openDetail(a);}
+const REL_FACETS=['CP配對','情感梗','背景設定','類型世界觀','題材梗'];   // 只看內容面,相似度才精準
+function contentTags(a){const out=[];REL_FACETS.forEach(f=>{(a.tags[f]||[]).forEach(t=>out.push(t))});return out;}
+function relatedArticles(a,n){
+  const mine=new Set(contentTags(a));
+  if(!mine.size) return [];
+  const scored=[];
+  for(const b of D.articles){
+    if(b.no===a.no) continue;
+    let s=0; for(const t of contentTags(b)) if(mine.has(t)) s++;
+    if(s>0) scored.push([s,b]);
+  }
+  scored.sort((x,y)=>y[0]-x[0] || (parseInt(y[1].no)||0)-(parseInt(x[1].no)||0));
+  return scored.slice(0,n).map(x=>x[1]);
+}
 function openDetail(a){
   _cur=a;
   const sheet=document.getElementById('sheet');
@@ -569,7 +591,8 @@ function openDetail(a){
     ${personRow('譯者',a.translator)}
     ${a.persona?`<div class="drow"><span class="dk">人設</span><span class="dv">${a.persona.replace(/\n/g,'<br>')}</span></div>`:''}
     ${rows}
-    <div class="drow"><span class="dk">閱讀連結</span><span class="dv">${(a.links&&a.links.length)?a.links.map(l=>`<a class="plat" href="${l[1]}" target="_blank" rel="noopener">${l[0]}</a>`).join(''):'<span style="color:var(--muted);font-size:13px">(這篇尚無連結)</span>'}${a.dead?'<div class="deadnote">(原文已刪除,連結可能失效)</div>':''}</span></div>`;
+    <div class="drow"><span class="dk">閱讀連結</span><span class="dv">${(a.links&&a.links.length)?a.links.map(l=>`<a class="plat" href="${l[1]}" target="_blank" rel="noopener">${l[0]}</a>`).join(''):'<span style="color:var(--muted);font-size:13px">(這篇尚無連結)</span>'}${a.dead?'<div class="deadnote">(原文已刪除,連結可能失效)</div>':''}</span></div>`
+    +(()=>{const rel=relatedArticles(a,6);return rel.length?`<div class="drow"><span class="dk">類似的文</span><span class="dv related">${rel.map(x=>`<span class="relitem" onclick="openByNo('${x.no}')">${x.name||'(無標題)'}<span class="rno">#${x.no}</span></span>`).join('')}</span></div>`:'';})();
   document.getElementById('modal').style.display='flex';
 }
 function closeDetail(){document.getElementById('modal').style.display='none';}
@@ -598,6 +621,35 @@ document.addEventListener('keydown',(e)=>{
 document.getElementById('reset').onclick=()=>{for(const k in state)delete state[k];for(const k in modes)delete modes[k];authorFilter=null;favOnly=false;document.getElementById('hideRead').checked=false;q.value='';document.getElementById('sort').value='old';updateShelfBtn();render();};
 document.getElementById('shelfBtn').onclick=()=>{favOnly=!favOnly;updateShelfBtn();render();document.querySelector('.toolbar').scrollIntoView({behavior:'smooth'});};
 document.getElementById('hideRead').onchange=render;
+// 可分享的篩選網址:把目前篩選編進網址 #f=,別人打開就是同樣篩選
+function buildShareURL(){
+  const o={};
+  if(Object.keys(state).length) o.s=state;
+  if(Object.keys(modes).length) o.m=modes;
+  if(authorFilter) o.a=authorFilter;
+  if(q.value.trim()) o.q=q.value.trim();
+  const sortv=document.getElementById('sort').value; if(sortv!=='old') o.sort=sortv;
+  const base=location.origin+location.pathname;
+  return Object.keys(o).length ? base+'#f='+encodeURIComponent(JSON.stringify(o)) : base;
+}
+function applyShareHash(){
+  if(!location.hash.startsWith('#f=')) return;
+  try{
+    const o=JSON.parse(decodeURIComponent(location.hash.slice(3)));
+    for(const k in state)delete state[k]; for(const k in modes)delete modes[k];
+    if(o.s) Object.assign(state,o.s);
+    if(o.m) Object.assign(modes,o.m);
+    authorFilter=o.a||null;
+    if(o.q!==undefined) q.value=o.q;
+    if(o.sort) document.getElementById('sort').value=o.sort;
+  }catch(e){}
+}
+document.getElementById('shareBtn').onclick=()=>{
+  const url=buildShareURL(), btn=document.getElementById('shareBtn'), old='🔗 複製篩選';
+  const done=ok=>{btn.textContent=ok?'✓ 已複製!':'⚠ 複製失敗';setTimeout(()=>btn.textContent=old,1600);};
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(url).then(()=>done(true)).catch(()=>{prompt('複製這個網址分享:',url);done(true);});}
+  else{prompt('複製這個網址分享:',url);done(true);}
+};
 q.oninput=render;
 document.getElementById('sort').onchange=render;
 document.getElementById('rand').onclick=()=>{const h=D.articles.filter(passes);if(h.length)openDetail(h[Math.floor(Math.random()*h.length)]);};
@@ -619,7 +671,7 @@ function renderStats(){
     +'</div></div>';
 }
 if(D.updated){document.getElementById('updatedNote').textContent='📅 資料更新:'+D.updated;}
-buildPanel(); renderAnn(); renderLatest(); renderStatus(); renderHot(); renderStats(); updateShelfBtn(); render();
+buildPanel(); renderAnn(); renderLatest(); renderStatus(); renderHot(); renderStats(); updateShelfBtn(); applyShareHash(); render();
 // PWA:註冊 service worker(可加到主畫面、離線可看)
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
 </script>
