@@ -560,15 +560,22 @@ function personRow(label, namesStr){
   return `<div class="drow"><span class="dk">${label}</span><span class="dv">${inner}</span></div>`;
 }
 function openByNo(no){const a=D.articles.find(x=>x.no===no);if(a)openDetail(a);}
-const REL_FACETS=['CP配對','情感梗','背景設定','類型世界觀','題材梗'];   // 只看內容面,相似度才精準
+const REL_FACETS=['CP配對','情感梗','背景設定','類型世界觀','題材梗'];   // 內容面
 function contentTags(a){const out=[];REL_FACETS.forEach(f=>{(a.tags[f]||[]).forEach(t=>out.push(t))});return out;}
+function persons(a){return (a.author||'').split('、').concat((a.translator||'').split('、')).filter(Boolean);}
+// 多訊號相似度:內容標籤(最重)+ 同作者 + 同結局/篇幅/類型(標籤少的舊文也推得出來)
 function relatedArticles(a,n){
-  const mine=new Set(contentTags(a));
-  if(!mine.size) return [];
+  const mine=new Set(contentTags(a)), pa=new Set(persons(a));
+  const ae=sg(a,'結局'), al=sg(a,'文章篇幅'), at=sg(a,'文章類型');
   const scored=[];
   for(const b of D.articles){
     if(b.no===a.no) continue;
-    let s=0; for(const t of contentTags(b)) if(mine.has(t)) s++;
+    let s=0;
+    for(const t of contentTags(b)) if(mine.has(t)) s+=4;     // 每個共同內容標籤 +4(最關鍵)
+    if(persons(b).some(p=>pa.has(p))) s+=3;                   // 同作者/譯者 +3
+    if(ae && ae===sg(b,'結局')) s+=1;
+    if(al && al===sg(b,'文章篇幅')) s+=1;
+    if(at && at===sg(b,'文章類型')) s+=0.5;
     if(s>0) scored.push([s,b]);
   }
   scored.sort((x,y)=>y[0]-x[0] || (parseInt(y[1].no)||0)-(parseInt(x[1].no)||0));
