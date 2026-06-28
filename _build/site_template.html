@@ -95,6 +95,7 @@
          opacity:0;transition:opacity .15s;box-shadow:0 2px 10px rgba(0,0,0,.2)}
   .striprow:hover .snav{opacity:.95}
   .snav.l{left:-8px}.snav.r{right:-8px}
+  .snav.hide{display:none}
   .snav:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
   #latestSec,#statusSec{margin-bottom:6px}
   #hotSec{margin-bottom:22px}
@@ -665,6 +666,19 @@ document.getElementById('filterToggle').onclick=()=>{
   document.body.classList.toggle('noscroll', open && window.innerWidth<=860);
 };
 document.querySelectorAll('.snav').forEach(btn=>{btn.onclick=()=>{const s=btn.parentElement.querySelector('.strip');const amt=Math.max(220,s.clientWidth*0.8);s.scrollBy({left:btn.classList.contains('l')?-amt:amt,behavior:'smooth'});};});
+// 箭頭只在「有得捲」時出現:沒溢出全藏、捲到頭藏左、捲到底藏右
+function updateSnav(row){
+  const s=row.querySelector('.strip'); if(!s)return;
+  const l=row.querySelector('.snav.l'), r=row.querySelector('.snav.r');
+  const can=s.scrollWidth - s.clientWidth > 2;
+  if(l) l.classList.toggle('hide', !can || s.scrollLeft<=1);
+  if(r) r.classList.toggle('hide', !can || s.scrollLeft+s.clientWidth >= s.scrollWidth-1);
+}
+function updateAllSnav(){document.querySelectorAll('.striprow').forEach(updateSnav);}
+document.querySelectorAll('.striprow .strip').forEach(s=>s.addEventListener('scroll',()=>updateSnav(s.closest('.striprow'))));
+window.addEventListener('resize',updateAllSnav);
+window.addEventListener('load',updateAllSnav);
+updateAllSnav();
 const toTop=document.getElementById('toTop');
 window.addEventListener('scroll',()=>{toTop.classList.toggle('show',window.scrollY>400);});
 toTop.onclick=()=>window.scrollTo({top:0,behavior:'smooth'});
@@ -678,7 +692,7 @@ function renderStats(){
     +'</div></div>';
 }
 if(D.updated){document.getElementById('updatedNote').textContent='📅 資料更新:'+D.updated;}
-buildPanel(); renderAnn(); renderLatest(); renderStatus(); renderHot(); renderStats(); updateShelfBtn(); applyShareHash(); render();
+buildPanel(); renderAnn(); renderLatest(); renderStatus(); renderHot(); renderStats(); updateShelfBtn(); applyShareHash(); render(); updateAllSnav();
 // PWA:註冊 service worker(可加到主畫面、離線可看)
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
 </script>
