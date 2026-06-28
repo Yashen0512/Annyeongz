@@ -209,4 +209,46 @@ for pg in pages:
     time.sleep(0.34)
 io.open('article_links.json', 'w', encoding='utf-8').write(json.dumps(links, ensure_ascii=False))
 print('  連結:新增', new, '篇(總', sum(len(v) for v in links.values()), '筆標題)')
+
+# ---- GoatCounter 瀏覽統計(可選;有 token 才抓)----
+GC_TOKEN = (os.environ.get('GOATCOUNTER_TOKEN') or
+            (io.open('goatcounter_token.txt', encoding='utf-8').read().strip()
+             if os.path.exists('goatcounter_token.txt') else '')).strip()
+GC_BASE = 'https://yashen0512.goatcounter.com/api/v0'
+GC_BASELINE = 1049   # 舊計數器(Common Ninja)最後總計,當起始基數讓 Total 不歸零
+if GC_TOKEN:
+    print('抓瀏覽統計…')
+    def gc_total(start, end):
+        req = urllib.request.Request('%s/stats/total?start=%s&end=%s' % (GC_BASE, start, end))
+        req.add_header('Authorization', 'Bearer ' + GC_TOKEN)
+        for attempt in range(5):
+            try:
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    return json.loads(r.read().decode()).get('total', 0)
+            except urllib.error.HTTPError as e:
+                if e.code == 429: time.sleep(3); continue
+                return 0
+            except (urllib.error.URLError, TimeoutError, OSError):
+                time.sleep(2); continue
+        return 0
+    today = datetime.now(TZ).date()
+    tom = (today + timedelta(days=1)).isoformat()      # end 是獨佔,要用隔天
+    iso = lambda d: d.isoformat()
+    week_start = today - timedelta(days=today.weekday())          # 週一
+    month_start = today.replace(day=1)
+    last_month_start = (month_start - timedelta(days=1)).replace(day=1)
+    year_start = today.replace(month=1, day=1)
+    stats = {
+        'today': gc_total(iso(today), tom),
+        'week': gc_total(iso(week_start), tom),
+        'month': gc_total(iso(month_start), tom),
+        'lastmonth': gc_total(iso(last_month_start), iso(month_start)),  # 上月獨佔到本月1號
+        'year': gc_total(iso(year_start), tom) + GC_BASELINE,
+        'total': gc_total('2020-01-01', tom) + GC_BASELINE,
+        'asof': fmt_dt(datetime.now(TZ).isoformat()),
+    }
+    io.open('stats.json', 'w', encoding='utf-8').write(json.dumps(stats, ensure_ascii=False))
+    print('  統計:', {k: stats[k] for k in ('today', 'week', 'month', 'lastmonth', 'year', 'total')})
+else:
+    print('  (無 goatcounter_token.txt,略過瀏覽統計)')
 print('完成 ✅  接著跑 build_site.py')
