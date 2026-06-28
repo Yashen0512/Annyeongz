@@ -96,6 +96,16 @@
   /* toolbar */
   .toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
   .ctl{padding:7px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);cursor:pointer;font-size:13px}
+  .ctl.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:700}
+  .ctl.chk{display:inline-flex;align-items:center;gap:5px}
+  .ctl.chk input{cursor:pointer;margin:0}
+  /* 我的書架:收藏愛心 + 已讀 */
+  .fav-btn{position:absolute;top:8px;right:10px;border:none;background:transparent;cursor:pointer;
+    font-size:20px;line-height:1;color:var(--muted);padding:2px;z-index:2}
+  .fav-btn.on{color:var(--accent)}
+  .readmark{font-size:11px;color:var(--he);font-weight:700;margin-left:4px;white-space:nowrap}
+  .detail-actions{display:flex;gap:8px;margin:4px 0 12px}
+  .detail-actions .ctl{font-size:13px}
   .count{font-size:13px;color:var(--muted);margin-left:auto}
   .hint{font-size:12px;color:var(--muted);margin:2px 0 10px}
   .sel-bar{background:var(--accent-soft);border:1px solid var(--accent);border-radius:10px;padding:8px 10px;margin-bottom:12px;font-size:13px;display:none;flex-wrap:wrap;gap:6px;align-items:center}
@@ -118,7 +128,7 @@
   .fchip.clr:hover{background:var(--muted);color:#fff}
   /* book grid */
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
-  .card{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer}
+  .card{position:relative;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer}
   .cst-done{border-left-color:var(--he)} .cst-ongoing{border-left-color:var(--be)} .cst-wip{border-left-color:var(--oe)}
   .cst-hiatus{border-left-color:var(--exc)} .cst-building{border-left-color:var(--muted)} .cst-irregular{border-left-color:var(--purp)}
   .card.dead{opacity:.55;border-left-color:var(--exc)}   /* 原文已刪:淡化褪色 + 紅左邊 */
@@ -126,7 +136,7 @@
   .sb-done{background:var(--he-bg);color:var(--he)} .sb-ongoing{background:var(--be-bg);color:var(--be)} .sb-wip{background:var(--oe-bg);color:var(--oe)}
   .sb-hiatus{background:var(--exc-soft);color:var(--exc)} .sb-irregular{background:var(--purp-bg);color:var(--purp)}
   .card:hover{border-color:var(--accent);box-shadow:0 2px 10px rgba(0,0,0,.04)}
-  .card .t{font-size:15px;font-weight:600;margin-bottom:6px}
+  .card .t{font-size:15px;font-weight:600;margin-bottom:6px;padding-right:28px}
   .card .t .no{font-size:11px;color:var(--muted);font-weight:400}
   .badges{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px}
   .badge{font-size:11px;padding:1px 8px;border-radius:6px;background:var(--chip);color:var(--badgec)}
@@ -281,6 +291,8 @@
           <option value="new">編號 大→小</option>
         </select>
         <button class="ctl" id="rand">🎲 隨機看一篇</button>
+        <button class="ctl" id="shelfBtn">📚 書架</button>
+        <label class="ctl chk"><input type="checkbox" id="hideRead">隱藏已讀</label>
         <button class="ctl" id="reset">重設篩選</button>
         <span class="count" id="count"></span>
       </div>
@@ -308,7 +320,16 @@
 const D = window.DATA;
 const deadAuthors = new Set(D.dead_authors||[]);
 const state = {}, modes = {};
-let authorFilter = null, _cur = null;
+let authorFilter = null, _cur = null, favOnly = false;
+// 我的書架:收藏 + 已讀,存瀏覽器本機(免登入,每台裝置各自)
+const FAVK='annyeongz_favs', READK='annyeongz_read';
+function loadSet(k){try{return new Set(JSON.parse(localStorage.getItem(k)||'[]'))}catch(e){return new Set()}}
+function saveSet(k,s){try{localStorage.setItem(k,JSON.stringify([...s]))}catch(e){}}
+const favs=loadSet(FAVK), readSet=loadSet(READK);
+function afterMark(){render(true);updateShelfBtn();if(document.getElementById('modal').style.display==='flex'&&_cur)openDetail(_cur);}
+function toggleFav(no){favs.has(no)?favs.delete(no):favs.add(no);saveSet(FAVK,favs);afterMark();}
+function toggleRead(no){readSet.has(no)?readSet.delete(no):readSet.add(no);saveSet(READK,readSet);afterMark();}
+function updateShelfBtn(){const b=document.getElementById('shelfBtn');if(!b)return;b.textContent='📚 書架 ('+favs.size+')';b.classList.toggle('on',favOnly);}
 // 主題切換(深/淺,記憶於 localStorage,預設深色配合品牌)
 const _root=document.documentElement;
 function applyTheme(t){_root.setAttribute('data-theme',t);const b=document.getElementById('theme');if(b)b.textContent=t==='dark'?'☀️':'🌙';try{localStorage.setItem('azTheme',t)}catch(e){}}
@@ -361,6 +382,8 @@ function buildPanel(){
 }
 
 function passes(a){
+  if(favOnly && !favs.has(a.no)) return false;
+  if(document.getElementById('hideRead')?.checked && readSet.has(a.no)) return false;
   const term=q.value.trim().toLowerCase();
   if(term){const hay=(a.name+' '+(a.author||'')+' '+(a.translator||'')).toLowerCase(); if(!hay.includes(term)) return false;}
   if(authorFilter){const ppl=(a.author||'').split('、').concat((a.translator||'').split('、')); if(!ppl.includes(authorFilter)) return false;}
@@ -437,7 +460,8 @@ function renderAuthorHead(){
 }
 function cardHTML(a){
   const persona=(a.persona||'').replace(/\s*\n\s*/g,' ／ ').trim();
-  return `<div class="t">${a.name||'(無標題)'} <span class="no">#${a.no}</span></div>
+  return `<button class="fav-btn${favs.has(a.no)?' on':''}" onclick="event.stopPropagation();toggleFav('${a.no}')" title="收藏" aria-label="收藏">${favs.has(a.no)?'♥':'♡'}</button>
+    <div class="t">${a.name||'(無標題)'} <span class="no">#${a.no}</span>${readSet.has(a.no)?' <span class="readmark">✓已讀</span>':''}</div>
     <div class="badges">${badges(a)}</div>
     ${persona?`<div class="persona">${persona}</div>`:''}
     <div class="tg">${multiTags(a).map(t=>`<span onclick="event.stopPropagation();filterByTag('${encodeURIComponent(t)}')">${t}</span>`).join('')}</div>`;
@@ -478,7 +502,9 @@ function render(keepPage){
   {const pb=document.querySelector('.pbdone'); if(pb) pb.textContent=`看 ${hits.length} 篇 ✓`;}
   renderAuthorHead();
   if(!hits.length){
-    list.innerHTML='<div class="empty">🔍 找不到符合條件的文<br><span>試試放寬條件,或點上方條件標籤把它移除</span></div>';
+    list.innerHTML=(favOnly&&favs.size===0)
+      ?'<div class="empty">📚 書架還是空的<br><span>點書卡右上角的 ♡ 把喜歡的文收藏進來</span></div>'
+      :'<div class="empty">🔍 找不到符合條件的文<br><span>試試放寬條件,或點上方條件標籤把它移除</span></div>';
     document.getElementById('pager').innerHTML='';
     syncStyles(); renderSelBar(); return;
   }
@@ -524,6 +550,10 @@ function openDetail(a){
   sheet.innerHTML=`<button class="close" onclick="closeDetail()">✕</button>
     <h2>${a.name||'(無標題)'} <span class="no">#${a.no}</span></h2>
     <div class="badges">${badges(a)}</div>
+    <div class="detail-actions">
+      <button class="ctl${favs.has(a.no)?' on':''}" onclick="toggleFav('${a.no}')">${favs.has(a.no)?'♥ 已收藏':'♡ 收藏'}</button>
+      <button class="ctl${readSet.has(a.no)?' on':''}" onclick="toggleRead('${a.no}')">${readSet.has(a.no)?'✓ 已讀':'標為已讀'}</button>
+    </div>
     ${personRow('作者',a.author)}
     ${personRow('譯者',a.translator)}
     ${a.persona?`<div class="drow"><span class="dk">人設</span><span class="dv">${a.persona.replace(/\n/g,'<br>')}</span></div>`:''}
@@ -554,7 +584,9 @@ document.addEventListener('keydown',(e)=>{
   else if(e.key==='ArrowRight')navDetail(1);
 });
 
-document.getElementById('reset').onclick=()=>{for(const k in state)delete state[k];for(const k in modes)delete modes[k];authorFilter=null;q.value='';document.getElementById('sort').value='old';render();};
+document.getElementById('reset').onclick=()=>{for(const k in state)delete state[k];for(const k in modes)delete modes[k];authorFilter=null;favOnly=false;document.getElementById('hideRead').checked=false;q.value='';document.getElementById('sort').value='old';updateShelfBtn();render();};
+document.getElementById('shelfBtn').onclick=()=>{favOnly=!favOnly;updateShelfBtn();render();document.querySelector('.toolbar').scrollIntoView({behavior:'smooth'});};
+document.getElementById('hideRead').onchange=render;
 q.oninput=render;
 document.getElementById('sort').onchange=render;
 document.getElementById('rand').onclick=()=>{const h=D.articles.filter(passes);if(h.length)openDetail(h[Math.floor(Math.random()*h.length)]);};
@@ -576,7 +608,7 @@ function renderStats(){
     +'</div></div>';
 }
 if(D.updated){document.getElementById('updatedNote').textContent='📅 資料更新:'+D.updated;}
-buildPanel(); renderAnn(); renderLatest(); renderStatus(); renderHot(); renderStats(); render();
+buildPanel(); renderAnn(); renderLatest(); renderStatus(); renderHot(); renderStats(); updateShelfBtn(); render();
 // PWA:註冊 service worker(可加到主畫面、離線可看)
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
 </script>
