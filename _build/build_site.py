@@ -207,9 +207,15 @@ if _mx:
 else:
     updated = ''
 
+stats = None
+try:
+    stats = json.load(io.open('stats.json', encoding='utf-8'))
+except Exception:
+    pass
+
 DATA = {'total': len(articles), 'facets': facet_defs, 'articles': articles,
         'people': people, 'announcements': anns, 'updated': updated,
-        'dead_authors': dead_authors}
+        'dead_authors': dead_authors, 'stats': stats}
 
 # 輸出資料夾:本機預設 ../site;GitHub Action 設環境變數 SITE_OUT=.. 直接輸出到倉庫根目錄
 OUT = os.environ.get('SITE_OUT', '../site')
