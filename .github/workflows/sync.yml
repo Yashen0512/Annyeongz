@@ -24,6 +24,7 @@ jobs:
         working-directory: _build
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          GOATCOUNTER_TOKEN: ${{ secrets.GOATCOUNTER_TOKEN }}
           SITE_OUT: '..'
           PYTHONIOENCODING: utf-8
         run: |
