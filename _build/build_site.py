@@ -228,3 +228,25 @@ tpl = io.open('site_template.html', encoding='utf-8').read()
 io.open(os.path.join(OUT, 'index.html'), 'w', encoding='utf-8').write(tpl.replace('/*__DATA__*/', data_decl))
 
 print('site built:', len(articles), 'articles,', len(facet_defs), 'facets (self-contained index.html)')
+
+# ---- 編號重複偵測 + 下一個可用號 ----
+from collections import defaultdict as _dd
+_byno = _dd(list)
+for a in articles:
+    if a['no']:
+        _byno[a['no']].append(a['name'] or '(無標題)')
+_dups = {no: names for no, names in _byno.items() if len(names) > 1}
+_nums = [int(a['no']) for a in articles if a['no'].isdigit()]
+_reg = [n for n in _nums if n < 10000]     # 一般文(10000+ 是活動系列)
+if _dups:
+    print('')
+    print('==================== ⚠️  編號重複警告  ⚠️ ====================')
+    for no in sorted(_dups, key=lambda x: (len(x), x)):
+        print('  No %s 重複 %d 篇:%s' % (no, len(_dups[no]), '、'.join(_dups[no])))
+    print('  請到 Notion 修正其中一篇的編號後再更新一次。')
+    print('==============================================================')
+else:
+    print('編號檢查:無重複 ✅')
+if _reg:
+    print('目前最大編號:%d(一般文最大 %d) → 下一篇一般文建議用 #%d'
+          % (max(_nums), max(_reg), max(_reg) + 1))
