@@ -2,7 +2,7 @@
 """一鍵更新 ①:從 Notion API 抓主表/作者/公告 + 每篇閱讀連結,
    產出 build_site.py 需要的檔案(CSV + article_links.json)。
    token 從 notion_token.txt 讀。需把三個資料庫都分享給整合。"""
-import csv, glob, io, json, os, time, urllib.request, urllib.error
+import csv, glob, io, json, os, re, time, urllib.request, urllib.error
 from datetime import datetime, timezone, timedelta
 
 NOTION_VER = '2022-06-28'
@@ -207,8 +207,27 @@ for pg in pages:
     links.setdefault(no, {})[title] = lst
     new += 1
     time.sleep(0.34)
+# 把「@ 提及站內另一篇」的 Notion 連結 → 站內跳轉 annyeongz:<No>(讀者才不會被導去 Notion)
+id2no = {pg['id'].replace('-', ''): read_no(pg) for pg in pages}
+_NID = re.compile(r'[0-9a-f]{32}')
+def rewrite_link(url):
+    if 'notion.' in url:
+        m = _NID.search(url.replace('-', '').lower())
+        if m and id2no.get(m.group(0)):
+            return 'annyeongz:' + id2no[m.group(0)]
+    return url
+_ref = 0
+for _no in links:
+    for _t in links[_no]:
+        new_list = []
+        for lab, u in links[_no][_t]:
+            u2 = rewrite_link(u)
+            if u2 != u: _ref += 1
+            new_list.append([lab, u2])
+        links[_no][_t] = new_list
+
 io.open('article_links.json', 'w', encoding='utf-8').write(json.dumps(links, ensure_ascii=False))
-print('  連結:新增', new, '篇(總', sum(len(v) for v in links.values()), '筆標題)')
+print('  連結:新增', new, '篇(總', sum(len(v) for v in links.values()), '筆標題);站內互連改寫', _ref, '筆')
 
 # ---- GoatCounter 瀏覽統計(可選;有 token 才抓)----
 GC_TOKEN = (os.environ.get('GOATCOUNTER_TOKEN') or
