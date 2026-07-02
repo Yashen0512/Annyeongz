@@ -203,8 +203,8 @@ if anfs:
 _mx = max((a['ek'] for a in articles), default=0)
 if _mx:
     _s = str(_mx)  # YYYYMMDDHHMM
-    _h = int(_s[8:10]); _ap = '上午' if _h < 12 else '下午'; _h12 = _h % 12 or 12   # 12 時制
-    updated = '%d/%d/%d %s%d:%s' % (int(_s[0:4]), int(_s[4:6]), int(_s[6:8]), _ap, _h12, _s[10:12])
+    _h = int(_s[8:10]); _ap = 'AM' if _h < 12 else 'PM'; _h12 = _h % 12 or 12   # 12 時制 AM/PM
+    updated = '%d/%d/%d %d:%s %s' % (int(_s[0:4]), int(_s[4:6]), int(_s[6:8]), _h12, _s[10:12], _ap)
 else:
     updated = ''
 
