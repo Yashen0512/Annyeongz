@@ -338,6 +338,11 @@
 <script>
 const D = window.DATA;
 const deadAuthors = new Set(D.dead_authors||[]);
+// 簡繁互搜:把繁體折算成簡體當統一基準(輸入/資料都折算,簡繁輸入皆可搜到)
+const _STMAP_T="__STMAP_T__", _STMAP_S="__STMAP_S__";
+const _fmap={}; for(let i=0;i<_STMAP_T.length;i++)_fmap[_STMAP_T[i]]=_STMAP_S[i];
+function foldZH(s){let o='';for(let i=0;i<s.length;i++)o+=(_fmap[s[i]]||s[i]);return o.toLowerCase();}
+D.articles.forEach(a=>{a._s=foldZH((a.name||'')+' '+(a.author||'')+' '+(a.translator||''));});
 const state = {}, modes = {};
 let authorFilter = null, _cur = null, favOnly = false;
 // 我的書架:收藏 + 已讀,存瀏覽器本機(免登入,每台裝置各自)
@@ -403,8 +408,8 @@ function buildPanel(){
 function passes(a){
   if(favOnly && !favs.has(a.no)) return false;
   if(document.getElementById('hideRead')?.checked && readSet.has(a.no)) return false;
-  const term=q.value.trim().toLowerCase();
-  if(term){const hay=(a.name+' '+(a.author||'')+' '+(a.translator||'')).toLowerCase(); if(!hay.includes(term)) return false;}
+  const term=foldZH(q.value.trim());
+  if(term){ if(!(a._s||'').includes(term)) return false; }
   if(authorFilter){const ppl=(a.author||'').split('、').concat((a.translator||'').split('、')); if(!ppl.includes(authorFilter)) return false;}
   for(const key in state){
     const sel=state[key];
