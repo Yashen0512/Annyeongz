@@ -226,6 +226,13 @@ data_decl = 'window.DATA = ' + json.dumps(DATA, ensure_ascii=False, sort_keys=Tr
 io.open(os.path.join(OUT, 'data.js'), 'w', encoding='utf-8').write(data_decl)
 # self-contained index.html (works via double-click / preview / file://)
 tpl = io.open('site_template.html', encoding='utf-8').read()
+# 注入簡繁對照表(搜尋簡繁互通);stmap.txt 兩行=繁字串 / 簡字串
+try:
+    _st = io.open('stmap.txt', encoding='utf-8').read().splitlines()
+    _stT, _stS = (_st + ['', ''])[:2]
+except Exception:
+    _stT, _stS = '', ''
+tpl = tpl.replace('__STMAP_T__', _stT).replace('__STMAP_S__', _stS)
 io.open(os.path.join(OUT, 'index.html'), 'w', encoding='utf-8').write(tpl.replace('/*__DATA__*/', data_decl))
 
 print('site built:', len(articles), 'articles,', len(facet_defs), 'facets (self-contained index.html)')
