@@ -599,7 +599,7 @@ function openDetail(a){
     ${personRow('譯者',a.translator)}
     ${a.persona?`<div class="drow"><span class="dk">人設</span><span class="dv">${a.persona.replace(/\n/g,'<br>')}</span></div>`:''}
     ${rows}
-    <div class="drow"><span class="dk">閱讀連結</span><span class="dv">${(a.links&&a.links.length)?a.links.map(l=>`<a class="plat" href="${l[1]}" target="_blank" rel="noopener">${l[0]}</a>`).join(''):'<span style="color:var(--muted);font-size:13px">(這篇尚無連結)</span>'}${a.dead?'<div class="deadnote">(原文已刪除,連結可能失效)</div>':''}</span></div>`
+    <div class="drow"><span class="dk">閱讀連結</span><span class="dv">${(a.links&&a.links.length)?a.links.map(l=>l[1].startsWith('annyeongz:')?`<a class="plat" style="cursor:pointer" onclick="openByNo('${l[1].slice(10)}')">${l[0]} ↗</a>`:`<a class="plat" href="${l[1]}" target="_blank" rel="noopener">${l[0]}</a>`).join(''):'<span style="color:var(--muted);font-size:13px">(這篇尚無連結)</span>'}${a.dead?'<div class="deadnote">(原文已刪除,連結可能失效)</div>':''}</span></div>`
     +(()=>{const rel=relatedArticles(a,6);return rel.length?`<div class="drow"><span class="dk">類似的文</span><span class="dv related">${rel.map(x=>`<span class="relitem" onclick="openByNo('${x.no}')">${x.name||'(無標題)'}<span class="rno">#${x.no}</span></span>`).join('')}</span></div>`:'';})();
   document.getElementById('modal').style.display='flex';
 }
