@@ -2,19 +2,24 @@ name: Sync from Notion
 
 on:
   schedule:
-    - cron: '0 */6 * * *'   # 每 6 小時(UTC)
-  workflow_dispatch:          # 也可在 GitHub 網站手動按「Run workflow」
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
-  group: sync
+  group: pages
   cancel-in-progress: false
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -30,7 +35,7 @@ jobs:
         run: |
           python fetch_data.py
           python build_site.py
-      - name: Commit & push if changed
+      - name: Commit changes (persist)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -41,3 +46,12 @@ jobs:
             git commit -m "Auto-sync from Notion"
             git push
           fi
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
