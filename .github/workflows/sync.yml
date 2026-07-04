@@ -2,8 +2,8 @@ name: Sync from Notion
 
 on:
   schedule:
-        - cron: '31 0 * * *'    # 台灣 08:31（員瑛 09/01 生日梗）
-        - cron: '1 13 * * *'    # 台灣 21:01（兪真 08/31 生日梗）
+    - cron: '31 0 * * *'    # 台灣 08:31（員瑛 09/01 生日梗）
+    - cron: '1 13 * * *'    # 台灣 21:01（兪真 08/31 生日梗）
   workflow_dispatch:
 
 permissions:
