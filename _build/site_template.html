@@ -687,17 +687,24 @@ updateAllSnav();
 const toTop=document.getElementById('toTop');
 window.addEventListener('scroll',()=>{toTop.classList.toggle('show',window.scrollY>400);});
 toTop.onclick=()=>window.scrollTo({top:0,behavior:'smooth'});
-function renderStats(){
+const STATS_API="https://yashen0512--8328cb68778d11f19f361607ee4eb77e.web.val.run";
+function renderStats(s,live){
   const el=document.getElementById('statsCard'); if(!el)return;
-  const s=D.stats;
+  s=s||D.stats;
   if(!s){el.innerHTML='<div class="stats-card"><div class="stats-title">👤 瀏覽人次統計</div><div style="color:var(--muted);font-size:13px">統計建置中,稍後顯示…</div></div>';return;}
   const cells=[['Today',s.today],['This Week',s.week],['This Month',s.month],['Last Month',s.lastmonth],['This Year',s.year],['Total',s.total]];
-  el.innerHTML='<div class="stats-card"><div class="stats-title">👤 瀏覽人次統計</div><div class="stats-grid">'
+  const badge=live?'<span style="font-size:11px;font-weight:600;color:#22c55e;margin-left:8px;vertical-align:middle">● 即時</span>':'';
+  el.innerHTML='<div class="stats-card"><div class="stats-title">👤 瀏覽人次統計'+badge+'</div><div class="stats-grid">'
     +cells.map(([l,v])=>`<div class="stat"><div class="sl">${l}</div><div class="sv">${(v||0).toLocaleString()}</div></div>`).join('')
     +'</div></div>';
 }
+function loadLiveStats(){
+  fetch(STATS_API,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{
+    if(j&&!j.error&&typeof j.total==='number') renderStats(j,true);
+  }).catch(()=>{});
+}
 if(D.updated){document.getElementById('updatedNote').textContent='📅 資料更新:'+D.updated;}
-buildPanel(); renderAnn(); renderLatest(); renderStatus(); renderHot(); renderStats(); updateShelfBtn(); applyShareHash(); render(); updateAllSnav();
+buildPanel(); renderAnn(); renderLatest(); renderStatus(); renderHot(); renderStats(); loadLiveStats(); updateShelfBtn(); applyShareHash(); render(); updateAllSnav();
 // PWA:註冊 service worker(可加到主畫面、離線可看)
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
 </script>
