@@ -327,6 +327,7 @@
 <footer class="site-footer">
   <div class="counter-card" id="statsCard"></div>
   <div class="foot-note" id="updatedNote"></div>
+  <div class="foot-note" id="syncedNote"></div>
   <div class="foot-note">🐶❤️🐰 Annyeongz 平行宇宙 🐰❤️🐶</div>
 </footer>
 <script data-goatcounter="https://yashen0512.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
@@ -704,6 +705,7 @@ function loadLiveStats(){
   }).catch(()=>{});
 }
 if(D.updated){document.getElementById('updatedNote').textContent='📅 資料更新:'+D.updated;}
+if(D.synced){document.getElementById('syncedNote').innerHTML='🔄 自動同步:'+D.synced+' <span title="每天 08:31・21:01 自動更新&#10;안유진 08/31 · 장원영 09/01 🎂" style="cursor:help">🎂</span>';}
 buildPanel(); renderAnn(); renderLatest(); renderStatus(); renderHot(); renderStats(); loadLiveStats(); updateShelfBtn(); applyShareHash(); render(); updateAllSnav();
 // PWA:註冊 service worker(可加到主畫面、離線可看)
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}

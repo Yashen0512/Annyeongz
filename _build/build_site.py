@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import csv, glob, io, json, os, re
 from collections import Counter, OrderedDict
+from datetime import datetime, timezone, timedelta
 import facets_def as F
 
 PLACEHOLDER_URL = "https://pebble-honeycrisp-a9a.notion.site/176a7213548080cda25dd9e1edd5b7a4"
@@ -208,6 +209,18 @@ if _mx:
 else:
     updated = ''
 
+# 自動同步時間 = 本次建置時間(台北);若落在生日時段(08:31 / 21:01)後 8 分鐘內,
+# 貼齊顯示成該生日時間(排程班次→乾淨的彩蛋);否則(手動 .bat)顯示實際建置時間。
+_now = datetime.now(timezone(timedelta(hours=8)))
+_sync_dt = _now
+for _bh, _bm in ((8, 31), (21, 1)):
+    _tgt = _now.replace(hour=_bh, minute=_bm, second=0, microsecond=0)
+    if 0 <= (_now - _tgt).total_seconds() <= 8 * 60:
+        _sync_dt = _tgt
+        break
+_sh = _sync_dt.hour; _sap = 'AM' if _sh < 12 else 'PM'; _sh12 = _sh % 12 or 12
+synced = '%d/%d/%d %d:%02d %s' % (_sync_dt.year, _sync_dt.month, _sync_dt.day, _sh12, _sync_dt.minute, _sap)
+
 stats = None
 try:
     stats = json.load(io.open('stats.json', encoding='utf-8'))
@@ -215,7 +228,7 @@ except Exception:
     pass
 
 DATA = {'total': len(articles), 'facets': facet_defs, 'articles': articles,
-        'people': people, 'announcements': anns, 'updated': updated,
+        'people': people, 'announcements': anns, 'updated': updated, 'synced': synced,
         'dead_authors': dead_authors, 'stats': stats}
 
 # 輸出資料夾:本機預設 ../site;GitHub Action 設環境變數 SITE_OUT=.. 直接輸出到倉庫根目錄
