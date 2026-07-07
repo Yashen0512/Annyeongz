@@ -205,7 +205,7 @@ _mx = max((a['ek'] for a in articles), default=0)
 if _mx:
     _s = str(_mx)  # YYYYMMDDHHMM
     _h = int(_s[8:10]); _ap = 'AM' if _h < 12 else 'PM'; _h12 = _h % 12 or 12   # 12 時制 AM/PM
-    updated = '%d/%d/%d %d:%s %s' % (int(_s[0:4]), int(_s[4:6]), int(_s[6:8]), _h12, _s[10:12], _ap)
+    updated = '%d/%02d/%02d %d:%s %s' % (int(_s[0:4]), int(_s[4:6]), int(_s[6:8]), _h12, _s[10:12], _ap)
 else:
     updated = ''
 
@@ -219,7 +219,7 @@ for _bh, _bm in ((8, 31), (21, 1)):
         _sync_dt = _tgt
         break
 _sh = _sync_dt.hour; _sap = 'AM' if _sh < 12 else 'PM'; _sh12 = _sh % 12 or 12
-synced = '%d/%d/%d %d:%02d %s' % (_sync_dt.year, _sync_dt.month, _sync_dt.day, _sh12, _sync_dt.minute, _sap)
+synced = '%d/%02d/%02d %d:%02d %s' % (_sync_dt.year, _sync_dt.month, _sync_dt.day, _sh12, _sync_dt.minute, _sap)
 
 stats = None
 try:
