@@ -13,7 +13,7 @@ def event_key(tag):
         medal = next((i for i, k in enumerate(['金', '銀', '銅']) if k + '賞' in tag), 9)
         return (2, he, medal, tag)
     if 'LOVE GAME' in tag or '계간' in tag:
-        smap = {'Summer': 0, 'Authum': 1, 'Autumn': 1, 'Winter': 2}
+        smap = {'Spring': 0, 'Summer': 1, 'Authum': 2, 'Autumn': 2, 'Fall': 2, 'Winter': 3}
         season = next((v for k, v in smap.items() if k in tag), 9)
         ym = re.search(r'(\d{4})', tag)
         return (1, int(ym.group(1)) if ym else 0, season, tag)
