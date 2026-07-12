@@ -235,21 +235,9 @@ GC_TOKEN = (os.environ.get('GOATCOUNTER_TOKEN') or
              if os.path.exists('goatcounter_token.txt') else '')).strip()
 GC_BASE = 'https://yashen0512.goatcounter.com/api/v0'
 GC_BASELINE = 1049   # 舊計數器(Common Ninja)最後總計,當起始基數讓 Total 不歸零
+GC_DATA_START = '2025-01-01'   # 早於 GoatCounter 任何資料;total 從這起算
 if GC_TOKEN:
     print('抓瀏覽統計…')
-    def gc_total(start, end):
-        req = urllib.request.Request('%s/stats/total?start=%s&end=%s' % (GC_BASE, start, end))
-        req.add_header('Authorization', 'Bearer ' + GC_TOKEN)
-        for attempt in range(5):
-            try:
-                with urllib.request.urlopen(req, timeout=30) as r:
-                    return json.loads(r.read().decode()).get('total', 0)
-            except urllib.error.HTTPError as e:
-                if e.code == 429: time.sleep(3); continue
-                return 0
-            except (urllib.error.URLError, TimeoutError, OSError):
-                time.sleep(2); continue
-        return 0
     today = datetime.now(TZ).date()
     tom = (today + timedelta(days=1)).isoformat()      # end 是獨佔,要用隔天
     iso = lambda d: d.isoformat()
@@ -257,13 +245,30 @@ if GC_TOKEN:
     month_start = today.replace(day=1)
     last_month_start = (month_start - timedelta(days=1)).replace(day=1)
     year_start = today.replace(month=1, day=1)
+    def gc_days():
+        # 只查一次,取整段每日明細(避免多查詢被限流、避免超寬 range 逾時)
+        req = urllib.request.Request('%s/stats/total?start=%s&end=%s' % (GC_BASE, GC_DATA_START, tom))
+        req.add_header('Authorization', 'Bearer ' + GC_TOKEN)
+        for attempt in range(5):
+            try:
+                with urllib.request.urlopen(req, timeout=45) as r:
+                    j = json.loads(r.read().decode())
+                    return {s['day']: s.get('daily', 0) for s in j.get('stats', [])}
+            except urllib.error.HTTPError as e:
+                if e.code == 429: time.sleep(3); continue
+                return {}
+            except (urllib.error.URLError, TimeoutError, OSError):
+                time.sleep(2); continue
+        return {}
+    days = gc_days()
+    ssum = lambda a, b: sum(v for d, v in days.items() if a <= d < b)   # 加總 [a, b)
     stats = {
-        'today': gc_total(iso(today), tom),
-        'week': gc_total(iso(week_start), tom),
-        'month': gc_total(iso(month_start), tom),
-        'lastmonth': gc_total(iso(last_month_start), iso(month_start)),  # 上月獨佔到本月1號
-        'year': gc_total(iso(year_start), tom) + GC_BASELINE,
-        'total': gc_total('2020-01-01', tom) + GC_BASELINE,
+        'today': ssum(iso(today), tom),
+        'week': ssum(iso(week_start), tom),
+        'month': ssum(iso(month_start), tom),
+        'lastmonth': ssum(iso(last_month_start), iso(month_start)),  # 上月獨佔到本月1號
+        'year': ssum(iso(year_start), tom) + GC_BASELINE,
+        'total': ssum(GC_DATA_START, tom) + GC_BASELINE,
         'asof': fmt_dt(datetime.now(TZ).isoformat()),
     }
     io.open('stats.json', 'w', encoding='utf-8').write(json.dumps(stats, ensure_ascii=False))
