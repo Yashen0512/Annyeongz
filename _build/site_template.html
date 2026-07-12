@@ -568,6 +568,18 @@ function personRow(label, namesStr){
   return `<div class="drow"><span class="dk">${label}</span><span class="dv">${inner}</span></div>`;
 }
 function openByNo(no){const a=D.articles.find(x=>x.no===no);if(a)openDetail(a);}
+const REPORT_API="https://yashen0512--925fd3b67dd111f1bfe71607ee4eb77e.web.val.run";
+function toggleReport(){const b=document.getElementById('reportBox');if(b)b.style.display=b.style.display==='none'?'block':'none';}
+function sendReport(no){
+  const ta=document.getElementById('reportReason'), msg=document.getElementById('reportMsg');
+  const reason=(ta?ta.value:'').slice(0,500), title=_cur?(_cur.name||''):'';
+  if(msg)msg.textContent='送出中…';
+  fetch(REPORT_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({no,title,reason})})
+    .then(r=>r.ok?r.json():null).then(j=>{
+      if(j&&j.ok){if(msg)msg.textContent='✅ 已收到,謝謝回報!';if(ta)ta.value='';}
+      else{if(msg)msg.textContent='⚠️ 送出失敗,請稍後再試';}
+    }).catch(()=>{if(msg)msg.textContent='⚠️ 送出失敗,請稍後再試';});
+}
 const REL_FACETS=['CP配對','情感梗','背景設定','類型世界觀','題材梗'];   // 內容面
 function contentTags(a){const out=[];REL_FACETS.forEach(f=>{(a.tags[f]||[]).forEach(t=>out.push(t))});return out;}
 function persons(a){return (a.author||'').split('、').concat((a.translator||'').split('、')).filter(Boolean);}
@@ -601,6 +613,11 @@ function openDetail(a){
     <div class="detail-actions">
       <button class="ctl${favs.has(a.no)?' on':''}" onclick="toggleFav('${a.no}')">${favs.has(a.no)?'♥ 已收藏':'♡ 收藏'}</button>
       <button class="ctl${readSet.has(a.no)?' on':''}" onclick="toggleRead('${a.no}')">${readSet.has(a.no)?'✓ 已讀':'標為已讀'}</button>
+      <button class="ctl" onclick="toggleReport()">🔗 回報失效</button>
+    </div>
+    <div id="reportBox" style="display:none;margin:0 0 12px">
+      <textarea id="reportReason" rows="2" placeholder="(可留原因,例如:連結壞掉／原文已刪／內容不符;也可留空直接送)" style="width:100%;box-sizing:border-box;font-size:13px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);resize:vertical"></textarea>
+      <div style="margin-top:6px;display:flex;align-items:center;gap:8px"><button class="ctl" onclick="sendReport('${a.no}')">送出回報</button><span id="reportMsg" style="font-size:13px;color:var(--muted)"></span></div>
     </div>
     ${personRow('作者',a.author)}
     ${personRow('譯者',a.translator)}
