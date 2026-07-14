@@ -18,11 +18,14 @@ def event_key(tag):
         ym = re.search(r'(\d{4})', tag)
         return (1, int(ym.group(1)) if ym else 0, season, tag)
     y, mo, d, hw = 9999, 99, 99, 0
-    mb = re.match(r'(\d{2})831901', tag)      # 23831901 = 雙生日 8/31·9/1
+    mb4 = re.match(r'(\d{4})831901', tag)     # 2025831901 = 4位數年+雙生日 8/31·9/1
+    mb = re.match(r'(\d{2})831901', tag)      # 23831901 = 2位數年+雙生日(舊格式)
     m4 = re.match(r'(\d{4})生日賀文', tag)
     m8 = re.match(r'(\d{4})(\d{2})(\d{2})', tag)
     m6 = re.match(r'(\d{2})(\d{2})(\d{2})', tag)
-    if mb:
+    if mb4:
+        y, mo, d, hw = int(mb4.group(1)), 8, 31, 1
+    elif mb:
         y, mo, d = 2000 + int(mb.group(1)), 8, 31
     elif m4:
         y, mo, d, hw = int(m4.group(1)), 8, 31, 1
