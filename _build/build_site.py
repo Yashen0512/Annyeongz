@@ -272,5 +272,36 @@ if _dups:
 else:
     print('編號檢查:無重複 ✅')
 if _reg:
-    print('目前最大編號:%d(一般文最大 %d) → 下一篇一般文建議用 #%d'
+    _gaps = sorted(set(range(min(_reg), max(_reg) + 1)) - set(_reg))
+    if _gaps:
+        print('可回填空號(%d 個):%s' % (len(_gaps), '、'.join(map(str, _gaps))))
+    print('目前最大編號:%d(一般文最大 %d) → 下一篇一般文建議用 #%d(或優先回填空號)'
           % (max(_nums), max(_reg), max(_reg) + 1))
+
+# ---- 架構自檢:把「靜默失敗」變成看得到的警告 ----
+_warn = []
+# 1) 樣板端點還在不在(val 端點/計數器被改壞會導致統計或回報靜默失效)
+for _name, _pat in (('即時統計 STATS_API', r'STATS_API="https://[a-z0-9-]+--[a-z0-9]+\.web\.val\.run"'),
+                    ('回報 REPORT_API', r'REPORT_API="https://[a-z0-9-]+--[a-z0-9]+\.web\.val\.run"'),
+                    ('GoatCounter 追蹤碼', r'gc\.zgo\.at/count\.js')):
+    if not re.search(_pat, tpl):
+        _warn.append('樣板缺少 %s(統計/回報會靜默失效)' % _name)
+# 2) 主表必要欄位是否齊全(Notion 改欄名會讓對應欄整批消失)
+for _col in ('文章名稱', 'No', '上次編輯時間', '建立時間', '文章狀態', '文章篇幅', '文章類型', '結局', '紅標'):
+    if _col not in H:
+        _warn.append('主表缺欄位「%s」(Notion 欄名被改?該欄資料會整批消失)' % _col)
+# 3) 分面欄是否齊全
+for _fac in list(F.FACETS.keys()) + F.EVENT_FACETS:
+    if _fac not in H:
+        _warn.append('主表缺分面欄「%s」' % _fac)
+# 4) 簡繁對照有沒有注入成功
+if '__STMAP_T__' in tpl or '__STMAP_S__' in tpl:
+    _warn.append('stmap 佔位符未被取代(簡繁互搜會壞)')
+if _warn:
+    print('')
+    print('==================== ⚠️  架構自檢警告  ⚠️ ====================')
+    for _w in _warn:
+        print('  ⚠️ ' + _w)
+    print('==============================================================')
+else:
+    print('架構自檢:通過 ✅(端點/欄位/簡繁注入都正常)')
