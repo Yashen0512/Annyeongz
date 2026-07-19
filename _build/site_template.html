@@ -307,6 +307,7 @@
         <select id="sort" class="ctl">
           <option value="old">編號 小→大</option>
           <option value="new">編號 大→小</option>
+          <option value="latest">🆕 最新收錄</option>
         </select>
         <button class="ctl" id="rand">🎲 隨機看一篇</button>
         <button class="ctl" id="shelfBtn">📚 書架</button>
@@ -429,6 +430,7 @@ function sortHits(hits){
   const s=hits.slice();
   if(m==='new')s.sort((a,b)=>n(b)-n(a));
   else if(m==='old')s.sort((a,b)=>n(a)-n(b));
+  else if(m==='latest')s.sort((a,b)=>((b.ck||0)-(a.ck||0))||(n(b)-n(a)));  // 建立時間新→舊(同時間再比編號)
   else s.sort((a,b)=>(a.name||'').localeCompare(b.name||'','zh-Hant'));
   return s;
 }
