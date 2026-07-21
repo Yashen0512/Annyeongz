@@ -280,7 +280,7 @@
 </div>
 <header class="topbar">
   <div class="brand">🐶❤️🐰 Annyeongz 平行宇宙 🐰❤️🐶</div>
-  <input id="q" class="search" placeholder="🔍 搜尋標題 / 作者 / 譯者(簡繁皆可)">
+  <input id="q" class="search" placeholder="🔍 搜尋標題 / 作者 / 譯者 / 人設(簡繁皆可)">
   <button id="theme" class="theme" title="切換深色 / 淺色">🌙</button>
 </header>
 
@@ -345,7 +345,7 @@ const deadAuthors = new Set(D.dead_authors||[]);
 const _STMAP_T="__STMAP_T__", _STMAP_S="__STMAP_S__";
 const _fmap={}; for(let i=0;i<_STMAP_T.length;i++)_fmap[_STMAP_T[i]]=_STMAP_S[i];
 function foldZH(s){let o='';for(let i=0;i<s.length;i++)o+=(_fmap[s[i]]||s[i]);return o.toLowerCase();}
-D.articles.forEach(a=>{a._s=foldZH((a.name||'')+' '+(a.author||'')+' '+(a.translator||''));});
+D.articles.forEach(a=>{a._s=foldZH((a.name||'')+' '+(a.author||'')+' '+(a.translator||'')+' '+(a.persona||''));});
 const state = {}, modes = {};
 let authorFilter = null, _cur = null, favOnly = false;
 // 我的書架:收藏 + 已讀,存瀏覽器本機(免登入,每台裝置各自)
