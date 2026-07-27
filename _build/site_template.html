@@ -686,7 +686,7 @@ document.getElementById('shareBtn').onclick=()=>{
 };
 q.oninput=render;
 document.getElementById('sort').onchange=render;
-document.getElementById('rand').onclick=()=>{const h=D.articles.filter(passes);if(h.length)openDetail(h[Math.floor(Math.random()*h.length)]);};
+document.getElementById('rand').onclick=()=>{const h=D.articles.filter(a=>passes(a)&&!a.dead&&a.links&&a.links.length);if(h.length)openDetail(h[Math.floor(Math.random()*h.length)]);};  // 隨機略過 原文已刪/無連結(抽到也讀不了)
 document.getElementById('filterToggle').onclick=()=>{
   const p=document.getElementById('panel'); const open=p.classList.toggle('open');
   document.body.classList.toggle('noscroll', open && window.innerWidth<=860);
