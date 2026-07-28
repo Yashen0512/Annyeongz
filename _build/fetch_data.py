@@ -177,7 +177,9 @@ if announce_db:
 else:
     print('  (找不到公告庫,沿用現有公告檔;要自動更新公告請把公告庫也分享給整合)')
 
-# ---- 每篇閱讀連結(增量:只抓沒抓過的 No)----
+# ---- 每篇閱讀連結(增量:新 No、或頁面編輯時間變過的 No 重抓)----
+# 快取內含保留鍵 __edited__:{no: 抓連結當下的頁面 last_edited_time}。
+# 頁面被編輯(補連結必然觸發)→ 重抓該篇,解決「舊文補連結永遠抓不到」的盲點。
 def block_links(blk):
     t = blk['type']; bd = blk.get(t, {}); out = []
     if isinstance(bd, dict):
@@ -193,20 +195,26 @@ links = {}
 if os.path.exists('article_links.json'):
     try: links = json.load(io.open('article_links.json', encoding='utf-8'))
     except Exception: links = {}
-new = 0
+_led = links.get('__edited__') if isinstance(links.get('__edited__'), dict) else {}
+new = refetched = 0
 for pg in pages:
     no = read_no(pg)
     if not no: continue
     title = p_title(p(pg, '文章名稱'))
-    if no in links and title in links[no]: continue   # 已抓過,跳過
+    ed = pg.get('last_edited_time', '')
+    cached = no in links and title in links[no]
+    if cached and _led.get(no) == ed: continue   # 抓過且頁面沒再編輯過,跳過
     ch = api('GET', 'https://api.notion.com/v1/blocks/%s/children?page_size=100' % pg['id'])
     seen, lst = set(), []
     for blk in ch.get('results', []):
         for lab, url in block_links(blk):
             if url not in seen: seen.add(url); lst.append([lab, url])
     links.setdefault(no, {})[title] = lst
-    new += 1
+    _led[no] = ed
+    if cached: refetched += 1
+    else: new += 1
     time.sleep(0.34)
+links['__edited__'] = _led
 # 把「@ 提及站內另一篇」的 Notion 連結 → 站內跳轉 annyeongz:<No>(讀者才不會被導去 Notion)
 id2no = {pg['id'].replace('-', ''): read_no(pg) for pg in pages}
 _NID = re.compile(r'[0-9a-f]{32}')
@@ -218,6 +226,7 @@ def rewrite_link(url):
     return url
 _ref = 0
 for _no in links:
+    if _no == '__edited__': continue
     for _t in links[_no]:
         new_list = []
         for lab, u in links[_no][_t]:
@@ -227,7 +236,8 @@ for _no in links:
         links[_no][_t] = new_list
 
 io.open('article_links.json', 'w', encoding='utf-8').write(json.dumps(links, ensure_ascii=False))
-print('  連結:新增', new, '篇(總', sum(len(v) for v in links.values()), '筆標題);站內互連改寫', _ref, '筆')
+print('  連結:新增', new, '篇、重抓(頁面有編輯)', refetched, '篇(總',
+      sum(len(v) for k, v in links.items() if k != '__edited__'), '筆標題);站內互連改寫', _ref, '筆')
 
 # ---- GoatCounter 瀏覽統計(可選;有 token 才抓)----
 GC_TOKEN = (os.environ.get('GOATCOUNTER_TOKEN') or
