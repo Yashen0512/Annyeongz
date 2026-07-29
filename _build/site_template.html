@@ -571,10 +571,22 @@ function personRow(label, namesStr){
 }
 function openByNo(no){const a=D.articles.find(x=>x.no===no);if(a)openDetail(a);}
 const REPORT_API="https://yashen0512--925fd3b67dd111f1bfe71607ee4eb77e.web.val.run";
-function toggleReport(){const b=document.getElementById('reportBox');if(b)b.style.display=b.style.display==='none'?'block':'none';}
+let _rsel=null;   // 目前點選的回報原因
+function toggleReport(){const b=document.getElementById('reportBox');if(!b)return;const show=b.style.display==='none';b.style.display=show?'block':'none';if(show)_rsel=null;}
+function pickReason(btn,other){
+  document.querySelectorAll('#reportOpts .ctl').forEach(x=>x.classList.remove('on'));
+  btn.classList.add('on'); _rsel=btn.textContent.trim();
+  const ta=document.getElementById('reportReason');
+  if(ta)ta.style.display=other?'block':'none';   // 選「其他」才展開文字框
+}
 function sendReport(no){
   const ta=document.getElementById('reportReason'), msg=document.getElementById('reportMsg');
-  const reason=(ta?ta.value:'').slice(0,500), title=_cur?(_cur.name||''):'';
+  const title=_cur?(_cur.name||''):'';
+  if(!_rsel){if(msg)msg.textContent='請先點選一個原因';return;}
+  let reason=_rsel;
+  const extra=(ta&&ta.style.display!=='none'?ta.value:'').trim();
+  if(extra)reason+=':'+extra;
+  reason=reason.slice(0,500);
   if(msg)msg.textContent='送出中…';
   fetch(REPORT_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({no,title,reason})})
     .then(r=>r.ok?r.json():null).then(j=>{
@@ -618,7 +630,13 @@ function openDetail(a){
       <button class="ctl" onclick="toggleReport()">🔗 回報失效</button>
     </div>
     <div id="reportBox" style="display:none;margin:0 0 12px">
-      <textarea id="reportReason" rows="2" placeholder="(可留原因,例如:連結壞掉／原文已刪／內容不符;也可留空直接送)" style="width:100%;box-sizing:border-box;font-size:13px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);resize:vertical"></textarea>
+      <div id="reportOpts" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+        <button class="ctl" onclick="pickReason(this)">🔗 連結壞掉</button>
+        <button class="ctl" onclick="pickReason(this)">🗑 原文已刪</button>
+        <button class="ctl" onclick="pickReason(this)">❓ 內容不符</button>
+        <button class="ctl" onclick="pickReason(this,1)">✏️ 其他</button>
+      </div>
+      <textarea id="reportReason" rows="2" placeholder="請簡述問題…" style="display:none;width:100%;box-sizing:border-box;font-size:13px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);resize:vertical"></textarea>
       <div style="margin-top:6px;display:flex;align-items:center;gap:8px"><button class="ctl" onclick="sendReport('${a.no}')">送出回報</button><span id="reportMsg" style="font-size:13px;color:var(--muted)"></span></div>
     </div>
     ${personRow('作者',a.author)}
