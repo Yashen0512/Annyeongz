@@ -187,7 +187,7 @@
   .stat .sl{font-size:12px;color:var(--muted);white-space:nowrap}
   .stat .sv{font-size:22px;font-weight:800;color:var(--be);margin-top:2px}   /* 藍字(呼應舊版),隨黑白模式變深淺 */
   @media(max-width:560px){.stats-grid{grid-template-columns:repeat(3,1fr);gap:14px 10px}.stat .sv{font-size:20px}}
-  #toTop:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+  @media(hover:hover){#toTop:hover{background:var(--accent);color:#fff;border-color:var(--accent)}}  /* 只在有滑鼠的裝置套 hover,避免手機點過殘留粉色 */
   .pager{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;align-items:center;margin:20px 0 6px}
   .pg{min-width:34px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);cursor:pointer;font-size:13px;text-align:center}
   .pg:hover{border-color:var(--accent)}
@@ -725,7 +725,7 @@ window.addEventListener('load',updateAllSnav);
 updateAllSnav();
 const toTop=document.getElementById('toTop');
 window.addEventListener('scroll',()=>{toTop.classList.toggle('show',window.scrollY>400);});
-toTop.onclick=()=>window.scrollTo({top:0,behavior:'smooth'});
+toTop.onclick=()=>{toTop.blur();window.scrollTo({top:0,behavior:'smooth'});};
 const STATS_API="https://yashen0512--8328cb68778d11f19f361607ee4eb77e.web.val.run";
 function renderStats(s,live){
   const el=document.getElementById('statsCard'); if(!el)return;
