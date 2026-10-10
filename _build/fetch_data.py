@@ -285,4 +285,26 @@ if GC_TOKEN:
     print('  統計:', {k: stats[k] for k in ('today', 'week', 'month', 'lastmonth', 'year', 'total')})
 else:
     print('  (無 goatcounter_token.txt,略過瀏覽統計)')
+# ---- 愛心/查看數備份:把 Val Town 計數存成 reactions_backup.json(隨排程進 GitHub,歷史可回溯)----
+# 新資料若比舊備份暴跌(>50%,可能是 val 被重建/清空)就不覆蓋,避免洗掉好備份。
+try:
+    _m = re.search(r'REACT_API="(https://[^"]+)"', io.open('site_template.html', encoding='utf-8').read())
+    if _m:
+        with urllib.request.urlopen(urllib.request.Request(_m.group(1), headers={'Cache-Control': 'no-store'}), timeout=30) as _r:
+            _cnt = json.loads(_r.read().decode('utf-8'))
+        _sum = lambda d: sum(int(v[0]) + int(v[1]) for v in d.values())
+        if isinstance(_cnt, dict) and _cnt:
+            _old = {}
+            if os.path.exists('reactions_backup.json'):
+                try: _old = json.loads(io.open('reactions_backup.json', encoding='utf-8').read())
+                except Exception: _old = {}
+            if _old and _sum(_cnt) < _sum(_old) * 0.5:
+                print('  ⚠️ 愛心/查看數比舊備份少超過一半,疑似端點被重置 → 保留舊備份,未覆蓋')
+            else:
+                io.open('reactions_backup.json', 'w', encoding='utf-8').write(json.dumps(_cnt, ensure_ascii=False, sort_keys=True))
+                print('  愛心/查看備份: %d 篇有紀錄(愛心+查看共 %d)' % (len(_cnt), _sum(_cnt)))
+        else:
+            print('  (愛心端點回傳空資料,略過備份)')
+except Exception as _e:
+    print('  (愛心/查看備份失敗,略過:%s)' % _e)
 print('完成 ✅  接著跑 build_site.py')
