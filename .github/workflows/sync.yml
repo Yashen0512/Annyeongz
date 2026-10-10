@@ -37,8 +37,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add index.html data.js _build/article_links.json 
-          _build/reactions_backup.json
+          git add index.html data.js _build/article_links.json _build/reactions_backup.json
           if git diff --cached --quiet; then
             echo "No changes."
           else
