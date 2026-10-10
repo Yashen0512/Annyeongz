@@ -115,6 +115,10 @@
   .fav-btn{position:absolute;top:8px;right:10px;border:none;background:transparent;cursor:pointer;
     font-size:20px;line-height:1;color:var(--muted);padding:2px;z-index:2}
   .fav-btn.on{color:var(--accent)}
+  /* 公開愛心數 / 查看數(0 不顯示) */
+  .fav-btn{display:flex;flex-direction:column;align-items:center}
+  .fav-btn .fc{font-size:10px;line-height:1.1;font-weight:600;margin-top:1px;font-variant-numeric:tabular-nums}
+  .viewline{font-size:13px;color:var(--muted);margin:-4px 0 12px}
   .readmark{font-size:11px;color:var(--he);font-weight:700;margin-left:4px;white-space:nowrap}
   .detail-actions{display:flex;gap:8px;margin:4px 0 12px}
   .detail-actions .ctl{font-size:13px}
@@ -308,6 +312,8 @@
           <option value="old">編號 小→大</option>
           <option value="new">編號 大→小</option>
           <option value="latest">🆕 最新收錄</option>
+          <option value="likes">♥ 愛心最多</option>
+          <option value="views">👁 最多人查看</option>
         </select>
         <button class="ctl" id="rand">🎲 隨機看一篇</button>
         <button class="ctl" id="shelfBtn">📚 書架</button>
@@ -354,7 +360,50 @@ function loadSet(k){try{return new Set(JSON.parse(localStorage.getItem(k)||'[]')
 function saveSet(k,s){try{localStorage.setItem(k,JSON.stringify([...s]))}catch(e){}}
 const favs=loadSet(FAVK), readSet=loadSet(READK);
 function afterMark(){render(true);updateShelfBtn();if(document.getElementById('modal').style.display==='flex'&&_cur)openDetail(_cur);}
-function toggleFav(no){favs.has(no)?favs.delete(no):favs.add(no);saveSet(FAVK,favs);afterMark();}
+// 公開愛心數 + 查看數:存 Val Town(_cloudflare\reactions-valtown.js),匿名只記數字。
+// REACT_API 留空=整個略過;讀取失敗也只是不顯示數字,書架照常。已標「原文已刪」的文不計數。
+const REACT_API="https://yashen0512--9bfe8c56c47511f1a61b1607ee4eb77e.web.val.run";
+const SENTK='annyeongz_favs_sent';          // 已計入公開愛心數的收藏(避免重複 +1)
+const favSent=loadSet(SENTK);
+const deadNos=new Set(D.articles.filter(a=>a.dead).map(a=>a.no));
+let counts=null;                              // {no:[愛心,查看]};null=尚未載入/載入失敗
+const canReact=no=>!!REACT_API&&!deadNos.has(no);
+function cnt(no,i){return counts&&counts[no]?counts[no][i]:0;}
+function bump(no,i,d){if(!counts)return;const c=counts[no]||(counts[no]=[0,0]);c[i]=Math.max(0,c[i]+d);}
+function sendReact(no,type){
+  return fetch(REACT_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({no,type})})
+    .then(r=>r.ok).catch(()=>false);
+}
+function reactLike(no){
+  favSent.add(no);saveSet(SENTK,favSent);bump(no,0,1);
+  sendReact(no,'like').then(ok=>{if(!ok){favSent.delete(no);saveSet(SENTK,favSent);bump(no,0,-1);}});  // 失敗就下次載入再補
+}
+function likeNum(no){const v=cnt(no,0);return canReact(no)&&v>0?v:0;}
+function markView(no){
+  if(!canReact(no))return;
+  try{const k='azv_'+no;if(sessionStorage.getItem(k))return;sessionStorage.setItem(k,'1');}catch(e){}  // 同一分頁同一篇只算一次
+  bump(no,1,1);sendReact(no,'view');
+}
+function loadCounts(){
+  if(!REACT_API)return;
+  fetch(REACT_API,{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{
+    if(!j||typeof j!=='object'||Array.isArray(j))return;
+    counts=j;
+    // 補算:上線前就收藏、或上次沒送成功的(一次最多 40 篇,避免觸發頻率限制,剩下的下次再補)
+    [...favs].filter(no=>!favSent.has(no)&&canReact(no)).slice(0,40).forEach(reactLike);
+    render(true);
+    if(document.getElementById('modal').style.display==='flex'&&_cur)openDetail(_cur);
+  }).catch(()=>{});
+}
+function toggleFav(no){
+  const adding=!favs.has(no);
+  adding?favs.add(no):favs.delete(no);saveSet(FAVK,favs);
+  if(canReact(no)){
+    if(adding){if(!favSent.has(no))reactLike(no);}
+    else if(favSent.has(no)){favSent.delete(no);saveSet(SENTK,favSent);bump(no,0,-1);sendReact(no,'unlike');}
+  }
+  afterMark();
+}
 function toggleRead(no){readSet.has(no)?readSet.delete(no):readSet.add(no);saveSet(READK,readSet);afterMark();}
 function updateShelfBtn(){const b=document.getElementById('shelfBtn');if(!b)return;b.textContent='📚 書架 ('+favs.size+')';b.classList.toggle('on',favOnly);}
 // 主題切換(深/淺,記憶於 localStorage,預設深色配合品牌)
@@ -431,6 +480,8 @@ function sortHits(hits){
   if(m==='new')s.sort((a,b)=>n(b)-n(a));
   else if(m==='old')s.sort((a,b)=>n(a)-n(b));
   else if(m==='latest')s.sort((a,b)=>((b.ck||0)-(a.ck||0))||(n(b)-n(a)));  // 建立時間新→舊(同時間再比編號)
+  else if(m==='likes')s.sort((a,b)=>(likeNum(b.no)-likeNum(a.no))||(n(b)-n(a)));
+  else if(m==='views')s.sort((a,b)=>((canReact(b.no)?cnt(b.no,1):0)-(canReact(a.no)?cnt(a.no,1):0))||(n(b)-n(a)));
   else s.sort((a,b)=>(a.name||'').localeCompare(b.name||'','zh-Hant'));
   return s;
 }
@@ -488,7 +539,8 @@ function renderAuthorHead(){
 }
 function cardHTML(a){
   const persona=(a.persona||'').replace(/\s*\n\s*/g,' ／ ').trim();
-  return `<button class="fav-btn${favs.has(a.no)?' on':''}" onclick="event.stopPropagation();toggleFav('${a.no}')" title="收藏" aria-label="收藏">${favs.has(a.no)?'♥':'♡'}</button>
+  const lk=likeNum(a.no);
+  return `<button class="fav-btn${favs.has(a.no)?' on':''}" onclick="event.stopPropagation();toggleFav('${a.no}')" title="收藏${lk?'（'+lk+' 人收藏）':''}" aria-label="收藏">${favs.has(a.no)?'♥':'♡'}${lk?`<span class="fc">${lk}</span>`:''}</button>
     <div class="t">${a.name||'(無標題)'} <span class="no">#${a.no}</span>${readSet.has(a.no)?' <span class="readmark">✓已讀</span>':''}</div>
     <div class="badges">${badges(a)}</div>
     ${persona?`<div class="persona">${persona}</div>`:''}
@@ -617,6 +669,8 @@ function relatedArticles(a,n){
 }
 function openDetail(a){
   _cur=a;
+  markView(a.no);
+  const lk=likeNum(a.no), vw=canReact(a.no)?cnt(a.no,1):0;
   const sheet=document.getElementById('sheet');
   let rows='';
   D.facets.forEach(f=>{ if(f.type!=='multi')return; const vals=[...new Set(a.tags[f.key]||[])]; if(!vals.length)return;
@@ -625,10 +679,11 @@ function openDetail(a){
     <h2>${a.name||'(無標題)'} <span class="no">#${a.no}</span></h2>
     <div class="badges">${badges(a)}</div>
     <div class="detail-actions">
-      <button class="ctl${favs.has(a.no)?' on':''}" onclick="toggleFav('${a.no}')">${favs.has(a.no)?'♥ 已收藏':'♡ 收藏'}</button>
+      <button class="ctl${favs.has(a.no)?' on':''}" onclick="toggleFav('${a.no}')">${favs.has(a.no)?'♥ 已收藏':'♡ 收藏'}${lk?' · '+lk:''}</button>
       <button class="ctl${readSet.has(a.no)?' on':''}" onclick="toggleRead('${a.no}')">${readSet.has(a.no)?'✓ 已讀':'標為已讀'}</button>
       <button class="ctl" onclick="toggleReport()">🔗 回報失效</button>
     </div>
+    ${vw?`<div class="viewline">👁 被查看 ${vw.toLocaleString()} 次</div>`:''}
     <div id="reportBox" style="display:none;margin:0 0 12px">
       <div id="reportOpts" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
         <button class="ctl" onclick="pickReason(this)">🔗 連結壞掉</button>
@@ -744,7 +799,7 @@ function loadLiveStats(){
 }
 if(D.updated){document.getElementById('updatedNote').textContent='📅 資料更新:'+D.updated;}
 if(D.synced){document.getElementById('syncedNote').innerHTML='🔄 自動同步:'+D.synced+' <span title="每天 08:31・21:01 自動更新&#10;안유진 08/31 · 장원영 09/01 🎂" style="cursor:help">🎂</span>';}
-buildPanel(); renderAnn(); renderLatest(); renderStatus(); renderHot(); renderStats(); loadLiveStats(); updateShelfBtn(); applyShareHash(); render(); updateAllSnav();
+buildPanel(); renderAnn(); renderLatest(); renderStatus(); renderHot(); renderStats(); loadLiveStats(); loadCounts(); updateShelfBtn(); applyShareHash(); render(); updateAllSnav();
 // PWA:註冊 service worker(可加到主畫面、離線可看)
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
 </script>
