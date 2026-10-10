@@ -312,7 +312,7 @@
           <option value="old">編號 小→大</option>
           <option value="new">編號 大→小</option>
           <option value="latest">🆕 最新收錄</option>
-          <option value="likes">♥ 愛心最多</option>
+          <option value="likes">❤️ 愛心最多</option>
           <option value="views">👁 最多人查看</option>
         </select>
         <button class="ctl" id="rand">🎲 隨機看一篇</button>
@@ -540,7 +540,7 @@ function renderAuthorHead(){
 function cardHTML(a){
   const persona=(a.persona||'').replace(/\s*\n\s*/g,' ／ ').trim();
   const lk=likeNum(a.no);
-  return `<button class="fav-btn${favs.has(a.no)?' on':''}" onclick="event.stopPropagation();toggleFav('${a.no}')" title="收藏${lk?'（'+lk+' 人收藏）':''}" aria-label="收藏">${favs.has(a.no)?'♥':'♡'}${lk?`<span class="fc">${lk}</span>`:''}</button>
+  return `<button class="fav-btn${favs.has(a.no)?' on':''}" onclick="event.stopPropagation();toggleFav('${a.no}')" title="收藏${lk?'（'+lk+' 人收藏）':''}" aria-label="收藏">${favs.has(a.no)?'❤️':'🤍'}${lk?`<span class="fc">${lk}</span>`:''}</button>
     <div class="t">${a.name||'(無標題)'} <span class="no">#${a.no}</span>${readSet.has(a.no)?' <span class="readmark">✓已讀</span>':''}</div>
     <div class="badges">${badges(a)}</div>
     ${persona?`<div class="persona">${persona}</div>`:''}
@@ -583,7 +583,7 @@ function render(keepPage){
   renderAuthorHead();
   if(!hits.length){
     list.innerHTML=(favOnly&&favs.size===0)
-      ?'<div class="empty">📚 書架還是空的<br><span>點書卡右上角的 ♡ 把喜歡的文收藏進來</span></div>'
+      ?'<div class="empty">📚 書架還是空的<br><span>點書卡右上角的 🤍 把喜歡的文收藏進來</span></div>'
       :'<div class="empty">🔍 找不到符合條件的文<br><span>試試放寬條件,或點上方條件標籤把它移除</span></div>';
     document.getElementById('pager').innerHTML='';
     syncStyles(); renderSelBar(); return;
@@ -679,7 +679,7 @@ function openDetail(a){
     <h2>${a.name||'(無標題)'} <span class="no">#${a.no}</span></h2>
     <div class="badges">${badges(a)}</div>
     <div class="detail-actions">
-      <button class="ctl${favs.has(a.no)?' on':''}" onclick="toggleFav('${a.no}')">${favs.has(a.no)?'♥ 已收藏':'♡ 收藏'}${lk?' · '+lk:''}</button>
+      <button class="ctl${favs.has(a.no)?' on':''}" onclick="toggleFav('${a.no}')">${favs.has(a.no)?'❤️ 已收藏':'🤍 收藏'}${lk?' · '+lk:''}</button>
       <button class="ctl${readSet.has(a.no)?' on':''}" onclick="toggleRead('${a.no}')">${readSet.has(a.no)?'✓ 已讀':'標為已讀'}</button>
       <button class="ctl" onclick="toggleReport()">🔗 回報失效</button>
     </div>
