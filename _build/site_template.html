@@ -119,6 +119,10 @@
   .fav-btn{display:flex;flex-direction:column;align-items:center}
   .fav-btn .fc{font-size:10px;line-height:1.1;font-weight:600;margin-top:1px;font-variant-numeric:tabular-nums}
   .viewline{font-size:13px;color:var(--muted);margin:-4px 0 12px}
+  .wh-toast{margin:0 0 10px;padding:8px 12px;border-radius:10px;background:var(--accent-soft);color:var(--accent);
+    font-size:13px;font-weight:600;text-align:center;transition:opacity .5s}
+  .wh-toast.out{opacity:0}
+  @media (prefers-reduced-motion:reduce){.wh-toast{transition:none}}
   .readmark{font-size:11px;color:var(--he);font-weight:700;margin-left:4px;white-space:nowrap}
   .detail-actions{display:flex;gap:8px;margin:4px 0 12px}
   .detail-actions .ctl{font-size:13px}
@@ -198,6 +202,11 @@
   .pg.cur{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
   .pg.dis{color:var(--muted);cursor:default;opacity:.5}
   .pg.dots{border:none;cursor:default;background:none}
+  .pg-jump{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);margin-left:4px}
+  .pg-jump input{width:54px;padding:6px 6px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font-size:13px;text-align:center;-moz-appearance:textfield}
+  .pg-jump input::-webkit-outer-spin-button,.pg-jump input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  .pg-jump input:focus{outline:none;border-color:var(--accent)}
+  @media (max-width:860px){.pg-jump input{font-size:16px}}  /* iOS 輸入框 <16px 會自動放大畫面 */
   /* modal */
   .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50;align-items:center;justify-content:center;padding:20px}
   .sheet{background:var(--card);border-radius:16px;max-width:560px;width:100%;max-height:85vh;overflow:auto;padding:24px 26px;position:relative}
@@ -293,15 +302,15 @@
   <main class="main">
     <div id="ann"></div>
     <section id="latestSec">
-      <h2 class="sech">📅 最新收錄</h2>
+      <h2 class="sech">✨ 新星誕生</h2>
       <div class="striprow"><button class="snav l">‹</button><div class="strip" id="latest"></div><button class="snav r">›</button></div>
     </section>
     <section id="statusSec">
-      <h2 class="sech">📝 篇章狀態更新 <span style="font-size:12px;color:var(--muted);font-weight:400">(依最近編輯)</span></h2>
+      <h2 class="sech">🛰️ 軌道更新 <span style="font-size:12px;color:var(--muted);font-weight:400">(依最近編輯)</span></h2>
       <div class="striprow"><button class="snav l">‹</button><div class="strip" id="statusUpd"></div><button class="snav r">›</button></div>
     </section>
     <section id="hotSec">
-      <h2 class="sech">🔥 熱門題材 <span style="font-size:12px;color:var(--muted);font-weight:400">(依收錄篇數)</span></h2>
+      <h2 class="sech">🌠 熱門星系 <span style="font-size:12px;color:var(--muted);font-weight:400">(依收錄篇數)</span></h2>
       <div class="opts" id="hot"></div>
     </section>
     <section>
@@ -313,9 +322,9 @@
           <option value="new">編號 大→小</option>
           <option value="latest">🆕 最新收錄</option>
           <option value="likes">❤️ 愛心最多</option>
-          <option value="views">👁 最多人查看</option>
+          <option value="views">🔭 最多人觀測</option>
         </select>
-        <button class="ctl" id="rand">🎲 隨機看一篇</button>
+        <button class="ctl" id="rand">🌀 穿越蟲洞</button>
         <button class="ctl" id="shelfBtn">📚 書架</button>
         <label class="ctl chk"><input type="checkbox" id="hideRead">隱藏已讀</label>
         <button class="ctl" id="shareBtn" title="複製目前篩選的網址,分享給別人">🔗 複製篩選</button>
@@ -336,7 +345,7 @@
   <div class="foot-note" id="updatedNote"></div>
   <div class="foot-note" id="syncedNote"></div>
   <div class="foot-note">🐶❤️🐰 Annyeongz 平行宇宙 🐰❤️🐶</div>
-  <div class="foot-note">🗂️ 整理自 2023/08/07</div>
+  <div class="foot-note">🌌 宇宙誕生於 2023/08/07</div>
 </footer>
 <script data-goatcounter="https://yashen0512.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 
@@ -583,8 +592,8 @@ function render(keepPage){
   renderAuthorHead();
   if(!hits.length){
     list.innerHTML=(favOnly&&favs.size===0)
-      ?'<div class="empty">📚 書架還是空的<br><span>點書卡右上角的 🤍 把喜歡的文收藏進來</span></div>'
-      :'<div class="empty">🔍 找不到符合條件的文<br><span>試試放寬條件,或點上方條件標籤把它移除</span></div>';
+      ?'<div class="empty">🛸 書架還是一片虛空<br><span>點書卡右上角的 🤍 把喜歡的文收藏進來</span></div>'
+      :'<div class="empty">🔭 這片星域沒有符合條件的文<br><span>換個座標試試:放寬條件,或點上方條件標籤把它移除</span></div>';
     document.getElementById('pager').innerHTML='';
     syncStyles(); renderSelBar(); return;
   }
@@ -606,8 +615,16 @@ function renderPager(total, pages){
   const sorted=[...nums].sort((a,b)=>a-b); let prev=0;
   sorted.forEach(n=>{ if(n-prev>1) add('…',null,'dots'); add(String(n), n, n===page?'cur':''); prev=n; });
   add('下一頁 ›', page<pages?page+1:null, page<pages?'':'dis');
-  const info=document.createElement('span'); info.className='pg dots'; info.style.color='var(--muted)';
-  info.textContent=`第 ${page} / ${pages} 頁`; el.appendChild(info);
+  // 輸入頁數跳轉:Enter 或「前往」;超出範圍自動夾到 1~最後一頁,非數字不動作
+  const jump=document.createElement('span'); jump.className='pg-jump';
+  jump.innerHTML=`第 <input type="number" inputmode="numeric" min="1" max="${pages}" value="${page}" aria-label="輸入頁數"> / ${pages} 頁 <span class="pg">前往</span>`;
+  const inp=jump.querySelector('input');
+  const go=()=>{const v=parseInt(inp.value,10); if(isNaN(v)){inp.value=page;return;}
+    const p=Math.min(pages,Math.max(1,v)); if(p===page){inp.value=page;return;} gotoPage(p);};
+  inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();go();}};
+  inp.onfocus=()=>inp.select();
+  jump.querySelector('.pg').onclick=go;
+  el.appendChild(jump);
 }
 function filterName(enc){const name=decodeURIComponent(enc);if(name){authorFilter=name;closeDetail();render();document.querySelector('.toolbar').scrollIntoView({behavior:'smooth'});}}
 function personRow(label, namesStr){
@@ -642,7 +659,7 @@ function sendReport(no){
   if(msg)msg.textContent='送出中…';
   fetch(REPORT_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({no,title,reason})})
     .then(r=>r.ok?r.json():null).then(j=>{
-      if(j&&j.ok){if(msg)msg.textContent='✅ 已收到,謝謝回報!';if(ta)ta.value='';}
+      if(j&&j.ok){if(msg)msg.textContent='✅ 訊號已收到,謝謝回報!';if(ta)ta.value='';}
       else{if(msg)msg.textContent='⚠️ 送出失敗,請稍後再試';}
     }).catch(()=>{if(msg)msg.textContent='⚠️ 送出失敗,請稍後再試';});
 }
@@ -681,9 +698,9 @@ function openDetail(a){
     <div class="detail-actions">
       <button class="ctl${favs.has(a.no)?' on':''}" onclick="toggleFav('${a.no}')">${favs.has(a.no)?'❤️ 已收藏':'🤍 收藏'}${lk?' · '+lk:''}</button>
       <button class="ctl${readSet.has(a.no)?' on':''}" onclick="toggleRead('${a.no}')">${readSet.has(a.no)?'✓ 已讀':'標為已讀'}</button>
-      <button class="ctl" onclick="toggleReport()">🔗 回報失效</button>
+      <button class="ctl" onclick="toggleReport()">📡 回報失效</button>
     </div>
-    ${vw?`<div class="viewline">👁 被查看 ${vw.toLocaleString()} 次</div>`:''}
+    ${vw?`<div class="viewline">🔭 被觀測 ${vw.toLocaleString()} 次</div>`:''}
     <div id="reportBox" style="display:none;margin:0 0 12px">
       <div id="reportOpts" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
         <button class="ctl" onclick="pickReason(this)">🔗 連結壞掉</button>
@@ -759,7 +776,14 @@ document.getElementById('shareBtn').onclick=()=>{
 };
 q.oninput=render;
 document.getElementById('sort').onchange=render;
-document.getElementById('rand').onclick=()=>{const h=D.articles.filter(a=>passes(a)&&!a.dead&&a.links&&a.links.length);if(h.length)openDetail(h[Math.floor(Math.random()*h.length)]);};  // 隨機略過 原文已刪/無連結(抽到也讀不了)
+document.getElementById('rand').onclick=()=>{const h=D.articles.filter(a=>passes(a)&&!a.dead&&a.links&&a.links.length);if(h.length){openDetail(h[Math.floor(Math.random()*h.length)]);wormholeToast();}};  // 隨機略過 原文已刪/無連結(抽到也讀不了)
+// 穿越蟲洞後在詳情頂端短暫浮出一句,約 2 秒淡出
+function wormholeToast(){
+  const s=document.getElementById('sheet'); if(!s)return;
+  const old=s.querySelector('.wh-toast'); if(old)old.remove();
+  const d=document.createElement('div'); d.className='wh-toast'; d.textContent='🌀 穿越蟲洞!隨機降落在這顆星球';
+  s.prepend(d); setTimeout(()=>d.classList.add('out'),1800); setTimeout(()=>d.remove(),2400);
+}
 document.getElementById('filterToggle').onclick=()=>{
   const p=document.getElementById('panel'); const open=p.classList.toggle('open');
   document.body.classList.toggle('noscroll', open && window.innerWidth<=860);
@@ -785,10 +809,10 @@ const STATS_API="https://yashen0512--8328cb68778d11f19f361607ee4eb77e.web.val.ru
 function renderStats(s,live){
   const el=document.getElementById('statsCard'); if(!el)return;
   s=s||D.stats;
-  if(!s){el.innerHTML='<div class="stats-card"><div class="stats-title">👤 瀏覽人次統計</div><div style="color:var(--muted);font-size:13px">統計建置中,稍後顯示…</div></div>';return;}
-  const cells=[['Today',s.today],['This Week',s.week],['This Month',s.month],['Last Month',s.lastmonth],['This Year',s.year],['Total',s.total]];
+  if(!s){el.innerHTML='<div class="stats-card"><div class="stats-title">🛸 星際旅人統計</div><div style="color:var(--muted);font-size:13px">統計建置中,稍後顯示…</div></div>';return;}
+  const cells=[['今日',s.today],['本週',s.week],['本月',s.month],['上月',s.lastmonth],['今年',s.year],['累計',s.total]];
   const badge=live?'<span style="font-size:11px;font-weight:600;color:#22c55e;margin-left:8px;vertical-align:middle">● 即時</span>':'';
-  el.innerHTML='<div class="stats-card"><div class="stats-title">👤 瀏覽人次統計'+badge+'</div><div class="stats-grid">'
+  el.innerHTML='<div class="stats-card"><div class="stats-title">🛸 星際旅人統計'+badge+'</div><div class="stats-grid">'
     +cells.map(([l,v])=>`<div class="stat"><div class="sl">${l}</div><div class="sv">${(v||0).toLocaleString()}</div></div>`).join('')
     +'</div></div>';
 }
@@ -797,8 +821,8 @@ function loadLiveStats(){
     if(j&&!j.error&&typeof j.total==='number') renderStats(j,true);
   }).catch(()=>{});
 }
-if(D.updated){document.getElementById('updatedNote').textContent='📅 資料更新:'+D.updated;}
-if(D.synced){document.getElementById('syncedNote').innerHTML='🔄 自動同步:'+D.synced+' <span title="每天 08:31・21:01 自動更新&#10;안유진 08/31 · 장원영 09/01 🎂" style="cursor:help">🎂</span>';}
+if(D.updated){document.getElementById('updatedNote').textContent='🗺️ 星圖更新:'+D.updated;}
+if(D.synced){document.getElementById('syncedNote').innerHTML='📡 訊號同步:'+D.synced+' <span title="每天 08:31・21:01 自動更新&#10;안유진 08/31 · 장원영 09/01 🎂" style="cursor:help">🎂</span>';}
 buildPanel(); renderAnn(); renderLatest(); renderStatus(); renderHot(); renderStats(); loadLiveStats(); loadCounts(); updateShelfBtn(); applyShareHash(); render(); updateAllSnav();
 // PWA:註冊 service worker(可加到主畫面、離線可看)
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
