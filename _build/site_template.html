@@ -571,7 +571,7 @@ function renderAnn(){
   const box=document.getElementById('ann'); const a=D.announcements||[];
   if(!a.length){box.style.display='none';return;}
   box.className='ann-box';
-  box.innerHTML='<div class="ah">📢 公告</div>'+a.map(x=>`<div class="ann-item">${x.pin?'📌 ':''}<span class="d">${x.date}</span>${x.content}</div>`).join('');
+  box.innerHTML='<div class="ah">📻 星際廣播</div>'+a.map(x=>`<div class="ann-item">${x.pin?'📌 ':''}<span class="d">${x.date}</span>${x.content}</div>`).join('');
 }
 function renderStatus(){
   const wrap=document.getElementById('statusUpd');
