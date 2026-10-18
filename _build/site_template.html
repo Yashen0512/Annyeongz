@@ -301,7 +301,7 @@
 </div>
 <header class="topbar">
   <div class="brand">🐶❤️🐰 Annyeongz 平行宇宙 🐰❤️🐶</div>
-  <input id="q" class="search" placeholder="🔍 搜尋標題 / 作者 / 譯者 / 人設(簡繁皆可)">
+  <input id="q" class="search" placeholder="🔍 搜尋標題 / 番外篇名 / 作者 / 譯者 / 人設(簡繁皆可)">
   <button id="theme" class="theme" title="切換白晝 / 黑夜" aria-label="切換白晝 / 黑夜">🌙</button>
 </header>
 
@@ -371,7 +371,7 @@ const deadAuthors = new Set(D.dead_authors||[]);
 const _STMAP_T="__STMAP_T__", _STMAP_S="__STMAP_S__";
 const _fmap={}; for(let i=0;i<_STMAP_T.length;i++)_fmap[_STMAP_T[i]]=_STMAP_S[i];
 function foldZH(s){let o='';for(let i=0;i<s.length;i++)o+=(_fmap[s[i]]||s[i]);return o.toLowerCase();}
-D.articles.forEach(a=>{a._s=foldZH((a.name||'')+' '+(a.author||'')+' '+(a.translator||'')+' '+(a.persona||''));});
+D.articles.forEach(a=>{a._s=foldZH((a.name||'')+' '+(a.author||'')+' '+(a.translator||'')+' '+(a.persona||'')+' '+(a.alias||''));});
 const state = {}, modes = {};
 let authorFilter = null, _cur = null, favOnly = false;
 // 詳情視窗的上下篇/上下則:_mode='art' 文章、'ann' 公告;_navList=從哪一排點開的清單(null=主列表目前的篩選+排序)
@@ -573,6 +573,7 @@ function cardHTML(a){
     <div class="t">${a.name||'(無標題)'} <span class="no">#${a.no}</span>${readSet.has(a.no)?' <span class="readmark">✓已讀</span>':''}</div>
     <div class="badges">${badges(a)}</div>
     ${persona?`<div class="persona">${persona}</div>`:''}
+    ${a.alias?`<div class="persona">收錄：${a.alias.replace(/\s*\n\s*/g,'、')}</div>`:''}
     <div class="tg">${multiTags(a).map(t=>`<span onclick="event.stopPropagation();filterByTag('${encodeURIComponent(t)}')">${t}</span>`).join('')}</div>`;
 }
 function renderLatest(){
@@ -749,6 +750,7 @@ function openDetail(a){
     ${personRow('作者',a.author)}
     ${personRow('譯者',a.translator)}
     ${a.persona?`<div class="drow"><span class="dk">人設</span><span class="dv">${a.persona.replace(/\n/g,'<br>')}</span></div>`:''}
+    ${a.alias?`<div class="drow"><span class="dk">收錄篇名</span><span class="dv">${a.alias.replace(/\n/g,'<br>')}</span></div>`:''}
     ${rows}
     <div class="drow"><span class="dk">閱讀連結</span><span class="dv">${(a.links&&a.links.length)?a.links.map(l=>l[1].startsWith('annyeongz:')?`<a class="plat" style="cursor:pointer" onclick="openByNo('${l[1].slice(10)}')">${l[0]} ↗</a>`:`<a class="plat" href="${l[1]}" target="_blank" rel="noopener">${l[0]}</a>`).join(''):'<span style="color:var(--muted);font-size:13px">(這篇尚無連結)</span>'}${a.dead?'<div class="deadnote">(原文已刪除,連結可能失效)</div>':''}</span></div>`
     +(()=>{const rel=relatedArticles(a,6);return rel.length?`<div class="drow"><span class="dk">類似的文</span><span class="dv related">${rel.map(x=>`<span class="relitem" onclick="openByNo('${x.no}')">${x.name||'(無標題)'}<span class="rno">#${x.no}</span></span>`).join('')}</span></div>`:'';})()

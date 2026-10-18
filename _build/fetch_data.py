@@ -140,7 +140,7 @@ def author_cell(ids):
 FACET_COLS = ['CP配對', '氛圍', '情感梗', '背景設定', '類型世界觀', '題材梗', '分級', '形式/性質',
               '命定站賀文合集', '계간윶녕 : 𝐋𝐎𝐕𝐄 𝐆𝐀𝐌𝐄', '1st鳳梨汁推薦']
 MAIN_HEADER = ['文章名稱', 'No', '上次編輯時間', '人設(安、員)', '作者/譯者資料庫',
-               '建立時間', '文章標籤', '文章狀態', '文章篇幅', '文章類型', '結局'] + FACET_COLS + ['紅標']
+               '建立時間', '文章標籤', '文章狀態', '文章篇幅', '文章類型', '結局'] + FACET_COLS + ['紅標', '收錄篇名']
 main_rows = []
 pages = query_all(MAIN_ID)
 for pg in pages:
@@ -156,7 +156,7 @@ for pg in pages:
         p_select(p(pg, '文章篇幅')),
         p_select(p(pg, '文章類型')),
         p_select(p(pg, '結局')),
-    ] + [p_multi(p(pg, c)) for c in FACET_COLS] + ['Y' if is_red(pg) else ''])
+    ] + [p_multi(p(pg, c)) for c in FACET_COLS] + ['Y' if is_red(pg) else '', p_rich(p(pg, '收錄篇名'))])
 for old in glob.glob('*%s_all.csv' % MAIN_ID): os.remove(old)
 atomic_write_csv('Annyeongz_%s_all.csv' % MAIN_ID, MAIN_HEADER, main_rows)
 print('  文章:', len(main_rows), '篇')

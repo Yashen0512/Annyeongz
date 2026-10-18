@@ -162,6 +162,7 @@ for r in rows:
         'tags': tags,
         'links': links or [],
         'dead': (0 <= H.get('紅標', -1) < len(r) and r[H['紅標']].strip() == 'Y'),
+        'alias': (r[H['收錄篇名']].strip() if 0 <= H.get('收錄篇名', -1) < len(r) else ''),
     })
 
 # sort by No desc (newest first)
