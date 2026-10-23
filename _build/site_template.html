@@ -124,6 +124,10 @@
   .wh-toast.out{opacity:0}
   @media (prefers-reduced-motion:reduce){.wh-toast{transition:none}}
   .readmark{font-size:11px;color:var(--he);font-weight:700;margin-left:4px;white-space:nowrap}
+  .todomark{font-size:12px;margin-left:4px}
+  /* 書架分頁:已收藏/待閱讀/已讀 */
+  .shelf-tabs{gap:8px;flex-wrap:wrap;margin:2px 0 10px}
+  .shelf-tabs .sc{font-size:12px;opacity:.75;margin-left:2px;font-variant-numeric:tabular-nums}
   .detail-actions{display:flex;gap:8px;margin:4px 0 12px}
   .detail-actions .ctl{font-size:13px}
   /* 類似的文 */
@@ -342,6 +346,7 @@
         <button class="ctl" id="reset">重設篩選</button>
         <span class="count" id="count"></span>
       </div>
+      <div class="shelf-tabs" id="shelfTabs" style="display:none"></div>
       <div class="hint">同區點多個＝任一(OR)、跨區＝同時(AND)、再點一下＝排除(紅刪除線);區標題可切「任一/全部」。點書卡看詳情。</div>
       <div class="authorhead" id="authorHead" style="display:none"></div>
       <div class="sel-bar" id="selbar"></div>
@@ -373,7 +378,7 @@ const _fmap={}; for(let i=0;i<_STMAP_T.length;i++)_fmap[_STMAP_T[i]]=_STMAP_S[i]
 function foldZH(s){let o='';for(let i=0;i<s.length;i++)o+=(_fmap[s[i]]||s[i]);return o.toLowerCase();}
 D.articles.forEach(a=>{a._s=foldZH((a.name||'')+' '+(a.author||'')+' '+(a.translator||'')+' '+(a.persona||'')+' '+(a.alias||''));});
 const state = {}, modes = {};
-let authorFilter = null, _cur = null, favOnly = false;
+let authorFilter = null, _cur = null, shelfOn = false;   // shelfOn=書架模式(看 shelfTab 那一類)
 // 詳情視窗的上下篇/上下則:_mode='art' 文章、'ann' 公告;_navList=從哪一排點開的清單(null=主列表目前的篩選+排序)
 let _mode='art', _annIdx=null, _navList=null;
 function navBar(i,n,unit){
@@ -388,6 +393,11 @@ const FAVK='annyeongz_favs', READK='annyeongz_read';
 function loadSet(k){try{return new Set(JSON.parse(localStorage.getItem(k)||'[]'))}catch(e){return new Set()}}
 function saveSet(k,s){try{localStorage.setItem(k,JSON.stringify([...s]))}catch(e){}}
 const favs=loadSet(FAVK), readSet=loadSet(READK);
+// 待閱讀:只存本機、不公開不計數;書架分頁(已收藏/待閱讀/已讀)記住上次停在哪一頁
+const TODOK='annyeongz_todo', TABK='annyeongz_shelftab';
+const todoSet=loadSet(TODOK);
+let shelfTab='fav'; try{const v=localStorage.getItem(TABK); if(['fav','todo','read'].includes(v))shelfTab=v;}catch(e){}
+const SHELF={fav:['❤️','已收藏',favs],todo:['🔖','待閱讀',todoSet],read:['✓','已讀',readSet]};
 function afterMark(){render(true);updateShelfBtn();if(document.getElementById('modal').style.display==='flex'&&_cur)openDetail(_cur);}
 // 公開愛心數 + 查看數:存 Val Town(_cloudflare\reactions-valtown.js),匿名只記數字。
 // REACT_API 留空=整個略過;讀取失敗也只是不顯示數字,書架照常。已標「原文已刪」的文不計數。
@@ -433,8 +443,18 @@ function toggleFav(no){
   }
   afterMark();
 }
-function toggleRead(no){readSet.has(no)?readSet.delete(no):readSet.add(no);saveSet(READK,readSet);afterMark();}
-function updateShelfBtn(){const b=document.getElementById('shelfBtn');if(!b)return;b.textContent='📚 書架 ('+favs.size+')';b.classList.toggle('on',favOnly);}
+function toggleRead(no){
+  if(readSet.has(no))readSet.delete(no);
+  else{readSet.add(no); if(todoSet.delete(no))saveSet(TODOK,todoSet);}   // 讀完自動移出待閱讀
+  saveSet(READK,readSet);afterMark();}
+function toggleTodo(no){todoSet.has(no)?todoSet.delete(no):todoSet.add(no);saveSet(TODOK,todoSet);afterMark();}
+function setShelfTab(k){shelfTab=k;try{localStorage.setItem(TABK,k)}catch(e){};updateShelfBtn();render();}
+function updateShelfBtn(){
+  const b=document.getElementById('shelfBtn');if(b){b.textContent='📚 書架';b.classList.toggle('on',shelfOn);}
+  const tb=document.getElementById('shelfTabs');if(!tb)return;
+  tb.style.display=shelfOn?'flex':'none';
+  tb.innerHTML=Object.entries(SHELF).map(([k,[ic,lb,set]])=>`<button class="ctl${k===shelfTab?' on':''}" onclick="setShelfTab('${k}')">${ic} ${lb} <span class="sc">${set.size}</span></button>`).join('');
+}
 // 主題切換(深/淺,記憶於 localStorage,預設深色配合品牌)
 const _root=document.documentElement;
 function applyTheme(t){_root.setAttribute('data-theme',t);const b=document.getElementById('theme');if(b)b.textContent=t==='dark'?'☀️':'🌙';try{localStorage.setItem('azTheme',t)}catch(e){}}
@@ -487,8 +507,8 @@ function buildPanel(){
 }
 
 function passes(a){
-  if(favOnly && !favs.has(a.no)) return false;
-  if(document.getElementById('hideRead')?.checked && readSet.has(a.no)) return false;
+  if(shelfOn && !SHELF[shelfTab][2].has(a.no)) return false;
+  if(!(shelfOn&&shelfTab==='read') && document.getElementById('hideRead')?.checked && readSet.has(a.no)) return false;
   const term=foldZH(q.value.trim());
   if(term){ if(!(a._s||'').includes(term)) return false; }
   if(authorFilter){const ppl=(a.author||'').split('、').concat((a.translator||'').split('、')); if(!ppl.includes(authorFilter)) return false;}
@@ -570,7 +590,7 @@ function cardHTML(a){
   const persona=(a.persona||'').replace(/\s*\n\s*/g,' ／ ').trim();
   const lk=likeNum(a.no);
   return `<button class="fav-btn${favs.has(a.no)?' on':''}" onclick="event.stopPropagation();toggleFav('${a.no}')" title="收藏${lk?'（'+lk+' 人收藏）':''}" aria-label="收藏">${favs.has(a.no)?'❤️':'🤍'}${lk?`<span class="fc">${lk}</span>`:''}</button>
-    <div class="t">${a.name||'(無標題)'} <span class="no">#${a.no}</span>${readSet.has(a.no)?' <span class="readmark">✓已讀</span>':''}</div>
+    <div class="t">${a.name||'(無標題)'} <span class="no">#${a.no}</span>${readSet.has(a.no)?' <span class="readmark">✓已讀</span>':''}${todoSet.has(a.no)?' <span class="todomark" title="待閱讀">🔖</span>':''}</div>
     <div class="badges">${badges(a)}</div>
     ${persona?`<div class="persona">${persona}</div>`:''}
     ${a.alias?`<div class="persona">收錄：${a.alias.replace(/\s*\n\s*/g,'、')}</div>`:''}
@@ -626,8 +646,11 @@ function render(keepPage){
   {const pb=document.querySelector('.pbdone'); if(pb) pb.textContent=`看 ${hits.length} 篇 ✓`;}
   renderAuthorHead();
   if(!hits.length){
-    list.innerHTML=(favOnly&&favs.size===0)
-      ?'<div class="empty">🛸 書架還是一片虛空<br><span>點書卡右上角的 🤍 把喜歡的文收藏進來</span></div>'
+    const EMPTY={fav:'🛸 書架還是一片虛空<br><span>點書卡右上角的 🤍 把喜歡的文收藏進來</span>',
+                 todo:'🔖 還沒有待閱讀的文<br><span>在文章詳情按「🔖 待閱讀」先存起來</span>',
+                 read:'✓ 還沒有標記已讀的文<br><span>在文章詳情按「標為已讀」記錄讀過的文</span>'};
+    list.innerHTML=(shelfOn&&SHELF[shelfTab][2].size===0)
+      ?`<div class="empty">${EMPTY[shelfTab]}</div>`
       :'<div class="empty">🔭 這片星域沒有符合條件的文<br><span>換個座標試試:放寬條件,或點上方條件標籤把它移除</span></div>';
     document.getElementById('pager').innerHTML='';
     syncStyles(); renderSelBar(); return;
@@ -733,6 +756,7 @@ function openDetail(a){
     <div class="badges">${badges(a)}</div>
     <div class="detail-actions">
       <button class="ctl${favs.has(a.no)?' on':''}" onclick="toggleFav('${a.no}')">${favs.has(a.no)?'❤️ 已收藏':'🤍 收藏'}${lk?' · '+lk:''}</button>
+      <button class="ctl${todoSet.has(a.no)?' on':''}" onclick="toggleTodo('${a.no}')">${todoSet.has(a.no)?'🔖 待閱讀中':'🔖 待閱讀'}</button>
       <button class="ctl${readSet.has(a.no)?' on':''}" onclick="toggleRead('${a.no}')">${readSet.has(a.no)?'✓ 已讀':'標為已讀'}</button>
       <button class="ctl" onclick="toggleReport()">📡 回報失效</button>
     </div>
@@ -783,8 +807,8 @@ document.addEventListener('keydown',(e)=>{
   else if(e.key==='ArrowRight')navDetail(1);
 });
 
-document.getElementById('reset').onclick=()=>{for(const k in state)delete state[k];for(const k in modes)delete modes[k];authorFilter=null;favOnly=false;document.getElementById('hideRead').checked=false;q.value='';document.getElementById('sort').value='old';updateShelfBtn();render();};
-document.getElementById('shelfBtn').onclick=()=>{favOnly=!favOnly;updateShelfBtn();render();document.querySelector('.toolbar').scrollIntoView({behavior:'smooth'});};
+document.getElementById('reset').onclick=()=>{for(const k in state)delete state[k];for(const k in modes)delete modes[k];authorFilter=null;shelfOn=false;document.getElementById('hideRead').checked=false;q.value='';document.getElementById('sort').value='old';updateShelfBtn();render();};
+document.getElementById('shelfBtn').onclick=()=>{shelfOn=!shelfOn;updateShelfBtn();render();document.querySelector('.toolbar').scrollIntoView({behavior:'smooth'});};
 document.getElementById('hideRead').onchange=render;
 // 可分享的篩選網址:把目前篩選編進網址 #f=,別人打開就是同樣篩選
 function buildShareURL(){
