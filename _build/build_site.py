@@ -6,6 +6,19 @@ import facets_def as F
 
 PLACEHOLDER_URL = "https://pebble-honeycrisp-a9a.notion.site/176a7213548080cda25dd9e1edd5b7a4"
 
+DEAD_MARK = '❌'   # Notion 閱讀連結名稱裡的 ❌ = 該連結已失效
+
+def split_links(links):
+    """[[名稱, 網址], ...] → 名稱含 ❌ 的改成 [名稱(去掉❌), 網址, 1];有效的維持兩格(資料檔不變大)。"""
+    out = []
+    for l in links or []:
+        lab, url = l[0], l[1]
+        if DEAD_MARK in lab:
+            out.append([lab.replace(DEAD_MARK, '').strip() or url, url, 1])
+        else:
+            out.append([lab, url])
+    return out
+
 def event_key(tag):
     """合集活動排序:華語圈(依日期)→ LOVE GAME(依季節)→ 鳳梨汁(HE→BE、金銀銅)。新活動自動歸位。"""
     if '鳳梨' in tag:
@@ -126,6 +139,7 @@ except Exception:
 SINGLE = [('文章類型', C.TYPE), ('文章篇幅', C.LENGTH), ('結局', C.END), ('文章狀態', C.STATUS)]
 
 articles = []
+dead_conflicts = []
 for r in rows:
     b = F.bucketize(r[C.TAGS], (r[C.NO] or '').strip())
     b = merge_facet_cols(b, r)
@@ -149,6 +163,12 @@ for r in rows:
     links = lm.get(title_s)
     if links is None and len(lm) == 1:
         links = next(iter(lm.values()))
+    links = split_links(links)
+    manual_dead = 0 <= H.get('紅標', -1) < len(r) and r[H['紅標']].strip() == 'Y'
+    ext = [l for l in links if not l[1].startswith('annyeongz:')]   # 站內互連(前傳/續寫)不算有效或失效連結
+    n_dead = sum(1 for l in ext if len(l) > 2)
+    if manual_dead and any(len(l) < 3 for l in ext):
+        dead_conflicts.append(no_s)   # 紅標=Y 但還有沒標 ❌ 的連結,待人工確認
     articles.append({
         'no': no_s,
         'name': title_s,
@@ -160,8 +180,8 @@ for r in rows:
         'created': cr_disp,
         'ck': cr_key,
         'tags': tags,
-        'links': links or [],
-        'dead': (0 <= H.get('紅標', -1) < len(r) and r[H['紅標']].strip() == 'Y'),
+        'links': links,
+        'dead': manual_dead or n_dead * 2 > len(ext),   # 紅標,或超過一半連結已失效(大篇幅失去連結)
         'alias': (r[H['收錄篇名']].strip() if 0 <= H.get('收錄篇名', -1) < len(r) else ''),
     })
 
@@ -253,6 +273,8 @@ tpl = tpl.replace('__STMAP_T__', _stT).replace('__STMAP_S__', _stS)
 io.open(os.path.join(OUT, 'index.html'), 'w', encoding='utf-8').write(tpl.replace('/*__DATA__*/', data_decl))
 
 print('site built:', len(articles), 'articles,', len(facet_defs), 'facets (self-contained index.html)')
+if dead_conflicts:
+    print('待確認:紅標但仍有未標 ❌ 的連結 %d 篇(補 ❌ 或取消紅標):No.%s' % (len(dead_conflicts), ', '.join(dead_conflicts)))
 
 # ---- 編號重複偵測 + 下一個可用號 ----
 from collections import defaultdict as _dd

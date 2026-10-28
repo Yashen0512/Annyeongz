@@ -152,6 +152,23 @@
   .badge.dead{background:var(--exc-soft);color:var(--exc);border:1px solid var(--exc);font-weight:700}
   .deadauth{color:var(--exc);font-size:.82em;margin-left:3px}
   .deadnote{color:var(--exc);font-size:12px;margin-top:6px}
+  /* 逐連結:有效排前、失效灰掉(仍可點);全部失效頂端出橫幅 */
+  .deadbar{display:flex;gap:10px;align-items:flex-start;background:var(--exc-soft);border:1px solid var(--exc);border-radius:12px;padding:10px 14px;margin:0 0 12px;color:var(--exc)}
+  .deadbar .ic{font-size:18px;line-height:1.4}
+  .deadbar b{display:block;font-size:15px}
+  .deadbar span{font-size:13px}
+  .links{display:flex;flex-direction:column;gap:10px}
+  .lrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+  .lrow .plat{margin:0}
+  .plat.dead{border:1px dashed var(--muted);color:var(--muted);background:transparent}
+  .lstat{margin-left:auto;font-size:12px;color:var(--muted);padding:2px 8px;border:1px solid var(--line);border-radius:999px}
+  .lnote{flex-basis:100%;font-size:13px;color:var(--muted);margin:-2px 0 0 4px}
+  .lrep{margin-left:auto;font-size:13px;color:var(--muted);background:none;border:none;cursor:pointer;text-decoration:underline;padding:4px 6px}
+  .lrep:hover{color:var(--accent)}
+  .repbox{display:none;flex-basis:100%;margin:2px 0 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+  .repbox.open{display:block}
+  .repbox .q{font-size:13px;margin-bottom:6px}
+  .repbox .opts{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
   .fchip{display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--accent);color:var(--accent);border-radius:999px;padding:2px 10px;font-size:12px;cursor:pointer}
   .fchip:hover{background:var(--accent);color:#fff}
   .fchip.clr{border-color:var(--muted);color:var(--muted)}
@@ -396,6 +413,7 @@
         <button class="ctl" id="rand">🌀 穿越蟲洞</button>
         <button class="ctl" id="shelfBtn">📚 書架</button>
         <label class="ctl chk"><input type="checkbox" id="hideRead">隱藏已讀</label>
+        <label class="ctl chk"><input type="checkbox" id="hideDead">隱藏原文已刪</label>
         <button class="ctl" id="shareBtn" title="複製目前篩選的網址,分享給別人">🔗 複製篩選</button>
         <button class="ctl" id="reset">重設篩選</button>
         <span class="count" id="count"></span>
@@ -563,6 +581,7 @@ function buildPanel(){
 function passes(a){
   if(shelfOn && !SHELF[shelfTab][2].has(a.no)) return false;
   if(!(shelfOn&&shelfTab==='read') && document.getElementById('hideRead')?.checked && readSet.has(a.no)) return false;
+  if(a.dead && document.getElementById('hideDead')?.checked) return false;
   const term=foldZH(q.value.trim());
   if(term){ if(!(a._s||'').includes(term)) return false; }
   if(authorFilter){const ppl=(a.author||'').split('、').concat((a.translator||'').split('、')); if(!ppl.includes(authorFilter)) return false;}
@@ -759,19 +778,22 @@ function personRow(label, namesStr){
 }
 function openByNo(no){const a=D.articles.find(x=>x.no===no);if(a){_navList=null;openDetail(a);}}
 const REPORT_API="https://yashen0512--925fd3b67dd111f1bfe71607ee4eb77e.web.val.run";
-let _rsel=null;   // 目前點選的回報原因
-function toggleReport(){const b=document.getElementById('reportBox');if(!b)return;const show=b.style.display==='none';b.style.display=show?'block':'none';if(show)_rsel=null;}
+function toggleReport(id){const b=document.getElementById(id);if(b)b.classList.toggle('open');}
 function pickReason(btn,other){
-  document.querySelectorAll('#reportOpts .ctl').forEach(x=>x.classList.remove('on'));
-  btn.classList.add('on'); _rsel=btn.textContent.trim();
-  const ta=document.getElementById('reportReason');
+  const box=btn.closest('.repbox');
+  box.querySelectorAll('.opts .ctl').forEach(x=>x.classList.remove('on'));
+  btn.classList.add('on'); box.dataset.sel=btn.textContent.trim();   // 目前點選的回報原因
+  const ta=box.querySelector('textarea');
   if(ta)ta.style.display=other?'block':'none';   // 選「其他」才展開文字框
 }
-function sendReport(no){
-  const ta=document.getElementById('reportReason'), msg=document.getElementById('reportMsg');
+// 逐連結回報:原因前面加上連結名稱(「AFF:🔗 打不開」),服務端不用改
+function sendReport(no,i){
+  const box=document.getElementById('rb'+i); if(!box)return;
+  const ta=box.querySelector('textarea'), msg=box.querySelector('.rmsg');
   const title=_cur?(_cur.name||''):'';
-  if(!_rsel){if(msg)msg.textContent='請先點選一個原因';return;}
-  let reason=_rsel;
+  const label=(_cur&&_cur.links&&_cur.links[i])?_cur.links[i][0]:'';
+  if(!box.dataset.sel){if(msg)msg.textContent='請先點選一個原因';return;}
+  let reason=(label?label+':':'')+box.dataset.sel;
   const extra=(ta&&ta.style.display!=='none'?ta.value:'').trim();
   if(extra)reason+=':'+extra;
   reason=reason.slice(0,500);
@@ -781,6 +803,39 @@ function sendReport(no){
       if(j&&j.ok){if(msg)msg.textContent='✅ 訊號已收到,謝謝回報!';if(ta)ta.value='';}
       else{if(msg)msg.textContent='⚠️ 送出失敗,請稍後再試';}
     }).catch(()=>{if(msg)msg.textContent='⚠️ 送出失敗,請稍後再試';});
+}
+// 連結第三格=1 表示該連結已失效(build_site.py 由 Notion 連結名稱的 ❌ 轉出)
+// 站內互連(annyeongz:,前傳/續寫)只是跳到別篇,不算這篇的有效/失效連結
+const isExt=l=>!l[1].startsWith('annyeongz:');
+function liveCount(a){return (a.links||[]).filter(l=>isExt(l)&&!l[2]).length;}
+function deadBar(a){
+  if(!a.dead||liveCount(a))return '';   // 仍有有效連結時不出橫幅
+  const n=(a.links||[]).filter(isExt).length;
+  return `<div class="deadbar"><span class="ic">⚠️</span><div><b>作者已刪除原文</b>${n?`<span>${n>1?'所有連結都已失效':'此連結已失效'}</span>`:''}</div></div>`;
+}
+function linksHTML(a){
+  const L=a.links||[];
+  if(!L.length)return '<span style="color:var(--muted);font-size:13px">(這篇尚無連結)</span>';
+  const idx=L.map((_,i)=>i), live=liveCount(a)>0;
+  const order=idx.filter(i=>!L[i][2]).concat(idx.filter(i=>L[i][2]));   // 有效排前、失效排後
+  const rows=order.map(i=>{
+    const l=L[i], u=l[1];
+    if(u.startsWith('annyeongz:'))return `<div class="lrow"><a class="plat" style="cursor:pointer" onclick="openByNo('${u.slice(10)}')">${l[0]} ↗</a></div>`;
+    if(l[2])return `<div class="lrow"><a class="plat dead" href="${u}" target="_blank" rel="noopener"><s>${l[0]}</s> ❌</a><span class="lstat">已確認失效</span>${live?'<div class="lnote">此連結已失效,可改讀其他連結</div>':''}</div>`;
+    return `<div class="lrow"><a class="plat" href="${u}" target="_blank" rel="noopener">${l[0]}</a><button class="lrep" onclick="toggleReport('rb${i}')">回報壞掉</button>
+      <div class="repbox" id="rb${i}">
+        <div class="q">回報這個連結的問題:</div>
+        <div class="opts">
+          <button class="ctl" onclick="pickReason(this)">🔗 打不開</button>
+          <button class="ctl" onclick="pickReason(this)">🗑 被刪了</button>
+          <button class="ctl" onclick="pickReason(this)">❓ 內容不符</button>
+          <button class="ctl" onclick="pickReason(this,1)">✏️ 其他</button>
+        </div>
+        <textarea rows="2" placeholder="請簡述問題…" style="display:none;width:100%;box-sizing:border-box;font-size:13px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);resize:vertical"></textarea>
+        <div style="margin-top:6px;display:flex;align-items:center;gap:8px"><button class="ctl" onclick="sendReport('${a.no}',${i})">送出回報</button><span class="rmsg" style="font-size:13px;color:var(--muted)"></span></div>
+      </div></div>`;
+  }).join('');
+  return `<div class="links">${rows}</div>${a.dead&&live?'<div class="deadnote">(此篇多數內容已失效,僅部分連結仍可閱讀)</div>':''}`;
 }
 const REL_FACETS=['CP配對','情感梗','背景設定','類型世界觀','題材梗'];   // 內容面
 function contentTags(a){const out=[];REL_FACETS.forEach(f=>{(a.tags[f]||[]).forEach(t=>out.push(t))});return out;}
@@ -819,25 +874,15 @@ function openDetail(a){
       <button class="ctl${favs.has(a.no)?' on':''}" onclick="toggleFav('${a.no}')">${favs.has(a.no)?'❤️ 已收藏':'🤍 收藏'}${lk?' · '+lk:''}</button>
       <button class="ctl${todoSet.has(a.no)?' on':''}" onclick="toggleTodo('${a.no}')">${todoSet.has(a.no)?'🔖 待閱讀中':'🔖 待閱讀'}</button>
       <button class="ctl${readSet.has(a.no)?' on':''}" onclick="toggleRead('${a.no}')">${readSet.has(a.no)?'✓ 已讀':'標為已讀'}</button>
-      <button class="ctl" onclick="toggleReport()">📡 回報失效</button>
     </div>
+    ${deadBar(a)}
     ${vw?`<div class="viewline">🔭 被觀測 ${vw.toLocaleString()} 次</div>`:''}
-    <div id="reportBox" style="display:none;margin:0 0 12px">
-      <div id="reportOpts" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
-        <button class="ctl" onclick="pickReason(this)">🔗 連結壞掉</button>
-        <button class="ctl" onclick="pickReason(this)">🗑 原文已刪</button>
-        <button class="ctl" onclick="pickReason(this)">❓ 內容不符</button>
-        <button class="ctl" onclick="pickReason(this,1)">✏️ 其他</button>
-      </div>
-      <textarea id="reportReason" rows="2" placeholder="請簡述問題…" style="display:none;width:100%;box-sizing:border-box;font-size:13px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);resize:vertical"></textarea>
-      <div style="margin-top:6px;display:flex;align-items:center;gap:8px"><button class="ctl" onclick="sendReport('${a.no}')">送出回報</button><span id="reportMsg" style="font-size:13px;color:var(--muted)"></span></div>
-    </div>
     ${personRow('作者',a.author)}
     ${personRow('譯者',a.translator)}
     ${a.persona?`<div class="drow"><span class="dk">人設</span><span class="dv">${a.persona.replace(/\n/g,'<br>')}</span></div>`:''}
     ${a.alias?`<div class="drow"><span class="dk">收錄篇名</span><span class="dv">${a.alias.replace(/\n/g,'<br>')}</span></div>`:''}
     ${rows}
-    <div class="drow"><span class="dk">閱讀連結</span><span class="dv">${(a.links&&a.links.length)?a.links.map(l=>l[1].startsWith('annyeongz:')?`<a class="plat" style="cursor:pointer" onclick="openByNo('${l[1].slice(10)}')">${l[0]} ↗</a>`:`<a class="plat" href="${l[1]}" target="_blank" rel="noopener">${l[0]}</a>`).join(''):'<span style="color:var(--muted);font-size:13px">(這篇尚無連結)</span>'}${a.dead?'<div class="deadnote">(原文已刪除,連結可能失效)</div>':''}</span></div>`
+    <div class="drow"><span class="dk">閱讀連結</span><span class="dv">${linksHTML(a)}</span></div>`
     +(()=>{const rel=relatedArticles(a,6);return rel.length?`<div class="drow"><span class="dk">類似的文</span><span class="dv related">${rel.map(x=>`<span class="relitem" onclick="openByNo('${x.no}')">${x.name||'(無標題)'}<span class="rno">#${x.no}</span></span>`).join('')}</span></div>`:'';})()
     +(()=>{const L=navArticles();return navBar(L.findIndex(x=>x.no===a.no),L.length,'篇');})();
   document.getElementById('modal').style.display='flex';
@@ -868,9 +913,10 @@ document.addEventListener('keydown',(e)=>{
   else if(e.key==='ArrowRight')navDetail(1);
 });
 
-document.getElementById('reset').onclick=()=>{for(const k in state)delete state[k];for(const k in modes)delete modes[k];authorFilter=null;shelfOn=false;document.getElementById('hideRead').checked=false;q.value='';document.getElementById('sort').value='old';updateShelfBtn();render();};
+document.getElementById('reset').onclick=()=>{for(const k in state)delete state[k];for(const k in modes)delete modes[k];authorFilter=null;shelfOn=false;document.getElementById('hideRead').checked=false;document.getElementById('hideDead').checked=false;q.value='';document.getElementById('sort').value='old';updateShelfBtn();render();};
 document.getElementById('shelfBtn').onclick=()=>{shelfOn=!shelfOn;updateShelfBtn();render();document.querySelector('.toolbar').scrollIntoView({behavior:'smooth'});};
 document.getElementById('hideRead').onchange=render;
+document.getElementById('hideDead').onchange=render;
 // 可分享的篩選網址:把目前篩選編進網址 #f=,別人打開就是同樣篩選
 function buildShareURL(){
   const o={};
