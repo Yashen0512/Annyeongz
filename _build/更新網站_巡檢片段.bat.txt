@@ -1,0 +1,22 @@
+rem ============================================================================
+rem 更新網站.bat 的可選巡檢片段(此檔只是範本;更新網站.bat 不在 repo 裡,請把下面這段貼進去)
+rem 用法:更新網站.bat          → 跟以前一樣,不巡檢(巡檢要打 1000 多個連結,會慢)
+rem       更新網站.bat 巡檢    → fetch_data.py 之後多跑 check_links.py + notion_writeback.py --go
+rem       更新網站.bat 巡檢 dry → 只巡檢並印出將寫回的清單,不寫 Notion
+rem 放在「python fetch_data.py」那行之後、「python build_site.py」之前(check_links 需要 fetch 產出的 CSV 與 article_links.json)。
+rem ============================================================================
+set AZ_CHECK=
+if /I "%~1"=="巡檢" set AZ_CHECK=1
+if /I "%~1"=="check" set AZ_CHECK=1
+if defined AZ_CHECK (
+    echo.
+    echo ===== 原文連結巡檢(check_links.py)=====
+    python check_links.py
+    if /I "%~2"=="dry" (
+        python notion_writeback.py
+    ) else (
+        python notion_writeback.py --go
+    )
+    echo ===== 巡檢完成;link_status.json 已更新,記得連同 _build\link_status.json 一起 deploy =====
+    echo.
+)

@@ -124,6 +124,15 @@ def split_author_translator(parts, is_translation):
         au, tr = parts, []
     return ([n for n, _ in au], [i for _, i in au], [n for n, _ in tr], [i for _, i in tr])
 
+def split_aliases(cell, name=''):
+    """作者庫「曾用名」欄(multi_select 匯出,', ' 分隔;選項名不會有半形逗號)→ 去重、去掉與目前名稱相同的。"""
+    out = []
+    for x in (cell or '').split(', '):
+        x = x.strip()
+        if x and x != name and x not in out:
+            out.append(x)
+    return out
+
 def nokey(a):
     v = a['no']
     return (0, int(v)) if v.isdigit() else (1, 0)
@@ -154,8 +163,9 @@ def read_csv(path):
     return list(csv.reader(io.open(path, encoding='utf-8-sig')))
 
 def load_people(src_dir):
-    """作者/譯者資料庫 → people {頁面ID: {name, urls:{平台:網址}, aliases:[], dead}}、name2id {名字: 頁面ID}。
-    舊版 CSV 沒有「頁面ID」欄時,ID 由 build_data() 用主表作者欄裡的網址回填(以名字對應)。"""
+    """作者/譯者資料庫 → people {頁面ID: {name, urls:{平台:網址}, aliases:[曾用名], dead}}、name2id {名字: 頁面ID}。
+    舊版 CSV 沒有「頁面ID」欄時,ID 由 build_data() 用主表作者欄裡的網址回填(以名字對應)。
+    「曾用名」欄(notion_writeback.py 同步改名時累積,', ' 分隔)→ aliases;沒有這欄就是空陣列。"""
     people, name2id = OrderedDict(), {}
     afs = glob.glob(os.path.join(src_dir, '_authors', '*_all.csv'))
     if not afs:
@@ -165,6 +175,7 @@ def load_people(src_dir):
     ncol = ah.get('作者名稱', 0)
     rcol = ah.get('紅標', -1)
     icol = ah.get('頁面ID', -1)
+    acol = ah.get('曾用名', -1)
     for ar in arows[1:]:
         name = (ar[ncol] or '').strip() if ncol < len(ar) else ''
         if not name:
@@ -177,7 +188,7 @@ def load_people(src_dir):
             ci = ah.get(col, -1)
             if 0 <= ci < len(ar) and ar[ci].strip().startswith('http'):
                 urls[lab] = ar[ci].strip()
-        people[pid] = {'name': name, 'urls': urls, 'aliases': [],
+        people[pid] = {'name': name, 'urls': urls, 'aliases': split_aliases(ar[acol] if 0 <= acol < len(ar) else '', name),
                        'dead': 0 <= rcol < len(ar) and ar[rcol].strip() == 'Y'}
         name2id.setdefault(name, pid)
     return people, name2id

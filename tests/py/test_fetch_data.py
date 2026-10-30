@@ -36,3 +36,11 @@ def test_resolve_token_prefers_env_then_file_then_empty(tmp_path, monkeypatch):
     assert FD.resolve_token() == 'secret_file'
     monkeypatch.setenv('NOTION_TOKEN', 'secret_env')
     assert FD.resolve_token() == 'secret_env'
+
+def test_block_links_returns_rich_text_index():
+    blk = {'type': 'heading_2', 'heading_2': {'rich_text': [
+        {'plain_text': 'Postype-原文', 'href': 'https://p/1'}, {'plain_text': '❌', 'href': None}, {'plain_text': 'LFT', 'href': 'https://l/1'}]}}
+    assert FD.block_links(blk) == [['Postype-原文❌LFT', 'https://p/1', 0], ['Postype-原文❌LFT', 'https://l/1', 2]]
+    bm = {'type': 'bookmark', 'bookmark': {'url': 'https://b/1', 'caption': []}}
+    assert FD.block_links(bm) == [['https://b/1', 'https://b/1', -1]]
+    assert FD.block_links({'type': 'divider', 'divider': {}}) == []

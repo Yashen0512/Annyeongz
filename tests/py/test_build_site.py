@@ -196,3 +196,18 @@ def test_number_report_detects_duplicates_and_gaps():
     arts = [{'no': '1', 'name': 'a'}, {'no': '1', 'name': 'b'}, {'no': '3', 'name': 'c'}, {'no': '10001', 'name': 'e'}]
     lines = '\n'.join(B.number_report(arts))
     assert 'No 1 重複 2 篇' in lines and '可回填空號(1 個):2' in lines and '一般文最大 3' in lines
+
+# ---- 曾用名 → aliases ----
+def test_split_aliases():
+    assert B.split_aliases('舊名, 更舊的名, 舊名', '新名') == ['舊名', '更舊的名']
+    assert B.split_aliases('新名', '新名') == []
+    assert B.split_aliases('', '新名') == []
+
+def test_load_people_reads_alias_column(tmp_path):
+    d = tmp_path / '_authors'; d.mkdir()
+    (d / 'authors_all.csv').write_text(
+        '﻿作者名稱,作者平台(PT),紅標,頁面ID,曾用名\n新名,https://www.postype.com/profile/@a,,%s,"舊名, 更舊"\n無曾用名,,,%s,\n' % ('a' * 32, 'b' * 32),
+        encoding='utf-8')
+    people, _ = B.load_people(str(tmp_path))
+    assert people['a' * 32]['aliases'] == ['舊名', '更舊'] and people['a' * 32]['urls'] == {'Postype': 'https://www.postype.com/profile/@a'}
+    assert people['b' * 32]['aliases'] == []

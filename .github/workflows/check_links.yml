@@ -1,0 +1,77 @@
+# 原文死連結巡檢 + 作者改名同步(寫回 Notion)。
+# 每天台灣時間 03:00(= UTC 19:00 前一天)跑:fetch_data.py(拿最新連結 / 作者庫)→ check_links.py(巡檢,不寫 Notion)
+# → notion_writeback.py --go(❌ / 曾用名寫回 Notion)→ commit link_status.json;有變更就開 Issue。
+# 這樣 08:31 的 sync 就會抓到最新狀態。也可用 workflow_dispatch 手動觸發(可選 dry-run 不寫 Notion)。
+name: Check original links
+
+on:
+  schedule:
+    - cron: '0 19 * * *'   # 03:00 Asia/Taipei
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '只巡檢、不寫 Notion(dry-run)'
+        type: boolean
+        default: false
+      platforms:
+        description: '要檢查的平台(逗號分隔)'
+        default: 'postype,lofter,ao3,aff'
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: check-links
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch latest links & authors from Notion
+        working-directory: _build
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          PYTHONIOENCODING: utf-8
+        run: python fetch_data.py
+      - name: Check links
+        working-directory: _build
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python check_links.py --platforms "${{ github.event.inputs.platforms || 'postype,lofter,ao3,aff' }}"
+      - name: Write back to Notion
+        working-directory: _build
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          PYTHONIOENCODING: utf-8
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            python notion_writeback.py
+          else
+            python notion_writeback.py --go
+          fi
+      - name: Commit link_status.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add _build/link_status.json
+          if git diff --cached --quiet; then
+            echo "No changes."
+          else
+            git commit -m "巡檢:更新 link_status.json"
+            git pull --rebase origin main || true
+            git push
+          fi
+      - name: Open issue when something changed
+        if: ${{ hashFiles('_build/check_report.md') != '' && github.event.inputs.dry_run != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE="原文狀態變更 $(TZ=Asia/Taipei date +%F)"
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file _build/check_report.md

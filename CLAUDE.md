@@ -44,9 +44,11 @@ styles/                    樣式,依原本的 cascade 順序切成六個檔(ind
 vendor/                    第三方單檔(Chart.js 統計星圖;lz-string 壓縮與 qrcode-generator 產 QR 給書架匯出),傳統 <script> 載入、不走 npm;首頁的 lz-string / qrcode 由 main.js ensureVendor() 在按匯出 / 匯入時才載;版本與授權見 vendor/README.md
 tests/                     測試
   *.test.js                Vitest(filter / sort / url / data(expandData)/ stats / storage 純函式)+ fixtures.js
-  py/                      pytest(build_site / fetch_data / build_pages 純函式 + 用 30 篇 fixture 跑完整建置與產頁、精簡格式 round-trip、sw 版本號)
+  py/                      pytest(build_site / fetch_data / build_pages 純函式 + 用 30 篇 fixture 跑完整建置與產頁、精簡格式 round-trip、sw 版本號;
+                           checkers HTML 樣本;check_links 狀態機與改名判斷;notion_writeback 的 rich_text 純函式)
   fixtures/build_input/    30 篇的建置輸入(主表 / 作者 / 公告 CSV、article_links.json、expected.json),由 make_fixture.py 從 data.json 反推
   fixtures/compact_30.json 同 30 篇的精簡格式(vitest 與 pytest 的對照檔,make_fixture.py 一起重產)
+  fixtures/html/           各平台頁面的最小 HTML 樣本(正常 / 已刪 / 登入牆 / Cloudflare 挑戰頁),給 checkers 測試用
 docs/                      lighthouse-before.json / lighthouse-after.json(行動版四項分數與主要紅字)、axe-before.json / axe-after.json(無障礙掃描)
 _build/                    建置工具(Python,只用標準庫;build_pages.py 另需 Pillow)
   fetch_data.py            從 Notion API 抓主表 / 作者 / 公告 / 每篇連結 → CSV + article_links.json(主流程在 main())
@@ -59,9 +61,15 @@ _build/                    建置工具(Python,只用標準庫;build_pages.py �
   sw_template.js           service worker 樣板(__SW_VERSION__ 由 build_site.py 以 synced 時間戳帶入)
   facets_def.py            分面定義、標籤改名 / 合併規則、逐篇人工校正(單一事實來源)
   stmap.txt                簡繁對照表(兩行:繁字串 / 簡字串,逐字對應)
-  article_links.json       每篇閱讀連結(fetch_data.py 產生)
+  article_links.json       每篇閱讀連結(fetch_data.py 產生;保留鍵 __edited__ / __blocks__ 見「原文巡檢」)
   reactions_backup.json    愛心 / 觀測計數的備份({編號: [愛心, 觀測]})
-.github/workflows/         sync.yml(同步 Notion + 建置 + 部署)、static.yml(push main → 部署)、test.yml(PR → Vitest + pytest)
+  probe.py                 可行性測試:四個平台各抓正常 / 已刪 / 不存在三個連結,印狀態碼、最終網址、HTML 前 2000 字
+  checkers/                各平台「還在不在」檢查器(postype / lofter / ao3 / aff;共用介面 check(url))
+  check_links.py           每日巡檢:所有原文連結 + 作者庫平台網址 → link_status.json、check_report.json(不寫 Notion)
+  notion_writeback.py      把巡檢結果寫回 Notion(❌ 標記 / 作者改名 + 曾用名);預設 dry-run,--go 才寫
+  link_status.json         每個連結的上次狀態、連續天數、上次檢查時間(commit 進 repo;巡檢排程每天更新)
+.github/workflows/         sync.yml(同步 Notion + 建置 + 部署)、static.yml(push main → 部署)、test.yml(PR → Vitest + pytest)、
+                           check_links.yml(每天 03:00 巡檢原文連結 + 寫回 Notion + 開 Issue)
 requirements.txt           建置相依:只有 Pillow(build_pages.py 畫 OG 圖);sync.yml 與站長電腦都要裝
 package.json / pytest.ini / requirements-dev.txt   只為了測試,部署用不到
 ```
@@ -96,6 +104,9 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
     也要把 `site/p/`、`sitemap.xml`、`feed*.xml`、`robots.txt` 一併部署。站長電腦要 `pip install -r requirements.txt` 一次。
     `build_site.py` 會把 `src/`、`styles/`、`vendor/`、`assets/` 與 `stats.html`、manifest、橫幅 PNG 一起複製進輸出資料夾(`STATIC_DIRS` / `STATIC_FILES`),
     所以本機產出的 `site/` 用 http 伺服器開就能用(含統計星圖),.bat 與 deploy.py 不需要改。
+- **第三條路徑:原文巡檢(`check_links.yml`,每天台灣時間 03:00)**:`fetch_data.py` → `check_links.py` → `notion_writeback.py --go`
+  → commit `_build/link_status.json`;有變更就開 Issue「原文狀態變更 YYYY-MM-DD」。巡檢結果**只寫回 Notion**(❌ 與作者庫),
+  不碰 data.json / CSV,08:31 的 sync 再把它建進網站。細節見下方「原文巡檢與寫回」。
 - **結論:`index.html`、`data.json`、`sw.js`、`p/`、`sitemap.xml`、`feed*.xml` 都是產物,不要直接改。** 要改前端一律改 `_build/site_template.html`、`_build/sw_template.js`
   與它引用的 `src/`、`styles/`,再由 `build_site.py` 產出;要改分享頁 / OG 圖 / sitemap / RSS 改 `_build/build_pages.py`(改了版面記得把 `PAGE_VERSION` / `OG_VERSION` +1,才會全部重產)。
   `sw.js` 的版本號(`VERSION`)由建置以 `synced` 時間戳帶入(`sw_version()`,格式 `YYYYMMDD-HHMM`),每次建置都不同,靜態快取靠它分版;**不要手寫**。
@@ -121,7 +132,7 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
 | `total` | 文章總數(主列表「共 N / total 篇」) |
 | `facets` | 分面清單 `[{key, type:'single'|'multi', options:[[標籤, 篇數], ...]}]`;single = 文章類型 / 文章篇幅 / 結局 / 文章狀態(每篇最多一個值),multi = 其餘(CP配對、氛圍、情感梗、背景設定、類型世界觀、題材梗、分級、形式/性質、三個合集活動面)。options 順序就是面板顯示順序 |
 | `articles` | 文章陣列,**預設依編號大→小** |
-| `people` | 作者 / 譯者資料庫,**以 Notion 作者頁 ID(32 碼)為鍵**:`{id: {name 目前顯示名, urls:{平台: 網址}, aliases:[曾用名,先留空、之後由巡檢填], dead 已刪帳號}}`。作者庫每一位都在(沒填平台的 `urls` 是 `{}`);主表關聯到但作者庫讀不到的,會用名字補一筆 |
+| `people` | 作者 / 譯者資料庫,**以 Notion 作者頁 ID(32 碼)為鍵**:`{id: {name 目前顯示名, urls:{平台: 網址}, aliases:[曾用名,來自作者庫「曾用名」multi_select,由巡檢改名時填], dead 已刪帳號}}`。作者庫每一位都在(沒填平台的 `urls` 是 `{}`);主表關聯到但作者庫讀不到的,會用名字補一筆 |
 | `announcements` | 公告 `[{content, date:'2026/10/18', dk:20261018, pin:true}]` |
 | `updated` | 資料庫更新時間(所有文章最新的編輯時間,頁尾「星圖更新」) |
 | `synced` | 本次建置時間(頁尾「訊號同步」) |
@@ -160,7 +171,7 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
 | `links` | 頁面**內文**區塊裡的連結(`article_links.json`);`@` 提及站內另一篇 → `annyeongz:<No>` | 名稱含 ❌ → 第三格 1 |
 | `dead` | 頁面圖示紅色(CSV `紅標` = Y)或 ❌ 連結過半 | `is_dead` |
 | `alias` | `收錄篇名`(rich_text) | |
-| `people[id]` | 作者庫:`作者名稱`(title)、`作者平台(AF/AO3/LFT/LFT2/PT/WB/X/其他)`(url)、頁面圖示紅色 → `紅標`、頁面 ID → `頁面ID` | 舊版作者 CSV 沒有 `頁面ID` 欄時,ID 由主表作者欄的網址回填 |
+| `people[id]` | 作者庫:`作者名稱`(title)、`作者平台(AF/AO3/LFT/LFT2/PT/WB/X/其他)`(url)、頁面圖示紅色 → `紅標`、頁面 ID → `頁面ID`、`曾用名`(multi_select,', ' 分隔)→ `aliases` | 舊版作者 CSV 沒有 `頁面ID` 欄時,ID 由主表作者欄的網址回填;沒有 `曾用名` 欄 → aliases 空 |
 | `announcements` | 公告庫:`內容`、`日期`、`置頂`(checkbox) | |
 
 - **鐵則:作品 `No` 永不重編。** 站內跳轉(`annyeongz:<No>`)、書架與已讀的 localStorage、分享網址、`article_links.json` 的鍵、
@@ -199,6 +210,45 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
   - 跨網域(Postype / Lofter / AO3 / AFF 閱讀連結、Val Town、GoatCounter)一律不攔、不快取。
   - 「⬇️ 安裝」鈕(`#installBtn`)只在 `beforeinstallprompt` 觸發時顯示;`appinstalled` 後隱藏。
   - 改了 `src/`、`styles/`、`assets/` 的檔名,記得同步 `_build/sw_template.js` 的 `PRECACHE` 清單與 `index.html` 的 modulepreload。
+
+## 原文巡檢與寫回(`_build/check_links.py` → `_build/notion_writeback.py`)
+
+目標:每天自動檢查所有原文連結是否還存在、同步作者改名,**結果寫回 Notion**(資料唯一源頭),網站下次 sync 自然更新。
+所有腳本只用標準庫,放在 `_build/`,由站長電腦的 deploy.py 一併同步。
+
+- **檢查器 `_build/checkers/`**:依網域分派 `postype.py` / `lofter.py` / `ao3.py` / `aff.py`,共用介面
+  `check(url) → {status: 'ok'|'deleted'|'login_required'|'unknown', author_name: str|None, …}`;每個平台的判斷規則寫在檔頭,
+  核心是純函式 `parse(code, final_url, html, url)`,pytest 用 `tests/fixtures/html/` 的樣本直接測。`author_name` 是頁面上解析到的
+  作者**目前顯示名**(Postype 取 ld+json author.name;Lofter 取 og:site_name / `<title>` 博客名;AO3 取 byline 的 pseud;
+  AFF 取作者連結文字),解析不到就 None,不猜。
+- **2026-10-30 用 `probe.py` 實測(雲端 / GitHub Actions 這類海外 IP)**:Postype 單篇(`/post/`)正常 200 + ld+json、已刪 / 不存在都 404,可靠;
+  Postype **系列頁(`/series/`)文全刪後仍 200**,要看標頭「총 N화」:N = 0 → deleted(`series_empty`)、N > 0 → ok、找不到 → unknown;
+  **Lofter 一律 302 → www.lofter.com/front/login(登入牆)、AO3 一律 418 Cloudflare「Request temporarily denied」、
+  AFF 一律 403 Cloudflare「Just a moment」** → 這三個平台的 checker 會回 `login_required` / `unknown`(`blocked=True`),
+  `check_links.py` 看到某平台前 3 筆全被擋就略過該平台其餘連結,**不會把任何連結標成已刪**。它們的 deleted 規則依已知行為寫成、
+  尚未實測,站長在看得到這些平台的網路跑才會生效。
+- **`check_links.py`**(不寫 Notion):來源 = `article_links.json` 的每篇連結 + 作者庫 CSV 的平台網址(沒有 CSV 時退回 `../data.json`,`expand_data` 還原);
+  四個平台各一條執行緒交錯,同平台間隔 1.5~3 秒隨機;逾時 / 5xx / 429 重試 2 次,仍失敗 = `unknown`(不算已刪)。
+  狀態機(`advance`):只有**連續兩天**都 `deleted` 才算真的死(`dead`),同一天重跑不重複計,`unknown` 不改任何計數;
+  已死的每 30 天複查一次(`is_due`),複查看到 `ok` 就復活。狀態存 `_build/link_status.json`(以網址為鍵:
+  `{status, streak, last, counted, dead, dead_since, author_name, platform, …}`),commit 進 repo。
+  輸出 `check_report.json`(新死 / 復活 / 改名 / 改名候選 / 作者頁失效 / 各平台統計)與有變更時的 `check_report.md`(Issue 內文)。
+  報告以「該是什麼狀態」為準:**新死 = dead 且 Notion 連結名稱還沒有 ❌;復活 = Notion 有 ❌ 但今天看到 ok**,所以寫回失敗隔天會再列。
+- **`notion_writeback.py`**:預設 dry-run 只印清單,`--go` 才寫。
+  - 死連結:用 `article_links.json` 的 `__blocks__`(`{No: {page: 頁面ID, links: {網址: [blockID, rich_text 位置]}}}`,
+    `fetch_data.py` 記錄)找到該連結的 block,在連結文字**前**插入一段純文字「❌」;復活就把連結段落與緊鄰前後純文字段裡的 ❌
+    都清掉(相容站長以前手動加在連結後面的寫法)。`build_site.py` 既有的 dead 判定(❌ 過半)自動接手。block 對不上就重掃頁面
+    子 block 找 href,連頁面 ID 都沒有就用 No 查主表。
+  - 作者改名:同一作者(Notion 作者頁 ID)在同一平台有**兩篇以上**單一作者作品解析到同一個新名字、該名字不是目前名稱 / 括號內別名 /
+    曾用名、該名字 / 帳號沒出現在別的作者名下(合集帳號)、**且作者庫該平台網址的帳號與頁面作者帳號相符** → 把作者庫「作者名稱」
+    改成新名字,並把舊名加進「曾用名」multi_select(不存在就用 database update API 建立;不刪、不重複;半形逗號換全形)。
+    作者庫沒有該平台網址、無法核對的只列為「候選」,不寫回。寫之前再讀一次作者頁,title 已不是報告的舊名就跳過。
+- **排程 `check_links.yml`**:每天 UTC 19:00(台灣 03:00)與 `workflow_dispatch`(可選 dry-run、平台);讀 secret `NOTION_TOKEN`;
+  commit `_build/link_status.json`;`check_report.md` 存在(有新死 / 復活 / 改名)就用 `gh issue create` 開 Issue。
+- **本機**:`更新網站.bat` 預設不巡檢;帶參數(`更新網站.bat 巡檢`)才在 fetch 之後跑 `check_links.py` + `notion_writeback.py --go`,
+  片段在 `_build/更新網站_巡檢片段.bat.txt`。
+- 手動測試:`python check_links.py --platforms postype --no 1352,1255`(只查這幾篇)→ `python notion_writeback.py --no 1352`(dry-run)
+  → 加 `--go`。`article_links.json` 的保留鍵一律以 `__` 開頭,迭代時要跳過。
 
 ## 篩選邏輯(`src/filter.js`)
 
@@ -334,6 +384,7 @@ npm test                          # vitest run:tests/filter.test.js、sort.test.
 pip install -r requirements-dev.txt   # 只需一次(pytest + Pillow)
 python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆分與 ID、日期、精簡格式 round-trip、sw 版本號、30 篇 fixture 完整建置比對)、fetch_data(No 三種型別、token 來源)、
                                   #          build_pages(描述 / 標題折行 / 字型回退 / sitemap / RSS、30 篇產頁與 hash 跳過重產)
+                                  #          checkers(各平台 HTML 樣本)、check_links(連續兩天狀態機、到期、改名判斷、平台被擋短路、重試)、notion_writeback(❌ 加 / 移除、PATCH 格式、曾用名合併)、build_site 曾用名、fetch_data block 位置
 ```
 
 - `.github/workflows/test.yml` 在 PR 時兩組都自動跑,不需要 Notion token。
@@ -345,7 +396,8 @@ python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆�
   前後分數在 `docs/lighthouse-before.json` / `docs/lighthouse-after.json`。本機 http.server 不壓縮,線上 GitHub Pages 會 gzip,實際更快。
   axe(無障礙)用 Playwright 注入 axe-core 跑首頁,結果在 `docs/axe-after.json`。
 - 純函式模組(filter / sort / url / related / stats)不可 import DOM 或 `window`,這樣才能在 Node 直接測;
-  `build_site.py` / `fetch_data.py` / `build_pages.py` 的 import 不能有副作用(網路、讀 CSV、載字型),主流程放 `main()`。
+  `build_site.py` / `fetch_data.py` / `build_pages.py` / `check_links.py` / `notion_writeback.py` 的 import 不能有副作用(網路、讀 CSV、載字型),主流程放 `main()`;
+  `checkers/*.py` 的判斷邏輯放在 `parse()` 純函式,`check()` 才碰網路。
 - 改畫面或行為前後,建議用 Playwright 把舊版與新版同時跑一遍比對 DOM 與截圖(這次拆模組就是這樣驗的)。
 
 ## 程式慣例

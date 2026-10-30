@@ -2,3 +2,11 @@ node_modules/
 __pycache__/
 .pytest_cache/
 site/
+_build/check_report.json
+_build/check_report.md
+_build/*_all.csv
+_build/_authors/
+_build/_announce/
+_build/stats.json
+_build/notion_token.txt
+_build/goatcounter_token.txt
