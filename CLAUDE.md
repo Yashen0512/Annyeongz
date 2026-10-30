@@ -17,7 +17,6 @@
 index.html                 由樣板建置出來的首頁(含注入的資料),不要手改 → 改 _build/site_template.html
 data.js                    window.DATA = {...} 全部資料(建置產物,也會注入 index.html)
 stats.html                 📊 統計星圖(靜態頁,不經樣板;用 <script src="data.js"> 讀同一份資料,圖表用 Chart.js)
-vendor/                    第三方庫本機副本:chart.umd.js(Chart.js 4,UMD,不走 CDN、離線可用;版本見 vendor/README.md)
 src/                       前端程式(ES modules,無框架)
   main.js                  組裝:狀態、DOM 事件、呼叫各模組、啟動順序
   data.js                  載入與正規化 window.DATA、簡繁折算、資料存取小工具
@@ -47,7 +46,7 @@ _build/                    建置工具(Python,只用標準庫)
   stmap.txt                簡繁對照表(兩行:繁字串 / 簡字串,逐字對應)
   article_links.json       每篇閱讀連結(fetch_data.py 產生)
   reactions_backup.json    愛心 / 觀測計數的備份({編號: [愛心, 觀測]})
-sw.js                      PWA service worker(network-first;預先快取 src/ 與 styles/)
+sw.js                      PWA service worker(network-first;預先快取 src/、styles/、vendor/ 與 stats.html)
 manifest.webmanifest       PWA 設定
 .github/workflows/         sync.yml(同步 Notion + 建置 + 部署)、static.yml(push main → 部署)、test.yml(PR → Vitest + pytest)
 package.json / pytest.ini / requirements-dev.txt   只為了測試,部署用不到
