@@ -16,6 +16,8 @@
 ```
 index.html                 由樣板建置出來的首頁(含注入的資料),不要手改 → 改 _build/site_template.html
 data.js                    window.DATA = {...} 全部資料(建置產物,也會注入 index.html)
+stats.html                 📊 統計星圖(靜態頁,不經樣板;用 <script src="data.js"> 讀同一份資料,圖表用 Chart.js)
+vendor/                    第三方庫本機副本:chart.umd.js(Chart.js 4,UMD,不走 CDN、離線可用;版本見 vendor/README.md)
 src/                       前端程式(ES modules,無框架)
   main.js                  組裝:狀態、DOM 事件、呼叫各模組、啟動順序
   data.js                  載入與正規化 window.DATA、簡繁折算、資料存取小工具
@@ -28,15 +30,17 @@ src/                       前端程式(ES modules,無框架)
   reactions.js             公開愛心數 / 觀測數的本機狀態與同步
   api.js                   站外服務(Val Town)的 fetch 包裝
   intro.js                 開場動畫(傳統 script,非 module;需同步執行)
-styles/                    樣式,依原本的 cascade 順序切成六個檔(index.html 依序載入)
-  base.css panel.css main.css modal.css responsive.css intro.css
+  stats.js                 統計星圖:統計純函式(每月分組 / 排行 / 比例 / 年度已刪)+ Chart.js 設定物件 + createCharts
+  stats_page.js            統計星圖的組裝:讀 CSS 變數當圖表顏色、主題切換重畫、「全部 / 排除已刪」、計數讀取與備份退路
+styles/                    樣式,依原本的 cascade 順序切成六個檔(index.html 依序載入)+ stats.css(統計星圖專用)
+  base.css panel.css main.css modal.css responsive.css intro.css stats.css
 tests/                     測試
-  *.test.js                Vitest(filter / sort / url 純函式)+ fixtures.js
+  *.test.js                Vitest(filter / sort / url / stats 純函式)+ fixtures.js
   py/                      pytest(build_site / fetch_data 純函式 + 用 30 篇 fixture 跑完整建置)
   fixtures/build_input/    30 篇的建置輸入(主表 / 作者 / 公告 CSV、article_links.json、expected.json),由 make_fixture.py 從 data.js 反推
 _build/                    建置工具(Python,只用標準庫)
   fetch_data.py            從 Notion API 抓主表 / 作者 / 公告 / 每篇連結 → CSV + article_links.json(主流程在 main())
-  build_site.py            CSV → data.js + index.html(樣板注入資料與簡繁對照表)+ 複製 src/、styles/;含編號重複 / 架構自檢(build_data / write_site 可被 import)
+  build_site.py            CSV → data.js + index.html(樣板注入資料與簡繁對照表)+ 複製 src/、styles/、vendor/、stats.html;含編號重複 / 架構自檢(build_data / write_site 可被 import)
   site_template.html       首頁樣板(真正要改的 HTML 在這裡)
   facets_def.py            分面定義、標籤改名 / 合併規則、逐篇人工校正(單一事實來源)
   stmap.txt                簡繁對照表(兩行:繁字串 / 簡字串,逐字對應)
@@ -70,7 +74,8 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
     然後 `git add index.html data.js _build/article_links.json _build/reactions_backup.json` commit 回 `main` 再部署。
   - 本機 `更新網站.bat`(不在 repo 裡,在站長電腦上)跑同一組 `fetch_data.py` → `build_site.py`,沒設 `SITE_OUT` 時輸出到 `../site`
     (也就是倉庫旁的 `site/` 資料夾,不進版控);`deploy.py`(同樣不在 repo 裡)負責把本機腳本同步進 `_build/`。
-    `build_site.py` 現在會把 `src/`、`styles/` 一起複製進輸出資料夾,所以本機產出的 `site/` 用 http 伺服器開就能用,.bat 與 deploy.py 不需要改。
+    `build_site.py` 現在會把 `src/`、`styles/`、`vendor/` 與 `stats.html` 一起複製進輸出資料夾(`STATIC_DIRS` / `STATIC_FILES`),
+    所以本機產出的 `site/` 用 http 伺服器開就能用(含統計星圖),.bat 與 deploy.py 不需要改。
 - **結論:`index.html` 與 `data.js` 是產物,不要直接改。** 要改前端一律改 `_build/site_template.html` 與它引用的 `src/`、`styles/`,再由 `build_site.py` 產出。
 - Token:`fetch_data.py` 先看 `NOTION_TOKEN` 環境變數(Actions 的 secret)、再看 `_build/notion_token.txt`(本機,不進版控)、
   都沒有就**不帶 Authorization header** 直接送,交給雲端開發環境的網路代理注入。本機與 Actions 行為不變。
@@ -223,11 +228,24 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
 - `package.json` / `tests/` / `node_modules` 只為了測試,部署用不到(`node_modules` 不進版控)。
 - 改了 `src/` 或 `styles/` 的檔名,記得同步 `sw.js` 的預先快取清單並把 `CACHE` 版本號 +1。
 
+## 統計星圖(`stats.html`)
+
+- 首頁頁尾「🌌 宇宙誕生於 2023/08/07」旁的「📊 統計星圖」連過來。**靜態頁、不經樣板注入**:`<script src="data.js">` 讀同一份 `window.DATA`,
+  所以資料跟首頁一樣在每次同步後更新;`build_site.py` 會把它與 `vendor/` 複製進輸出資料夾,`sync.yml` / `static.yml` 原樣上傳整個倉庫就部署了。
+- 圖表用 **Chart.js 4 的 UMD 本機副本**(`vendor/chart.umd.js`,不走 CDN),六塊:總覽數字卡、每月收錄趨勢(2023/08 起,新收錄 + 累積右軸)、
+  標籤篇數排行(前 20,可切「全部 / 排除已刪」,只算多選分面、與熱門星系一致)、作者篇數排行(前 20,作者 + 譯者都算、以作者頁 ID 歸戶;
+  點長條 → 首頁 `#f={"a":名字}`)、愛心 × 觀測散佈(每點一篇,hover 顯示標題,點了開 `./?p=<編號>`;分享頁 `/p/<編號>/` 上線後改 `stats_page.js` 的 `articleURL`)、
+  已刪趨勢(依收錄年份堆疊:仍可閱讀 / 原文已刪)。
+- 愛心 / 觀測計數先 GET `REACT_API`(`stats.html` 內的 `window.AZ_CONFIG`,與樣板同一個端點),失敗退回 `_build/reactions_backup.json`;原文已刪不計。
+- **圖表顏色全部從 CSS 變數讀**(`--accent`、`--be`、`--he`、`--exc`、`--purp`、`--ink`、`--muted`、`--line`、`--card`),切主題就 destroy 重畫;
+  手機(≤560px)每張圖單欄、圖本身保留最小寬度在卡片內橫向捲動。
+- 統計計算是純函式(`src/stats.js` 前半,`tests/stats.test.js` 測每月分組、排行、比例、年度、散佈點與圖表設定);`stats_page.js` 才碰 DOM。
+
 ## 測試
 
 ```bash
 npm install                       # 只需一次(vitest 是 devDependency)
-npm test                          # vitest run:tests/filter.test.js、sort.test.js、url.test.js
+npm test                          # vitest run:tests/filter.test.js、sort.test.js、url.test.js、stats.test.js
 pip install -r requirements-dev.txt   # 只需一次(pytest)
 python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆分與 ID、日期、30 篇 fixture 完整建置比對)、fetch_data(No 三種型別、token 來源)
 ```
@@ -235,7 +253,7 @@ python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆�
 - `.github/workflows/test.yml` 在 PR 時兩組都自動跑,不需要 Notion token。
 - fixture 由 `python3 tests/fixtures/make_fixture.py` 從 `data.js` 反推(30 篇:含空作者、多作者、譯文、站內互連、兩種 dead、收錄篇名);
   `expected.json` 是這 30 篇在 `data.js` 的原樣,測試斷言「從 CSV 重建 == 原本」。資料格式改了就重產 fixture。
-- 純函式模組(filter / sort / url / related)不可 import DOM 或 `window`,這樣才能在 Node 直接測;
+- 純函式模組(filter / sort / url / related / stats)不可 import DOM 或 `window`,這樣才能在 Node 直接測;
   `build_site.py` / `fetch_data.py` 的 import 不能有副作用(網路、讀 CSV),主流程放 `main()`。
 - 改畫面或行為前後,建議用 Playwright 把舊版與新版同時跑一遍比對 DOM 與截圖(這次拆模組就是這樣驗的)。
 

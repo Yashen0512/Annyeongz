@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """一鍵更新 ②:把 fetch_data.py 產出的 CSV / article_links.json 套上 facets_def 分面定義,
-   輸出 data.js 與 index.html(樣板注入資料與簡繁對照表),並把 src/、styles/ 一起複製到輸出資料夾。
+   輸出 data.js 與 index.html(樣板注入資料與簡繁對照表),並把 src/、styles/、vendor/ 與 stats.html(統計星圖)一起複製到輸出資料夾。
    只用標準庫。所有步驟都是函式,pytest 可以用 fixture 資料夾直接呼叫 build_data() / write_site()。"""
 import csv, glob, io, json, os, re, shutil
 from collections import Counter, OrderedDict
@@ -357,23 +357,31 @@ def render_index(tpl, DATA, stmap):
     tpl = tpl.replace('__STMAP_T__', stmap[0]).replace('__STMAP_S__', stmap[1])
     return tpl.replace('/*__DATA__*/', data_decl(DATA))
 
-STATIC_DIRS = ('src', 'styles')   # 前端程式與樣式,源頭在倉庫根目錄,建置時一起複製到輸出資料夾
+STATIC_DIRS = ('src', 'styles', 'vendor')   # 前端程式、樣式、第三方庫(Chart.js),源頭在倉庫根目錄,建置時一起複製到輸出資料夾
+STATIC_FILES = ('stats.html',)              # 不經樣板注入的靜態頁(統計星圖讀 data.js),同樣要跟著複製
 
 def copy_static(repo_root, out_dir):
-    """把 repo_root/src、repo_root/styles 複製到 out_dir(輸出就是倉庫根目錄時不動)。"""
+    """把 repo_root 的 STATIC_DIRS 資料夾與 STATIC_FILES 檔案複製到 out_dir(輸出就是倉庫根目錄時不動)。"""
     copied = []
+    if os.path.abspath(repo_root) == os.path.abspath(out_dir):
+        return copied
     for d in STATIC_DIRS:
         s, t = os.path.join(repo_root, d), os.path.join(out_dir, d)
-        if not os.path.isdir(s) or os.path.abspath(s) == os.path.abspath(t):
+        if not os.path.isdir(s):
             continue
         if os.path.isdir(t):
             shutil.rmtree(t)
         shutil.copytree(s, t)
         copied.append(d)
+    for f in STATIC_FILES:
+        s = os.path.join(repo_root, f)
+        if os.path.isfile(s):
+            shutil.copy2(s, os.path.join(out_dir, f))
+            copied.append(f)
     return copied
 
 def write_site(DATA, src_dir, out_dir, repo_root=None):
-    """輸出 data.js、index.html,並複製 src/、styles/。回傳 (樣板字串, 複製了哪些資料夾)。"""
+    """輸出 data.js、index.html,並複製 src/、styles/、vendor/、stats.html。回傳 (樣板字串, 複製了哪些資料夾 / 檔案)。"""
     os.makedirs(out_dir, exist_ok=True)
     decl = data_decl(DATA)
     io.open(os.path.join(out_dir, 'data.js'), 'w', encoding='utf-8').write(decl)   # 也單獨輸出 data.js(供分檔部署)
@@ -436,6 +444,11 @@ def self_check(tpl, H, out_dir):
     for d in STATIC_DIRS:
         if not os.path.isdir(os.path.join(out_dir, d)):
             _warn.append('輸出資料夾缺少 %s/(index.html 會載不到程式/樣式)' % d)
+    # 6) 統計星圖:stats.html 與它的 Chart.js 本機副本(首頁頁尾有連結,缺了就是 404)
+    if not os.path.isfile(os.path.join(out_dir, 'stats.html')):
+        _warn.append('輸出資料夾缺少 stats.html(首頁頁尾「📊 統計星圖」會 404)')
+    if not os.path.isfile(os.path.join(out_dir, 'vendor', 'chart.umd.js')):
+        _warn.append('輸出資料夾缺少 vendor/chart.umd.js(統計星圖畫不出圖)')
     return _warn
 
 def main():
@@ -459,7 +472,7 @@ def main():
             print('  ⚠️ ' + _w)
         print('==============================================================')
     else:
-        print('架構自檢:通過 ✅(端點/欄位/簡繁注入/模組複製都正常)')
+        print('架構自檢:通過 ✅(端點/欄位/簡繁注入/模組複製/統計星圖都正常)')
 
 
 if __name__ == '__main__':

@@ -137,8 +137,11 @@ def test_write_site_injects_data_and_copies_static(tmp_path):
     assert '__STMAP_T__' not in html and '__STMAP_S__' not in html
     assert '<script type="module" src="src/main.js"></script>' in html
     assert (out / 'data.js').read_text(encoding='utf-8').startswith('window.DATA = {')
-    assert copied == ['src', 'styles']
+    assert copied == ['src', 'styles', 'vendor', 'stats.html']
     assert (out / 'src' / 'main.js').exists() and (out / 'styles' / 'base.css').exists()
+    assert (out / 'src' / 'stats.js').exists() and (out / 'styles' / 'stats.css').exists()   # 統計星圖的程式與樣式
+    assert (out / 'vendor' / 'chart.umd.js').exists() and (out / 'stats.html').exists()
+    assert 'href="stats.html"' in html   # 首頁頁尾有「📊 統計星圖」連結
     assert B.self_check(html, {c: i for i, c in enumerate(['文章名稱', 'No', '上次編輯時間', '建立時間', '文章狀態', '文章篇幅', '文章類型', '結局', '紅標'] + list(B.F.FACETS) + B.F.EVENT_FACETS)}, str(out)) == []
 
 def test_copy_static_is_noop_when_out_is_repo_root():
@@ -147,6 +150,7 @@ def test_copy_static_is_noop_when_out_is_repo_root():
 def test_self_check_reports_missing_endpoint():
     warn = B.self_check('<html></html>', {}, '/nonexistent')
     assert any('REACT_API' in w for w in warn) and any('缺欄位' in w for w in warn) and any('src/' in w for w in warn)
+    assert any('stats.html' in w for w in warn) and any('chart.umd.js' in w for w in warn)
 
 def test_number_report_detects_duplicates_and_gaps():
     arts = [{'no': '1', 'name': 'a'}, {'no': '1', 'name': 'b'}, {'no': '3', 'name': 'c'}, {'no': '10001', 'name': 'e'}]
