@@ -196,8 +196,8 @@ const siteBase = () => location.origin + location.pathname;
 // 匯出:字串 + 複製 / 複製連結 / QR code(QR 內容是匯入連結,用相機掃到就直接開站)
 function shelfExport() {
   let payload = null, err = '';
-  try { payload = exportState({ favs, read: readSet }); } catch (e) { err = e.message; }
-  openTool(R.exportHTML({ payload, err, counts: { shelf: favs.size, read: readSet.size } }));
+  try { payload = exportState({ favs, read: readSet, todo: todoSet }); } catch (e) { err = e.message; }
+  openTool(R.exportHTML({ payload, err, counts: { shelf: favs.size, read: readSet.size, todo: todoSet.size } }));
   if (!payload) return;
   const link = buildImportURL(payload, siteBase());
   $('xpCopy').onclick = () => copyText(payload, 'xpMsg', '✓ 已複製字串,到另一台裝置的「📥 匯入」貼上');
@@ -211,7 +211,7 @@ function renderQR(el, text) {
   try { const q = Q(0, 'M'); q.addData(text, 'Byte'); q.make(); el.innerHTML = q.createSvgTag({ cellSize: 4, margin: 2, scalable: true, alt: '匯入連結 QR code' }); }
   catch (e) { el.innerHTML = '<div class="xmsg err">內容太長,QR code 畫不下,請改用複製</div>'; }
 }
-// 匯入:貼上(或掃 QR)→ 預覽「將加入 X 本書架、Y 篇已讀」→ 選合併 / 覆蓋 → 確認才寫入
+// 匯入:貼上(或掃 QR)→ 預覽「將加入 X 本書架、Y 篇已讀、Z 篇待閱讀」→ 選合併 / 覆蓋 → 確認才寫入
 let _imPending = null, _imText = '';   // 解析成功、等待確認的匯入內容與原字串
 function shelfImport(prefill) {
   _imPending = null; _imText = '';
@@ -233,7 +233,7 @@ function previewImportText(text) {
 }
 function renderImPreview(mode) {
   const pre = $('imPre'); if (!pre || !_imPending) return;
-  const st = previewImport({ favs, read: readSet }, _imPending, mode);
+  const st = previewImport({ favs, read: readSet, todo: todoSet }, _imPending, mode);
   pre.innerHTML = R.importPreviewHTML(st, mode, _imPending.exportedAt); pre.style.display = '';
   pre.querySelectorAll('input[name=imMode]').forEach((r) => { r.onchange = () => renderImPreview(imMode()); });
   $('imGo').onclick = confirmImport;

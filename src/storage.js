@@ -54,7 +54,8 @@ export function firstViewThisSession(no) {
 }
 
 // ---- 匯出 / 匯入:把書架(收藏)與已讀帶到另一台裝置(不登入、不架後端)----
-// 匯出內容 { v: 1, shelf: [收藏編號...], read: [已讀編號...], exportedAt: ISO 時間 },
+// 匯出內容 { v: 1, shelf: [收藏編號...], read: [已讀編號...], todo: [待閱讀編號...](可選), exportedAt: ISO 時間 },
+// todo 是後來加的可選欄位(版本仍是 1):舊字串沒有這欄照樣能匯入,且不會動到這台的待閱讀。
 // 用 lz-string(vendor/lz-string.min.js,傳統 script 掛在 window.LZString)壓成只含 A-Z a-z 0-9 + - $ 的字串,
 // 可以直接複製、做成 QR code,或接在網址 ?s=<字串> 後面讓另一台裝置打開時跳出匯入預覽。
 export const EXPORT_VERSION = 1;
@@ -68,12 +69,14 @@ function lz() {
 }
 
 /**
- * 匯出:收藏 + 已讀 → 壓縮字串。
- * @param {{favs:Set|Iterable, read:Set|Iterable}} state
+ * 匯出:收藏 + 已讀(+ 待閱讀,有給才寫進去)→ 壓縮字串。
+ * @param {{favs:Set|Iterable, read:Set|Iterable, todo?:Set|Iterable}} state
  * @param {Date} [now] 匯出時間(測試用)
  */
-export function exportState({ favs, read }, now = new Date()) {
-  const o = { v: EXPORT_VERSION, shelf: [...new Set(favs)], read: [...new Set(read)], exportedAt: now.toISOString() };
+export function exportState({ favs, read, todo }, now = new Date()) {
+  const o = { v: EXPORT_VERSION, shelf: [...new Set(favs)], read: [...new Set(read)] };
+  if (todo) o.todo = [...new Set(todo)];
+  o.exportedAt = now.toISOString();
   return lz().compressToEncodedURIComponent(JSON.stringify(o));
 }
 
@@ -94,7 +97,8 @@ export function extractPayload(text) {
 }
 
 /**
- * 解析並驗證匯出字串 → { shelf:[編號], read:[編號], exportedAt }(已去重)。
+ * 解析並驗證匯出字串 → { shelf:[編號], read:[編號], todo:[編號] | null, exportedAt }(已去重)。
+ * todo 是可選欄位:字串裡沒有就是 null(= 舊格式,匯入時不動這台的待閱讀);有的話型別一樣要對。
  * 不合法就丟 Error(訊息可直接顯示),呼叫端的資料完全不動。
  */
 export function decodeState(payload) {
@@ -113,48 +117,61 @@ export function decodeState(payload) {
     if (!Array.isArray(a) || a.some((x) => typeof x !== 'string' || !x.trim())) throw new Error('欄位 ' + k + ' 格式不對,拒絕匯入');
     return [...new Set(a.map((x) => x.trim()))];
   };
-  return { shelf: list('shelf'), read: list('read'), exportedAt: typeof o.exportedAt === 'string' ? o.exportedAt : '' };
+  return { shelf: list('shelf'), read: list('read'), todo: o.todo === undefined ? null : list('todo'), exportedAt: typeof o.exportedAt === 'string' ? o.exportedAt : '' };
 }
 
 /**
  * 合併規則(純函式,回傳新的 Set,不動傳入的):
  *   merge   聯集(預設):目前的 + 匯入的
  *   replace 覆蓋:以匯入的為準
+ * 待閱讀:匯入字串沒有 todo 欄(舊格式)就維持目前的;有的話照同樣規則合併 / 覆蓋。
+ * 最後已讀的一律移出待閱讀(與「標為已讀」同一條規則)。current.todo 沒給就不處理待閱讀。
  */
 export function mergeState(current, incoming, mode = 'merge') {
   const union = (a, b) => new Set([...a, ...b]);
-  return mode === 'replace'
+  const rep = mode === 'replace';
+  const next = rep
     ? { favs: new Set(incoming.shelf), read: new Set(incoming.read) }
     : { favs: union(current.favs, incoming.shelf), read: union(current.read, incoming.read) };
+  if (current.todo) {
+    const t = incoming.todo == null ? new Set(current.todo) : (rep ? new Set(incoming.todo) : union(current.todo, incoming.todo));
+    next.read.forEach((x) => t.delete(x));
+    next.todo = t;
+  }
+  return next;
 }
 
-/** 匯入預覽:會加入 / 移除幾筆(移除只在覆蓋模式會有),以及匯入後的總數。 */
+/** 匯入預覽:會加入 / 移除幾筆(移除只在覆蓋模式、或已讀把待閱讀擠掉時會有),以及匯入後的總數。 */
 export function previewImport(current, incoming, mode = 'merge') {
   const next = mergeState(current, incoming, mode);
   const only = (a, b) => [...a].filter((x) => !b.has(x));
+  const todo0 = current.todo || new Set(), todo1 = next.todo || todo0;
   return {
-    addShelf: only(next.favs, current.favs).length, addRead: only(next.read, current.read).length,
-    removeShelf: only(current.favs, next.favs).length, removeRead: only(current.read, next.read).length,
-    shelfTotal: next.favs.size, readTotal: next.read.size,
+    addShelf: only(next.favs, current.favs).length, addRead: only(next.read, current.read).length, addTodo: only(todo1, todo0).length,
+    removeShelf: only(current.favs, next.favs).length, removeRead: only(current.read, next.read).length, removeTodo: only(todo0, todo1).length,
+    shelfTotal: next.favs.size, readTotal: next.read.size, todoTotal: todo1.size,
   };
 }
 
 /**
- * 匯入:解析 payload → 依模式合併 → 就地改寫 favs / read(呼叫端持有的 Set)並存回 localStorage。
- * 已讀的會自動移出待閱讀(與 toggleRead 同一條規則)。
+ * 匯入:解析 payload → 依模式合併 → 就地改寫 favs / read / todo(呼叫端持有的 Set)並存回 localStorage。
+ * 已讀的會自動移出待閱讀(與 toggleRead 同一條規則);todo 沒給就不碰待閱讀。
  * 解析失敗會丟 Error,此時什麼都沒改。
- * @returns {{addedShelf:string[], addedRead:string[], removedShelf:string[], exportedAt:string}} 這次真正新增 / 移除的編號
+ * @returns {{addedShelf:string[], addedRead:string[], addedTodo:string[], removedShelf:string[], removedTodo:string[], exportedAt:string}} 這次真正新增 / 移除的編號
  */
 export function importState(payload, { favs, read, todo, mode = 'merge' }) {
   const incoming = decodeState(payload);
-  const cur = { favs: new Set(favs), read: new Set(read) };
+  const cur = { favs: new Set(favs), read: new Set(read), todo: todo ? new Set(todo) : null };
   const next = mergeState(cur, incoming, mode);
   const only = (a, b) => [...a].filter((x) => !b.has(x));
-  const result = { addedShelf: only(next.favs, cur.favs), addedRead: only(next.read, cur.read), removedShelf: only(cur.favs, next.favs), exportedAt: incoming.exportedAt };
+  const result = {
+    addedShelf: only(next.favs, cur.favs), addedRead: only(next.read, cur.read), addedTodo: todo ? only(next.todo, cur.todo) : [],
+    removedShelf: only(cur.favs, next.favs), removedTodo: todo ? only(cur.todo, next.todo) : [], exportedAt: incoming.exportedAt,
+  };
   favs.clear(); next.favs.forEach((x) => favs.add(x));
   read.clear(); next.read.forEach((x) => read.add(x));
   saveSet(KEYS.FAVS, favs); saveSet(KEYS.READ, read);
-  if (todo) { let changed = false; read.forEach((x) => { if (todo.delete(x)) changed = true; }); if (changed) saveSet(KEYS.TODO, todo); }
+  if (todo && (result.addedTodo.length || result.removedTodo.length)) { todo.clear(); next.todo.forEach((x) => todo.add(x)); saveSet(KEYS.TODO, todo); }
   return result;
 }
 

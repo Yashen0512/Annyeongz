@@ -336,7 +336,7 @@ export function exportHTML({ payload, err, counts }) {
   if (!payload) return head + `<div class="xfer"><div class="xmsg err">⚠️ ${err || '匯出失敗'}</div></div>`;
   const n = payload.length, tooLong = n > QR_MAX;
   return head + `<div class="xfer">
-    <p>收藏 <b>${counts.shelf}</b> 篇、已讀 <b>${counts.read}</b> 篇 → 字串 <b>${n.toLocaleString()}</b> 字。內容只有作品編號,不含任何個人資料。</p>
+    <p>收藏 <b>${counts.shelf}</b> 篇、已讀 <b>${counts.read}</b> 篇、待閱讀 <b>${counts.todo}</b> 篇 → 字串 <b>${n.toLocaleString()}</b> 字。內容只有作品編號,不含任何個人資料。</p>
     <textarea id="xpOut" rows="4" readonly spellcheck="false" aria-label="匯出字串">${payload}</textarea>
     <div class="row">
       <button class="ctl pri" id="xpCopy">📋 複製字串</button>
@@ -370,9 +370,10 @@ export function importHTML({ canScan, prefill }) {
 export function importPreviewHTML(st, mode, exportedAt) {
   const when = exportedAt ? new Date(exportedAt) : null;
   const whenStr = when && !isNaN(when) ? `${when.getFullYear()}/${when.getMonth() + 1}/${when.getDate()} ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}` : '';
-  const removed = (st.removeShelf || st.removeRead) ? `<div class="xmsg err">覆蓋模式會移除目前的 ${st.removeShelf} 本書架、${st.removeRead} 篇已讀</div>` : '';
-  return `<div>將加入 <b>${st.addShelf}</b> 本書架、<b>${st.addRead}</b> 篇已讀${whenStr ? `<span class="xwhen">(匯出於 ${whenStr})</span>` : ''}</div>
-    <div class="xmsg">匯入後:收藏 ${st.shelfTotal} 篇、已讀 ${st.readTotal} 篇</div>
+  const removed = (st.removeShelf || st.removeRead || st.removeTodo)
+    ? `<div class="xmsg err">${mode === 'replace' ? '覆蓋模式' : '匯入後'}會移除目前的 ${st.removeShelf} 本書架、${st.removeRead} 篇已讀、${st.removeTodo} 篇待閱讀${mode !== 'replace' ? '(標為已讀的會自動移出待閱讀)' : ''}</div>` : '';
+  return `<div>將加入 <b>${st.addShelf}</b> 本書架、<b>${st.addRead}</b> 篇已讀、<b>${st.addTodo}</b> 篇待閱讀${whenStr ? `<span class="xwhen">(匯出於 ${whenStr})</span>` : ''}</div>
+    <div class="xmsg">匯入後:收藏 ${st.shelfTotal} 篇、已讀 ${st.readTotal} 篇、待閱讀 ${st.todoTotal} 篇</div>
     <div class="row xmode">
       <label><input type="radio" name="imMode" value="merge"${mode !== 'replace' ? ' checked' : ''}> 合併(保留目前的,加上匯入的)</label>
       <label><input type="radio" name="imMode" value="replace"${mode === 'replace' ? ' checked' : ''}> 覆蓋(以匯入的為準)</label>
@@ -384,8 +385,8 @@ export function importPreviewHTML(st, mode, exportedAt) {
 export function importDoneHTML(r, mode) {
   return `<button class="close" onclick="closeDetail()">✕</button><h2>📥 匯入完成</h2>
   <div class="xfer">
-    <div class="xmsg ok">✅ 已${mode === 'replace' ? '覆蓋' : '合併'}:加入 ${r.addedShelf.length} 本書架、${r.addedRead.length} 篇已讀${r.removedShelf.length ? `,移除 ${r.removedShelf.length} 本書架` : ''}</div>
-    <p>書架與已讀紀錄存在這台裝置的瀏覽器裡;之後兩邊各自標記,想同步再匯出一次即可。</p>
+    <div class="xmsg ok">✅ 已${mode === 'replace' ? '覆蓋' : '合併'}:加入 ${r.addedShelf.length} 本書架、${r.addedRead.length} 篇已讀、${r.addedTodo.length} 篇待閱讀${r.removedShelf.length || r.removedTodo.length ? `,移除 ${r.removedShelf.length} 本書架、${r.removedTodo.length} 篇待閱讀` : ''}</div>
+    <p>書架、已讀與待閱讀存在這台裝置的瀏覽器裡;之後兩邊各自標記,想同步再匯出一次即可。</p>
     <div class="row"><button class="ctl pri" onclick="closeDetail()">看書架</button></div>
   </div>`;
 }
