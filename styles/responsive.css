@@ -53,6 +53,16 @@ body.noscroll{overflow:hidden}
   .scard .st{font-size:15px}
   .scard .sm{font-size:12px}
   .toolbar .count{margin-left:0;flex-basis:100%;font-size:14px}
+  /* 手機 sticky 壓縮版(main.js 捲過工具列時加 .mini):只留 🔧 篩選、排序、跳到 #、↑ 一排;其他那組(.tbx)搬進篩選面板頂部 */
+  .toolbar.mini{flex-wrap:nowrap;gap:8px;padding:8px 0}
+  .toolbar.mini .sech,.toolbar.mini .count,.toolbar.mini .tbx,.toolbar.mini .jumpbar label,.toolbar.mini .jumpbar button,.toolbar.mini .jmsg{display:none}   /* 「前往」也藏:輸入完離開欄位就跳(main.js) */
+  .toolbar.mini .ctl{padding:8px 10px;font-size:14px}
+  .toolbar.mini #filterToggle{flex:none;white-space:nowrap}
+  .toolbar.mini #sort{flex:1 1 auto;min-width:0}
+  .toolbar.mini .jumpbar{flex:none;gap:4px}
+  .toolbar.mini .jumpbar input{width:64px;padding:8px 8px}
+  .toolbar.mini #toTopBar{display:inline-flex;align-items:center;gap:4px;flex:none;white-space:nowrap}
+  body.tb-mini #toTop{display:none}   /* 壓縮列有 ↑ 了,右下角那顆收起來 */
   .snav{display:none}            /* 手機用滑的,不顯示箭頭 */
   .sheet{padding:20px 16px;max-height:90vh}
   .dnav{bottom:-20px;margin:16px -16px -20px;padding:10px 16px}

@@ -7,6 +7,19 @@ import { fetchData } from './data.js';
 // 捲動位置由 main.js 自己還原(連同已載入的張數),瀏覽器的自動還原會跟分批渲染打架
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 
+// 輸入方式偵測:滑鼠 / 觸控 → body[data-input="pointer"],Tab / 方向鍵 → "keyboard"。
+// 焦點外框只在 keyboard 時顯示(base.css):iOS Safari 會把程式觸發的 focus(關閉彈窗後把焦點還給書卡鈕)當成鍵盤焦點而畫粉框。
+// 放在 boot.js 是為了比 main.js 早掛上(資料還沒到就按 Tab 也算得到)。
+{
+  const set = (v) => { if (document.body.dataset.input !== v) document.body.dataset.input = v; };
+  const opt = { capture: true, passive: true };
+  document.addEventListener('pointerdown', () => set('pointer'), opt);
+  document.addEventListener('touchstart', () => set('pointer'), opt);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab' || e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End') set('keyboard');
+  }, opt);
+}
+
 function showError(msg) {
   document.body.classList.remove('loading');
   const el = document.getElementById('list');

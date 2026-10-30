@@ -30,7 +30,8 @@ const deadNos = new Set(D.articles.filter((a) => a.dead).map((a) => a.no));
 const $ = (id) => document.getElementById(id);
 const reduceMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const scrollBehavior = () => (reduceMotion() ? 'auto' : 'smooth');
-const scrollToToolbar = () => document.querySelector('.toolbar').scrollIntoView({ behavior: scrollBehavior() });
+// 捲到工具列:工具列現在是 sticky,貼住時 scrollIntoView 不會動,改捲它前面的哨兵(#tbSentinel 的 scroll-margin-top = 頂欄高度)
+const scrollToToolbar = () => ($('tbSentinel') || document.querySelector('.toolbar')).scrollIntoView({ behavior: scrollBehavior() });
 // 螢幕閱讀器宣告(aria-live 區域;同一句不重複塞,避免重複念)
 function announce(id, text) { const el = $(id); if (el && el.textContent !== text) el.textContent = text; }
 
@@ -52,6 +53,7 @@ const reactions = createReactions({ favs, deadNos, onChange: () => { render(true
 const ctx = { facets: D.facets, persons, deadAuthors, favs, readSet, todoSet, likeNum: reactions.likeNum, viewNum: reactions.viewNum };
 
 const q = $('q');
+const topbarEl = document.querySelector('.topbar');
 // 詳情視窗:<dialog>(新樣板)用 open 屬性;舊的 index.html 還是 div 時退回 display:flex(同步前的過渡期不會壞)
 const isDialog = () => typeof $('modal').showModal === 'function';
 const modalOpen = () => (isDialog() ? $('modal').open : $('modal').style.display === 'flex');
@@ -143,7 +145,12 @@ $('theme').onclick = () => applyTheme(_root.getAttribute('data-theme') === 'dark
 // ---- 主列表(分批渲染:先畫前 BATCH 張,捲到底前自動補下一批;篩選 / 排序改變時 render() 重置)----
 const lazyList = R.createLazyList($('list'), $('more'), {
   batch: BATCH,
-  renderBatch: (slice) => R.renderCards($('list'), slice, ctx, (a, el) => { _navList = null; openDetail(a, el); }),
+  renderBatch: (slice) => {
+    const list = $('list'), n0 = list.children.length;
+    if (n0 === 0) resetCardObs();   // 清單重畫:舊卡都不在了,觀察器重來
+    R.renderCards(list, slice, ctx, (a, el) => { _navList = null; openDetail(a, el); });
+    for (let i = n0; i < list.children.length; i++) observeCard(list.children[i]);
+  },
   onChange: () => scheduleSaveList(),
 });
 // keepPos = true(搜尋 / 排序 / 勾選框 / 收藏重繪)時維持已顯示的張數,不跳回第一批(對應原站「不跳回第 1 頁」的行為)
@@ -214,7 +221,7 @@ function openAnn(i) {
 }
 /** 打開文章詳情;opener = 觸發的元素(書卡標題鈕 / 輪播小卡),關閉後焦點回到它。 */
 function openDetail(a, opener) {
-  const changed = (_mode !== 'art' || !_cur || _cur.no !== a.no);   // 換了一篇才捲回頂端(按收藏/已讀重繪時維持位置)
+  const changed = !modalOpen() || _mode !== 'art' || !_cur || _cur.no !== a.no;   // 剛打開或換了一篇才捲回頂端、焦點給關閉鈕(開著時按收藏 / 已讀重繪維持位置與焦點)
   _mode = 'art'; _annIdx = null; _cur = a;
   if (opener && !modalOpen()) _opener = opener;
   reactions.markView(a.no);
@@ -235,7 +242,7 @@ function restoreFocus() {
   if (_mode === 'art' && _cur && (fromCard || (el && !el.isConnected))) {
     const c = document.querySelector(`.card[data-no="${CSS.escape(_cur.no)}"] .card-open`); if (c) el = c;
   }
-  if (el && el.isConnected) el.focus();
+  if (el && el.isConnected && !el.matches('[tabindex="-1"]')) el.focus();   // 目標一定是書卡 / 小卡 / 工具鈕本身,不是 main 或 section 這種容器
 }
 $('modal').onclick = (e) => { if (e.target.id === 'modal') closeDetail(); };   // 點灰底(dialog 本身)關閉
 $('modal').addEventListener('close', () => { stopScan(); unlockScroll(); restoreFocus(); $('sheet').innerHTML = ''; });   // Esc / close() 都會經過這裡(Esc 關掉匯入視窗時也要停相機);先解鎖再還焦點(focus 可能捲動);內容清空,下次打開才建
@@ -517,13 +524,17 @@ function jumpTo(raw) {
 }
 function highlightCard(card) {
   document.querySelectorAll('.card.hl').forEach((c) => c.classList.remove('hl'));
-  card.scrollIntoView({ block: 'center' });   // 即時捲動:可能一跳就是幾百張,平滑捲動反而暈且久
+  // 即時捲動(可能一跳就是幾百張,平滑捲動反而暈且久):卡片置中於「頂欄 + sticky 工具列」以下的空間,高卡頂端也不會被擋住
+  const r = card.getBoundingClientRect(), bars = barsHeight();
+  const free = Math.max(0, window.innerHeight - bars - r.height);
+  window.scrollTo(0, Math.max(0, Math.round(window.scrollY + r.top - bars - free / 2)));
   void card.offsetWidth;   // 重新觸發高亮動畫
   card.classList.add('hl');
   card.querySelector('.card-open')?.focus({ preventScroll: true });
   setTimeout(() => card.classList.remove('hl'), 2400);
 }
 $('jumpForm').onsubmit = (e) => { e.preventDefault(); jumpTo($('jumpNo').value); };
+$('jumpNo').addEventListener('change', () => { if (_mini && $('jumpNo').value.trim()) jumpTo($('jumpNo').value); });   // 手機壓縮列沒有「前往」鈕(iOS 數字鍵盤也沒有 Enter):輸入完離開欄位就跳
 
 // ---- 記住主列表狀態(sessionStorage):從詳情、分享頁(p/<No>/ 導回來)或瀏覽器「上一頁」回來時,
 //      已載入的張數與捲動位置照舊,不會重置回第一批。簽章 = 會影響清單內容的所有狀態;對不上(篩選變了)就不還原。
@@ -585,10 +596,93 @@ window.addEventListener('resize', updateAllSnav);
 window.addEventListener('load', updateAllSnav);
 updateAllSnav();
 
-// ---- 回到頂部 ----
-const toTop = $('toTop');
+// ---- 回到頂部(桌機右下角 #toTop、手機壓縮工具列裡的 #toTopBar):顯示目前視窗最上方那張卡的編號「↑ #1305」----
+const toTop = $('toTop'), toTopBar = $('toTopBar');
 window.addEventListener('scroll', () => { if (!scrollLocked()) toTop.classList.toggle('show', window.scrollY > 400); });   // 鎖住時 scrollY 變 0,不要讓按鈕閃一下
-toTop.onclick = (e) => { if (e.detail) toTop.blur(); window.scrollTo({ top: 0, behavior: scrollBehavior() }); };   // 滑鼠點才 blur(手機不留粉色殘影),鍵盤保留焦點
+const goTop = (e, btn) => { if (e.detail) btn.blur(); window.scrollTo({ top: 0, behavior: scrollBehavior() }); };   // 滑鼠點才 blur(手機不留粉色殘影),鍵盤保留焦點
+toTop.onclick = (e) => goTop(e, toTop);
+if (toTopBar) toTopBar.onclick = (e) => goTop(e, toTopBar);
+// 書卡用 IntersectionObserver 盯(不是每次 scroll 都算):root 的上緣往下縮「頂欄 + 工具列」的高度,卡片的底邊穿過那條線才會觸發;
+// 視窗裡的卡放在 _visCards,取 top 最小的那張。bars 高度變了(手機壓縮 / 頂欄換行)才重建觀察器。
+const _visCards = new Set();
+let _cardObs = null, _cardObsBars = -1;
+function cardObsBars() { return Math.round(topbarEl.offsetHeight + ($('toolbar') ? $('toolbar').offsetHeight : 0)); }
+function buildCardObs() {
+  if (!('IntersectionObserver' in window)) return;
+  const bars = cardObsBars(); if (_cardObs && bars === _cardObsBars) return;
+  if (_cardObs) _cardObs.disconnect(); _visCards.clear(); _cardObsBars = bars;
+  _cardObs = new IntersectionObserver((es) => {
+    es.forEach((e) => { if (e.isIntersecting) _visCards.add(e.target); else _visCards.delete(e.target); });
+    updateToTop();
+  }, { rootMargin: `-${bars}px 0px 0px 0px`, threshold: 0 });
+  document.querySelectorAll('#list .card').forEach((c) => _cardObs.observe(c));
+}
+function observeCard(c) { if (_cardObs) _cardObs.observe(c); }
+function resetCardObs() { if (_cardObs) _cardObs.disconnect(); _visCards.clear(); updateToTop(); }
+function updateToTop() {
+  let best = null, bt = Infinity;
+  _visCards.forEach((c) => { if (!c.isConnected) { _visCards.delete(c); return; } const t = c.getBoundingClientRect().top; if (t < bt) { bt = t; best = c; } });
+  const no = best ? best.dataset.no : '';
+  [toTop, toTopBar].forEach((b) => {
+    if (!b || b.dataset.no === no) return;
+    b.dataset.no = no;
+    b.innerHTML = no ? `↑ <span class="tno" aria-hidden="true">#${no}</span>` : '↑';
+    b.setAttribute('aria-label', no ? `回到頂部，目前在 #${no}` : '回到頂部');
+  });
+}
+
+// ---- sticky 工具列:貼在頂欄下方(top = --topbar-h,量實際高度寫進 CSS 變數);捲過工具列(.stuck)底色同頂欄 + 細分隔線。
+//      手機(≤860px)捲過去改壓縮版(.mini):只留 🔧 篩選、排序、跳到 #、↑,其他那組(#tbExtra)搬進篩選面板頂部(#panelTools),
+//      #tbSpace 補回少掉的高度,下面的版面不跳;捲回最上面再搬回來。偵測用 IntersectionObserver 盯工具列前面的哨兵 #tbSentinel。
+const toolbar = $('toolbar'), tbSentinel = $('tbSentinel'), tbExtra = $('tbExtra'), tbSpace = $('tbSpace'), panelTools = $('panelTools');
+const isMobile = () => window.innerWidth <= 860;
+let _stuck = false, _mini = false, _tbObs = null;
+function barsHeight() { return topbarEl.offsetHeight + (toolbar ? toolbar.offsetHeight : 0); }   // 跳到 #編號的偏移:頂欄 + 工具列(貼住時就在頂欄下方)
+const setVar = (name, px) => document.documentElement.style.setProperty(name, Math.round(px) + 'px');
+function measureBars() {
+  setVar('--topbar-h', topbarEl.offsetHeight);
+  setVar('--toolbar-h', toolbar ? toolbar.offsetHeight : 0);
+  buildCardObs();
+}
+function setMini(on) {
+  if (!toolbar || !tbExtra || on === _mini) return;
+  _mini = on; document.body.classList.toggle('tb-mini', on);
+  if (on) {
+    const full = toolbar.offsetHeight;
+    toolbar.classList.add('mini'); panelTools.appendChild(tbExtra);
+    tbSpace.style.height = Math.max(0, full - toolbar.offsetHeight) + 'px';
+  } else {
+    toolbar.classList.remove('mini'); toolbar.insertBefore(tbExtra, $('jumpForm'));
+    tbSpace.style.height = '0px';
+  }
+  measureBars();
+}
+function setStuck(on) {
+  if (!toolbar || on === _stuck) return;
+  _stuck = on; toolbar.classList.toggle('stuck', on);
+  setMini(on && isMobile());
+}
+function watchToolbar() {
+  if (!tbSentinel || !('IntersectionObserver' in window)) return;
+  if (_tbObs) _tbObs.disconnect();
+  const top = Math.round(topbarEl.offsetHeight);
+  // root 的上緣往下縮頂欄高度、下緣往外放很大:哨兵只要在頂欄下緣以下(含視窗外下方)都算相交,
+  // 跑到頂欄下緣以上才不相交 = 捲過工具列了。下緣不放大的話,哨兵從「視窗下方」直接捲到「頂欄上方」都是不相交,觀察器不會觸發。
+  _tbObs = new IntersectionObserver((es) => {
+    const e = es[es.length - 1];
+    setStuck(!e.isIntersecting && e.boundingClientRect.top < top);
+  }, { rootMargin: `-${top}px 0px 100000px 0px`, threshold: 0 });
+  _tbObs.observe(tbSentinel);
+}
+function initSticky() {
+  measureBars(); watchToolbar();
+  if ('ResizeObserver' in window) {
+    let tm = 0;
+    new ResizeObserver(() => { clearTimeout(tm); tm = setTimeout(() => { measureBars(); watchToolbar(); }, 60); }).observe(topbarEl);   // 頂欄換行(手機搜尋列換到第二行)→ 重量、重盯
+    if (toolbar) new ResizeObserver(() => measureBars()).observe(toolbar);
+  }
+  window.addEventListener('resize', () => { setMini(_stuck && isMobile()); measureBars(); });
+}
 
 // ---- 頁尾:統計 / 更新時間 ----
 function renderStats(s, live) { R.renderStats($('statsCard'), s || D.stats, live); }
@@ -603,6 +697,7 @@ Object.assign(window, { toggleFav, toggleTodo, toggleRead, setShelfTab, filterBy
 // 先把主列表第一批畫出來(使用者最先看到的),其餘工作拆成獨立小工作延後,避免單一長工作卡住互動。
 // PWA(service worker、安裝鈕、更新提示)在 src/pwa.js,由 boot.js 啟動。
 const defer = (fn) => ('requestIdleCallback' in window ? requestIdleCallback(fn, { timeout: 800 }) : setTimeout(fn, 1));
+initSticky();                                // 先量頂欄高度(sticky 工具列的 top)、掛上哨兵與書卡觀察器,再畫第一批
 updateShelfBtn(); applyShareHash(); renderHot(); render();
 renderAnn(); renderLatest(); renderStatus();
 document.body.classList.remove('loading');   // 主內容(資料到了才有意義)此時一次顯示;輪播區塊有固定高度,之後補上不會推動版面
