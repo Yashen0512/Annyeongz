@@ -1,0 +1,41 @@
+/* Annyeongz 平行宇宙 — 統計星圖(stats.html):總覽數字卡、圖表卡;手機單欄、圖表可橫向捲動 */
+.stats-wrap{max-width:1200px;margin:0 auto;padding:18px 28px}
+.stats-lead{color:var(--muted);font-size:13px;margin:-4px 0 16px}
+.stats-lead a,.stats-back{color:var(--accent);text-decoration:none}
+.stats-back{font-size:13px;white-space:nowrap}
+.stats-back:hover{text-decoration:underline}
+/* 總覽數字卡 */
+.overview{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px}
+.ov-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.ov-l{font-size:12px;color:var(--muted);white-space:nowrap}
+.ov-v{font-size:26px;font-weight:800;color:var(--be);margin-top:4px;font-variant-numeric:tabular-nums;line-height:1.2}
+.ov-u{font-size:12px;font-weight:600;color:var(--muted);margin-left:5px}
+/* 圖表卡 */
+.charts{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+.chart-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px 14px;min-width:0}
+.chart-card.wide{grid-column:1 / -1}
+.chart-card .sech{margin:0 0 10px;flex-wrap:wrap}
+.chart-card .sub{font-size:12px;color:var(--muted);font-weight:400}
+.chart-ctl{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.chart-ctl .ctl{font-size:12px;padding:5px 11px}
+.chart-scroll{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
+.chart-box{position:relative;height:320px;min-width:0}
+.chart-box canvas{display:block}
+.chart-err{color:var(--exc);font-size:13px;padding:24px 0;text-align:center}
+.chart-note{font-size:12px;color:var(--muted);margin-top:8px}
+/* 平板:圖表單欄 */
+@media(max-width:860px){
+  .stats-wrap{padding:14px}
+  .overview{grid-template-columns:repeat(3,1fr)}
+  .charts{grid-template-columns:1fr}
+}
+/* 手機:單欄、字級放大、圖表內容保留最小寬度 → 在卡片內橫向捲動 */
+@media(max-width:560px){
+  .stats-wrap{padding:12px}
+  .overview{grid-template-columns:repeat(2,1fr);gap:10px}
+  .ov-v{font-size:23px}
+  .chart-card{padding:14px 12px 12px}
+  .chart-box{min-width:560px;height:300px}
+  .chart-box.tall{min-width:480px}
+  .chart-note{font-size:13px}
+}

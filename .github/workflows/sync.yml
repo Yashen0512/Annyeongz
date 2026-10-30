@@ -44,6 +44,8 @@ jobs:
             git commit -m "Auto-sync from Notion"
             git push
           fi
+      # 部署整個倉庫(path: '.'):index.html / data.js 之外,統計星圖 stats.html、src/、styles/、vendor/(Chart.js)也一併上線;
+      # build_site.py 的架構自檢會確認 stats.html 與 vendor/chart.umd.js 都在輸出資料夾。
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
