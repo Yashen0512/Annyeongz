@@ -9,19 +9,20 @@
   function close(){T.forEach(clearTimeout); if(!o.isConnected||o.classList.contains('out'))return; o.classList.add('out'); setTimeout(()=>o.remove(),520);}
   o.onclick=close;
   document.addEventListener('keydown',function k(e){ if(e.key==='Escape'||e.key==='Enter'||e.key===' '){close();} if(!o.isConnected) document.removeEventListener('keydown',k); });   // 鍵盤也能略過
-  const dpr=Math.min(devicePixelRatio||1,2), W=innerWidth, H=innerHeight;
+  const dpr=Math.min(devicePixelRatio||1,1.5), W=innerWidth, H=innerHeight;   // 星點很小,dpr 1.5 看不出差別,但畫布像素少四成
   cv.width=W*dpr; cv.height=H*dpr; const g=cv.getContext('2d'); g.scale(dpr,dpr);
-  const S=Array.from({length:170},()=>({x:Math.random()*W,y:Math.random()*H,r:Math.random()*1.3+.3,
-    d:Math.random()*600,tw:Math.random()*Math.PI*2,hue:Math.random()<.18?330:250}));
-  const t0=performance.now();
-  (function frame(now){                       // 星星陸續亮起、輕輕閃爍
+  const S=Array.from({length:120},()=>({x:Math.random()*W,y:Math.random()*H,r:Math.random()*1.3+.3,
+    d:Math.random()*600,tw:Math.random()*Math.PI*2,col:`hsl(${Math.random()<.18?330:250},70%,88%)`}));   // 顏色先算好,每幀只改透明度
+  const t0=performance.now(); let last=-99;
+  (function frame(now){                       // 星星陸續亮起、輕輕閃爍(最多 30fps,省一半主執行緒)
+    if(o.isConnected) requestAnimationFrame(frame);
+    if(now-last<32) return; last=now;
     const t=now-t0; g.clearRect(0,0,W,H);
     for(const s of S){
       const a=Math.max(0,Math.min(1,(t-s.d)/400))*(0.6+0.4*Math.sin(t*0.004+s.tw));
       if(a<=0) continue;
-      g.fillStyle=`hsla(${s.hue},70%,88%,${a})`; g.beginPath(); g.arc(s.x,s.y,s.r,0,Math.PI*2); g.fill();
+      g.globalAlpha=a; g.fillStyle=s.col; g.beginPath(); g.arc(s.x,s.y,s.r,0,Math.PI*2); g.fill();
     }
-    if(o.isConnected) requestAnimationFrame(frame);
   })(t0);
   T.push(setTimeout(()=>ttl.classList.add('on'),60));
   T.push(setTimeout(()=>p.classList.add('meet'),120));     // 🐶🐰 從兩側靠近

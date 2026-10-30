@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>📊 統計星圖 — Annyeongz 平行宇宙</title>
+<!-- 主題要在 CSS 套用前決定(key 'azTheme' 與 src/storage.js 的 KEYS.THEME 相同) -->
+<script>try{document.documentElement.setAttribute('data-theme',localStorage.getItem('azTheme')||'dark')}catch(e){}</script>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>📊</text></svg>">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#15161b">
@@ -21,7 +23,7 @@
 </head>
 <body>
 <header class="topbar">
-  <div class="brand">📊 統計星圖 <span class="sub" style="font-size:13px;color:var(--muted);font-weight:400">Annyeongz 平行宇宙</span></div>
+  <h1 class="brand">📊 統計星圖 <span class="sub" style="font-size:13px;color:var(--muted);font-weight:400">Annyeongz 平行宇宙</span></h1>
   <a class="stats-back" href="./">← 回到平行宇宙</a>
   <button id="theme" class="theme" title="切換白晝 / 黑夜" aria-label="切換白晝 / 黑夜">🌙</button>
 </header>
@@ -37,7 +39,7 @@
   <div class="charts">
     <section class="chart-card wide">
       <h2 class="sech">✨ 每月收錄趨勢 <span class="sub">(2025/02 至本月;實線 = 每月新收錄,虛線 = 累積總數,右軸)</span></h2>
-      <div class="chart-scroll"><div class="chart-box"><canvas id="cMonthly" role="img" aria-label="每月收錄趨勢折線圖"></canvas></div></div>
+      <div class="chart-scroll" tabindex="0" aria-label="每月收錄趨勢圖,可左右捲動"><div class="chart-box"><canvas id="cMonthly" role="img" aria-label="每月收錄趨勢折線圖"></canvas></div></div>
       <div class="chart-note">2025/01 以前為舊資料批次匯入,不列入趨勢(累積總數已含這批文)。</div>
     </section>
 
@@ -47,23 +49,23 @@
         <button class="ctl on" id="tagAll">全部</button>
         <button class="ctl" id="tagAlive">排除已刪</button>
       </div>
-      <div class="chart-scroll"><div class="chart-box tall"><canvas id="cTags" role="img" aria-label="標籤篇數排行橫條圖"></canvas></div></div>
+      <div class="chart-scroll" tabindex="0" aria-label="標籤篇數排行圖,可左右捲動"><div class="chart-box tall"><canvas id="cTags" role="img" aria-label="標籤篇數排行橫條圖"></canvas></div></div>
     </section>
 
     <section class="chart-card">
       <h2 class="sech">✍️ 作者篇數排行 <span class="sub">(前 20 名;點長條回首頁看該作者的文)</span></h2>
-      <div class="chart-scroll"><div class="chart-box tall"><canvas id="cAuthors" role="img" aria-label="作者篇數排行橫條圖"></canvas></div></div>
+      <div class="chart-scroll" tabindex="0" aria-label="作者篇數排行圖,可左右捲動"><div class="chart-box tall"><canvas id="cAuthors" role="img" aria-label="作者篇數排行橫條圖"></canvas></div></div>
     </section>
 
     <section class="chart-card">
       <h2 class="sech">❤️ 愛心與觀測分佈 <span class="sub">(每點一篇;點一下開啟該篇)</span></h2>
-      <div class="chart-scroll"><div class="chart-box"><canvas id="cScatter" role="img" aria-label="愛心與觀測散佈圖"></canvas></div></div>
+      <div class="chart-scroll" tabindex="0" aria-label="愛心與觀測散佈圖,可左右捲動"><div class="chart-box"><canvas id="cScatter" role="img" aria-label="愛心與觀測散佈圖"></canvas></div></div>
       <div class="chart-note" id="scatterNote">橫軸是被觀測的次數、縱軸是收到的愛心;原文已刪的文不計。</div>
     </section>
 
     <section class="chart-card">
       <h2 class="sech">🪦 已刪趨勢 <span class="sub">(依收錄年份;綠 = 仍可閱讀,紅 = 原文已刪)</span></h2>
-      <div class="chart-scroll"><div class="chart-box"><canvas id="cYearly" role="img" aria-label="各年收錄與已刪堆疊長條圖"></canvas></div></div>
+      <div class="chart-scroll" tabindex="0" aria-label="各年收錄與已刪圖,可左右捲動"><div class="chart-box"><canvas id="cYearly" role="img" aria-label="各年收錄與已刪堆疊長條圖"></canvas></div></div>
     </section>
   </div>
 </main>
@@ -76,8 +78,7 @@
 </footer>
 <script data-goatcounter="https://yashen0512.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 
-<!-- 資料:與首頁同一份 data.js(建置產物) -->
-<script src="data.js"></script>
+<!-- 資料:與首頁同一份 data.json(精簡格式,建置產物),由 src/stats_page.js fetch 後 expandData 還原 -->
 <script>
 // 愛心 / 觀測計數的端點(與 _build/site_template.html 的 REACT_API 同一個;讀不到就退回 _build/reactions_backup.json)
 window.AZ_CONFIG={
@@ -85,7 +86,7 @@ window.AZ_CONFIG={
 };
 </script>
 <!-- Chart.js 4(UMD,本機副本,離線可用) -->
-<script src="vendor/chart.umd.js"></script>
+<script src="vendor/chart.umd.js" defer></script>
 <script type="module" src="src/stats_page.js"></script>
 </body>
 </html>

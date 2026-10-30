@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""從 data.js 反推一份 30 篇的建置輸入(主表 CSV、作者庫 CSV、公告 CSV、article_links.json),
+"""從 data.json(精簡格式,先 expand_data 還原)反推一份 30 篇的建置輸入(主表 CSV、作者庫 CSV、公告 CSV、article_links.json),
    放在 tests/fixtures/build_input/,讓 pytest 不需要 Notion token 也能跑完整個 build_site.py。
    重新產生:python3 tests/fixtures/make_fixture.py(從倉庫根目錄執行;只用標準庫)。
    挑選規則(固定、可重現):編號 233(作者空白)、1270(多作者)、10089(譯文:作者+譯者)、
    1232 / 10022(站內互連)、幾篇原文已刪(❌ 過半、紅標)、有收錄篇名的,再依編號補到 30 篇。"""
 import csv, io, json, os, sys
+from datetime import datetime, timezone, timedelta
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
 sys.path.insert(0, os.path.join(ROOT, '_build'))
@@ -46,7 +47,7 @@ def pick(articles):
     return chosen[:30]
 
 def main():
-    D = json.loads(io.open(os.path.join(ROOT, 'data.js'), encoding='utf-8').read()[len('window.DATA = '):-1])
+    D = B.expand_data(json.load(io.open(os.path.join(ROOT, 'data.json'), encoding='utf-8')))
     arts = pick(D['articles'])
     os.makedirs(os.path.join(OUT, '_authors'), exist_ok=True)
     os.makedirs(os.path.join(OUT, '_announce'), exist_ok=True)
@@ -83,10 +84,14 @@ def main():
     links['__edited__'] = {}
     io.open(os.path.join(OUT, 'article_links.json'), 'w', encoding='utf-8').write(json.dumps(links, ensure_ascii=False, indent=0))
     io.open(os.path.join(OUT, 'stats.json'), 'w', encoding='utf-8').write(json.dumps(D['stats'], ensure_ascii=False))
-    # 預期輸出:這 30 篇在 data.js 裡的原樣(測試用來比對「重建 == 原本」)
+    # 預期輸出:這 30 篇在 data.json(還原後)裡的原樣(測試用來比對「重建 == 原本」)
     expected = {'articles': arts, 'people': {pid: D['people'][pid] for pid in pids}, 'announcements': D['announcements'],
                 'updated': B.fmt_updated(max(a['ek'] for a in arts))}
     io.open(os.path.join(OUT, 'expected.json'), 'w', encoding='utf-8').write(json.dumps(expected, ensure_ascii=False, indent=0))
+    # 精簡格式版本(src/data.js expandData 與 build_site.compact_data 的對照測試用)
+    DATA, _ = B.build_data(OUT, now=datetime(2026, 10, 30, 14, 5, tzinfo=timezone(timedelta(hours=8))))
+    io.open(os.path.join(OUT, '..', 'compact_30.json'), 'w', encoding='utf-8').write(
+        json.dumps(B.compact_data(DATA), ensure_ascii=False, separators=(',', ':'), sort_keys=True))
     print('fixture:', len(arts), '篇', len(pids), '位作者 →', OUT)
 
 if __name__ == '__main__':

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""build_site.py:dead 判定、作者拆分與 ID 保留、日期解析,以及用 30 篇 fixture 跑完整建置比對結果。"""
+"""build_site.py:dead 判定、作者拆分與 ID 保留、日期解析、精簡資料格式 round-trip、sw.js 版本號,以及用 30 篇 fixture 跑完整建置比對結果。"""
 import io, json, os, shutil
 from datetime import datetime, timezone, timedelta
 import pytest
@@ -125,28 +125,66 @@ def test_old_authors_csv_without_id_column_is_resolved(tmp_path):
     expected = json.load(io.open(os.path.join(FIXTURE, 'expected.json'), encoding='utf-8'))
     assert DATA['people'] == expected['people']
 
-def test_write_site_injects_data_and_copies_static(tmp_path):
+def test_write_site_outputs_data_json_sw_and_copies_static(tmp_path):
     DATA, _ = B.build_data(FIXTURE)
     src = tmp_path / 'build'; src.mkdir()
-    shutil.copy(os.path.join(ROOT, '_build', 'site_template.html'), src / 'site_template.html')
-    shutil.copy(os.path.join(ROOT, '_build', 'stmap.txt'), src / 'stmap.txt')
+    for fn in ('site_template.html', 'stmap.txt', 'sw_template.js'):
+        shutil.copy(os.path.join(ROOT, '_build', fn), src / fn)
     out = tmp_path / 'site'
     tpl, copied = B.write_site(DATA, str(src), str(out), repo_root=ROOT)
     html = (out / 'index.html').read_text(encoding='utf-8')
-    assert '/*__DATA__*/' not in html and 'window.DATA = {' in html
+    assert 'window.DATA' not in html                       # 資料不再內嵌,由 boot.js 抓 data.json
     assert '__STMAP_T__' not in html and '__STMAP_S__' not in html
-    assert '<script type="module" src="src/main.js"></script>' in html
-    assert (out / 'data.js').read_text(encoding='utf-8').startswith('window.DATA = {')
-    assert copied == ['src', 'styles', 'vendor', 'stats.html']
-    assert (out / 'src' / 'main.js').exists() and (out / 'styles' / 'base.css').exists()
+    assert '<script type="module" src="src/boot.js"></script>' in html
+    assert 'rel="manifest"' in html and 'rel="modulepreload" href="src/main.js"' in html
+    assert 'href="stats.html"' in html   # 首頁頁尾有「📊 統計星圖」連結
+    data = json.loads((out / 'data.json').read_text(encoding='utf-8'))
+    assert data['v'] == B.COMPACT_VERSION and B.expand_data(data) == json.loads(json.dumps(DATA))
+    sw = (out / 'sw.js').read_text(encoding='utf-8')
+    assert B.SW_PLACEHOLDER not in sw and "const VERSION = '%s'" % B.sw_version(DATA['synced']) in sw
+    assert copied == ['src', 'styles', 'vendor', 'assets', 'stats.html', 'manifest.webmanifest', 'banner.png', 'banner-mobile.png']
+    assert (out / 'src' / 'main.js').exists() and (out / 'styles' / 'base.css').exists() and (out / 'assets' / 'icons' / 'icon-192.png').exists()
     assert (out / 'src' / 'stats.js').exists() and (out / 'styles' / 'stats.css').exists()   # 統計星圖的程式與樣式
     assert (out / 'vendor' / 'chart.umd.js').exists() and (out / 'stats.html').exists()
     assert (out / 'vendor' / 'lz-string.min.js').exists() and (out / 'vendor' / 'qrcode.js').exists()   # 書架匯出 / 匯入
-    assert 'href="stats.html"' in html   # 首頁頁尾有「📊 統計星圖」連結
+    assert (out / 'manifest.webmanifest').exists()
     assert B.self_check(html, {c: i for i, c in enumerate(['文章名稱', 'No', '上次編輯時間', '建立時間', '文章狀態', '文章篇幅', '文章類型', '結局', '紅標'] + list(B.F.FACETS) + B.F.EVENT_FACETS)}, str(out)) == []
 
 def test_copy_static_is_noop_when_out_is_repo_root():
     assert B.copy_static(ROOT, ROOT) == []
+
+# ---- 精簡資料格式(data.json)----
+def test_compact_expand_roundtrip(built):
+    DATA = built[0]
+    C = B.compact_data(DATA)
+    assert C['v'] == 2 and len(C['pids']) == len(DATA['people'])
+    a = next(x for x in C['articles'] if x['n'] == '233')                     # 作者空白、紅標的一篇
+    assert 'a' not in a and 'ai' not in a and 'r' not in a and a['d'] == 1    # 空欄位不輸出;dead 只在 True 時輸出 1
+    assert all('d' not in x for x in C['articles'] if not next(y for y in DATA['articles'] if y['no'] == x['n'])['dead'])
+    assert all(isinstance(i, int) for g in a.get('g', []) for i in g)          # 標籤是 options 索引
+    assert B.expand_data(json.loads(json.dumps(C))) == json.loads(json.dumps(DATA))
+
+def test_compact_fixture_matches_committed_file(built):
+    """tests/fixtures/compact_30.json 是 vitest(src/data.js expandData)用的對照檔,要跟 compact_data 的現況一致;
+    格式改了就 python3 tests/fixtures/make_fixture.py 重產。"""
+    DATA = built[0]
+    committed = json.load(io.open(os.path.join(ROOT, 'tests', 'fixtures', 'compact_30.json'), encoding='utf-8'))
+    assert json.loads(json.dumps(B.compact_data(DATA))) == committed
+
+def test_expand_data_passthrough_and_fallbacks():
+    full = {'total': 1, 'articles': [{'no': '1'}]}
+    assert B.expand_data(full) is full                       # 舊的完整格式原樣回傳
+    C = {'v': 2, 'facets': [{'key': '結局', 'type': 'single', 'options': [['HE', 1]]}], 'people': {}, 'pids': [],
+         'articles': [{'n': '7', 'm': 'x', 'ai': [-1], 'g': [['不在選項裡']]}]}
+    a = B.expand_data(C)['articles'][0]
+    assert a['author_ids'] == [''] and a['tags'] == {'結局': ['不在選項裡']} and a['created'] == '' and a['links'] == []
+
+def test_sw_version_from_synced():
+    assert B.sw_version('2026/10/30 2:05 PM') == '20261030-1405'
+    assert B.sw_version('2026/10/30 8:31 AM') == '20261030-0831'
+    assert B.sw_version('2026/10/30 12:10 AM') == '20261030-0010'
+    assert B.sw_version('') == 'dev'
+    assert B.render_sw("const VERSION = '__SW_VERSION__';", {'synced': '2026/10/30 9:01 PM'}) == "const VERSION = '20261030-2101';"
 
 def test_self_check_reports_missing_endpoint():
     warn = B.self_check('<html></html>', {}, '/nonexistent')

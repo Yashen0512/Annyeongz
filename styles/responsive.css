@@ -32,10 +32,8 @@ body.noscroll{overflow:hidden}
 /* 手機 */
 @media(max-width:560px){
   body{font-size:16px}                /* 整體字級提高 */
-  .banner{aspect-ratio:2.6/1}                 /* 退路:沒有手機專用圖時,用桌機6:1圖裁切加高 */
-  .banner .bimg-m{display:block;position:static;width:100%;height:auto}  /* 手機專用方圖:完整、不裁切 */
-  .banner:has(.bimg-m){aspect-ratio:auto}     /* 有方圖時高度跟著圖走 */
-  .banner:has(.bimg-m) .bimg{display:none}    /* 有方圖時隱藏桌機6:1圖 */
+  .banner{aspect-ratio:2/1}                   /* 手機:<picture> 選到 2:1 方圖,完整顯示不裁切;比例先佔好,圖到了不跳版 */
+  .banner .bimg{position:static;height:auto;aspect-ratio:2/1;object-fit:contain}
   .search{font-size:16px;padding:13px 18px}   /* 搜尋列加大 */
   #toTop{width:56px;height:56px;font-size:27px;right:16px;bottom:16px}  /* 置頂鍵加大 */
   .close{width:48px;height:48px;font-size:30px;line-height:1;top:14px;right:14px}     /* 圓縮小一點、✕ 放大(使用者 2026/7/30 要求) */
@@ -51,6 +49,7 @@ body.noscroll{overflow:hidden}
   .hint{font-size:13px}
   .opt{font-size:14px;padding:6px 12px}
   .scard{flex:0 0 180px}
+  .strip{min-height:96px}        /* 手機字級較大:11+2行×24+4+19.2+11+2 ≈ 95.2 */
   .scard .st{font-size:15px}
   .scard .sm{font-size:12px}
   .toolbar .count{margin-left:0;flex-basis:100%;font-size:14px}

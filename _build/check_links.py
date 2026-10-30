@@ -4,7 +4,7 @@
    **不寫 Notion**;寫回由 notion_writeback.py 讀 check_report.json 負責。只用標準庫。
 
    來源:article_links.json(每篇頁面內文的閱讀連結;保留鍵 __blocks__ 給寫回定位 block)
-         + 作者庫 CSV 的各平台網址(fetch_data.py 產出;沒有 CSV 時退回讀 ../data.js)
+         + 作者庫 CSV 的各平台網址(fetch_data.py 產出;沒有 CSV 時退回讀 ../data.json,用 build_site.expand_data 還原)
    規則:
    - 依網域分派 checkers/{postype,lofter,ao3,aff}.py;同平台請求間隔 1.5~3 秒隨機,四個平台各一條執行緒交錯
    - 逾時 / 5xx / 429 重試 2 次,仍失敗 = unknown,不算已刪
@@ -212,15 +212,14 @@ def load_json(path, default):
         return default
 
 def load_site_data(src_dir):
-    """優先用 fetch_data.py 產出的 CSV 走 build_site.build_data();沒有 CSV 就退回讀 ../data.js。
+    """優先用 fetch_data.py 產出的 CSV 走 build_site.build_data();沒有 CSV 就退回讀 ../data.json(精簡格式,expand_data 還原)。
     回傳 (articles_by_no, people)。"""
     import glob
     if glob.glob(os.path.join(src_dir, '*%s_all.csv' % '176a7213548080cda25dd9e1edd5b7a4')):
         DATA, _ = B.build_data(src_dir)
     else:
-        djs = os.path.join(src_dir, '..', 'data.js')
-        s = io.open(djs, encoding='utf-8').read()
-        DATA = json.loads(s[s.index('{'):s.rindex('}') + 1])
+        djs = os.path.join(src_dir, '..', 'data.json')
+        DATA = B.expand_data(json.load(io.open(djs, encoding='utf-8')))
         print('(沒有 Notion CSV,改用 %s 的作者 / 文章資料)' % os.path.relpath(djs))
     return {a['no']: a for a in DATA['articles']}, DATA['people']
 

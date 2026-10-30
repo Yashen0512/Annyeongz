@@ -19,7 +19,7 @@ HEADERS = {'User-Agent': UA,
            'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8,ko;q=0.7',
            'Accept-Encoding': 'gzip'}
 
-# 平台 → [(說明, 網址)];已刪的取自 data.js 裡 dead=true 且 links 第三格為 1 的篇目
+# 平台 → [(說明, 網址)];已刪的取自 data.json 裡 dead=true 且 links 第三格為 1 的篇目
 SAMPLES = {
     'postype': [('正常', 'https://www.postype.com/@ynseasonrps/post/17540326'),
                 ('已刪', 'https://www.postype.com/@rps-rrr/post/5273805'),
@@ -28,7 +28,7 @@ SAMPLES = {
                ('已刪', 'https://null837932.lofter.com/post/3150adbe_34d4dc338'),
                ('不存在', 'https://liaoshann.lofter.com/post/75a5b5cf_ffffffffff')],
     'ao3': [('正常', 'https://archiveofourown.org/works/79669351'),
-            ('已刪(data.js 無 AO3 已刪樣本,改用舊編號)', 'https://archiveofourown.org/works/1'),
+            ('已刪(data.json 無 AO3 已刪樣本,改用舊編號)', 'https://archiveofourown.org/works/1'),
             ('不存在', 'https://archiveofourown.org/works/999999999999')],
     'aff': [('正常', 'https://www.asianfanfics.com/story/view/1596369/n-a'),
             ('已刪', 'https://www.asianfanfics.com/story/view/1700779/kiss-me-more'),

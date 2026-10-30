@@ -1,16 +1,18 @@
 <!DOCTYPE html>
-<html lang="zh-Hant">
+<html lang="zh-Hant" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>🐶❤️🐰 Annyeongz 平行宇宙 🐰❤️🐶</title>
+<!-- 主題要在 CSS 套用前決定,避免淺色閃一下再變深色;key 'azTheme' 與 src/storage.js 的 KEYS.THEME 相同(這裡不能 import,須同步) -->
+<script>try{document.documentElement.setAttribute('data-theme',localStorage.getItem('azTheme')||'dark')}catch(e){}</script>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>🍍</text></svg>">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#15161b">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Annyeongz">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="assets/icons/icon-192.png">
 <!-- 分享預覽(Open Graph) -->
 <meta name="description" content="Annyeongz Destiny 編號#09010831平行宇宙">
 <meta property="og:type" content="website">
@@ -25,6 +27,19 @@
 <!-- RSS(_build/build_pages.py 產出):最新收錄 / 最近編輯各 50 篇 -->
 <link rel="alternate" type="application/rss+xml" title="Annyeongz 平行宇宙 ✨ 新星誕生(最新收錄)" href="feed.xml">
 <link rel="alternate" type="application/rss+xml" title="Annyeongz 平行宇宙 🛰️ 軌道更新(最近編輯)" href="feed-updated.xml">
+<!-- 模組預先抓:modulepreload 讓 main.js 的整個依賴圖與 CSS 平行到位。data.json 不在這裡 preload:boot.js 等橫幅畫出來才抓(首屏先出來,資料隨後) -->
+<link rel="modulepreload" href="src/boot.js">
+<link rel="modulepreload" href="src/pwa.js">
+<link rel="modulepreload" href="src/main.js">
+<link rel="modulepreload" href="src/data.js">
+<link rel="modulepreload" href="src/filter.js">
+<link rel="modulepreload" href="src/sort.js">
+<link rel="modulepreload" href="src/storage.js">
+<link rel="modulepreload" href="src/url.js">
+<link rel="modulepreload" href="src/render.js">
+<link rel="modulepreload" href="src/related.js">
+<link rel="modulepreload" href="src/reactions.js">
+<link rel="modulepreload" href="src/api.js">
 <link rel="stylesheet" href="styles/base.css">
 <link rel="stylesheet" href="styles/panel.css">
 <link rel="stylesheet" href="styles/main.css">
@@ -32,23 +47,27 @@
 <link rel="stylesheet" href="styles/responsive.css">
 <link rel="stylesheet" href="styles/intro.css">
 </head>
-<body>
+<body class="loading">
 <a class="skip" href="#main">跳到主內容</a>
 <div id="intro" title="點一下略過" aria-hidden="true"><canvas></canvas>
   <div class="ttl"><div class="pair"><span class="d">🐶</span><span class="h">❤️</span><span class="r">🐰</span></div><div class="nm">Annyeongz 平行宇宙</div></div>
 </div>
 <script src="src/intro.js"></script>
-<!-- 橫幅是裝飾圖(站名在下面頂欄的 h1),對輔助科技隱藏 -->
-<div class="banner" id="banner" aria-hidden="true">
-  <img class="bimg" src="banner.png" alt="">
-  <img class="bimg-m" src="banner-mobile.png" alt="" onerror="this.remove()">
-</div>
+<!-- 橫幅是裝飾圖(站名在下面頂欄的 h1),對輔助科技隱藏。<picture>:手機(≤560px)載 2:1 方圖、其餘載 6:1 寬圖;WebP 優先、PNG 退路(只會下載一張) -->
+<picture class="banner" id="banner" aria-hidden="true">
+  <source media="(max-width:560px)" srcset="assets/banner-mobile.webp" type="image/webp">
+  <source media="(max-width:560px)" srcset="banner-mobile.png">
+  <source srcset="assets/banner-1200.webp 1200w, assets/banner.webp 2400w" sizes="100vw" type="image/webp">
+  <img class="bimg" src="banner.png" width="2400" height="400" fetchpriority="high" decoding="async" alt="">
+</picture>
 <header class="topbar">
   <h1 class="brand">🐶❤️🐰 Annyeongz 平行宇宙 🐰❤️🐶</h1>
-  <input id="q" class="search" placeholder="🔍 搜尋標題 / 番外篇名 / 作者 / 譯者 / 人設(簡繁皆可)" aria-label="搜尋標題 / 番外篇名 / 作者 / 譯者 / 人設(簡繁皆可)">
-  <button id="theme" class="theme" title="切換白晝 / 黑夜" aria-label="切換白晝 / 黑夜">🌙</button>
+  <input id="q" class="search" type="search" placeholder="🔍 搜尋標題 / 番外篇名 / 作者 / 譯者 / 人設(簡繁皆可)" aria-label="搜尋標題 / 番外篇名 / 作者 / 譯者 / 人設(簡繁皆可)">
+  <button type="button" id="installBtn" class="theme install" hidden title="安裝到桌面" aria-label="安裝到桌面">⬇️ 安裝</button>
+  <button type="button" id="theme" class="theme" title="切換白晝 / 黑夜" aria-label="切換白晝 / 黑夜">🌙</button>
 </header>
 
+<div class="loading-note" id="loadingNote" aria-live="polite">🛰️ 星圖載入中…</div>
 <div class="wrap">
   <!-- 面板標題用 h2(手機顯示 panelbar 的、桌機顯示 paneltitle 的),分面才是 h3,標題層級才不會從 h1 跳到 h3 -->
   <aside class="panel" id="panel" aria-label="分類篩選"><div class="panelbar"><h2>🔧 分類篩選</h2><button type="button" class="ctl pbdone">完成</button></div><h2 class="paneltitle">分類篩選</h2></aside>
@@ -94,8 +113,15 @@
       <div class="hint">同區點多個＝任一(OR)、跨區＝同時(AND)、再點一下＝排除(紅刪除線);區標題可切「任一/全部」。點書卡看詳情。</div>
       <div class="authorhead" id="authorHead" style="display:none"></div>
       <div class="sel-bar" id="selbar"></div>
+      <!-- 跳到 #編號:在目前篩選結果裡找到該篇,自動載入到那張卡、捲過去並短暫高亮 -->
+      <form class="jumpbar" id="jumpForm" autocomplete="off">
+        <label for="jumpNo">跳到 #</label><input id="jumpNo" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="編號" aria-label="跳到編號">
+        <button type="submit" class="ctl">前往</button>
+        <span class="jmsg" id="jumpMsg" role="status" aria-live="polite"></span>
+      </form>
       <div id="list" class="grid"></div>
-      <div id="pager" class="pager"></div>
+      <!-- 分批渲染的哨兵:捲到附近自動補下一批;按鈕是沒有 IntersectionObserver 時的退路 -->
+      <div id="more" class="more" hidden><span class="more-txt" aria-live="polite"></span><button type="button" class="ctl">再載入 40 篇 ↓</button></div>
     </section>
   </main>
 </div>
@@ -107,13 +133,14 @@
   <div class="foot-note">🐶❤️🐰 Annyeongz 平行宇宙 🐰❤️🐶</div>
   <div class="foot-note">🌌 宇宙誕生於 2023/08/07 ・ <a class="foot-link" href="stats.html">📊 統計星圖</a></div>
 </footer>
-<script data-goatcounter="https://yashen0512.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+<script data-goatcounter="https://yashen0512.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
 
-<!-- 詳情 / 公告彈窗:<dialog>(showModal 鎖焦點、Esc 關閉);標題在 sheet 裡的 #sheetTitle -->
+<!-- 詳情 / 公告彈窗:<dialog>(showModal 鎖焦點、Esc 關閉);標題在 sheet 裡的 #sheetTitle;內容打開時才產生、關閉清空 -->
 <dialog class="modal" id="modal" aria-labelledby="sheetTitle"><div class="sheet" id="sheet"></div></dialog>
 <button type="button" id="toTop" title="回到頂部" aria-label="回到頂部">↑</button>
+<!-- PWA 更新提示條:sw.js 抓到新的 data.json 或新版網站時由 src/pwa.js 顯示 -->
+<button type="button" id="updateBar" class="update-bar" hidden></button>
 
-<script>/*__DATA__*/</script>
 <script>
 // 建置時注入(build_site.py):簡繁對照表 stmap.txt 兩行 = 繁字串 / 簡字串(搜尋簡繁互通)
 window.AZ_STMAP={t:"__STMAP_T__",s:"__STMAP_S__"};
@@ -124,9 +151,8 @@ window.AZ_CONFIG={
   STATS_API:"https://yashen0512--8328cb68778d11f19f361607ee4eb77e.web.val.run"
 };
 </script>
-<!-- 書架匯出 / 匯入:壓縮與 QR code 單檔(vendor/README.md),傳統 script 掛到 window.LZString / window.qrcode -->
-<script src="vendor/lz-string.min.js"></script>
-<script src="vendor/qrcode.js"></script>
-<script type="module" src="src/main.js"></script>
+<!-- 書架匯出 / 匯入用的 vendor 單檔(lz-string、qrcode)不在這裡載:main.js 的 ensureVendor() 在按下匯出 / 匯入時才插入 <script>,離線由 sw.js 預快取供應 -->
+<!-- 資料(data.json)由 boot.js 抓回來再啟動 main.js;不再內嵌在這裡 -->
+<script type="module" src="src/boot.js"></script>
 </body>
 </html>

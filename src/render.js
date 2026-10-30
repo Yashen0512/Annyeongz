@@ -1,4 +1,4 @@
-// 畫面產生:書卡、輪播小卡、分類面板、條件列、分頁、詳情 / 公告彈窗、統計卡。
+// 畫面產生:書卡(分批渲染)、輪播小卡、分類面板、條件列、詳情 / 公告彈窗、統計卡。
 // 這裡只負責把資料變成 DOM / HTML 字串;狀態與事件的接線在 main.js。
 //
 // 注意:詳情與書卡的 HTML 字串裡用 inline onclick 呼叫下列全域函式(由 main.js 掛到 window):
@@ -68,8 +68,8 @@ export function cardHTML(a, ctx) {
     <div class="tg">${multiTags(a, ctx.facets).map((t) => `<button type="button" onclick="event.stopPropagation();filterByTag('${encodeURIComponent(t)}')" aria-label="篩選標籤：${t}">${t}</button>`).join('')}</div>`;
 }
 
-/** 主列表:把這一頁的書卡放進 listEl。整張卡滑鼠可點,鍵盤用標題 <button>(Enter / Space 的 click 會冒泡到卡片);
- *  onOpen(a, 標題按鈕) 多傳來源元素,詳情關閉後焦點才能回到原卡片。 */
+/** 主列表:把一批書卡接在 listEl 後面。整張卡滑鼠可點,鍵盤用標題 <button>(Enter / Space 的 click 會冒泡到卡片);
+ *  onOpen(a, 標題按鈕) 多傳來源元素,詳情關閉後焦點才能回到原卡片。每張卡帶 data-no(跳到 #編號 / 焦點還原用)。 */
 export function renderCards(listEl, hits, ctx, onOpen) {
   const frag = document.createDocumentFragment();
   hits.forEach((a) => {
@@ -79,6 +79,66 @@ export function renderCards(listEl, hits, ctx, onOpen) {
     c.innerHTML = cardHTML(a, ctx); c.onclick = () => onOpen(a, c.querySelector('.card-open')); frag.appendChild(c);
   });
   listEl.appendChild(frag);
+}
+
+/**
+ * 分批渲染的主列表:先畫前 batch 張,捲到底前(IntersectionObserver 盯著 moreEl,提前 rootMargin 觸發)自動補下一批;
+ * moreEl 裡的按鈕是沒有 IntersectionObserver 時的手動退路,文字顯示「已顯示 N / M 篇」。
+ * 真正的虛擬捲動在這裡用不上:每批只在捲到時才建 DOM,再配合 CSS content-visibility:auto 讓畫面外的書卡不排版、不繪製,
+ * 1486 篇全部捲完 DOM 也只是線性成長,沒有引入套件的必要。
+ *   set(hits, keepShown)  換一份清單:清空重畫;keepShown = true 時維持原本已顯示的張數(夾到清單長度,至少一批),
+ *                         對應原站「搜尋 / 排序 / 勾選框重繪不跳回第 1 頁」的行為;false 從第一批開始
+ *   more()                手動補一批
+ * @param {(slice:Array)=>void} renderBatch 畫一批(呼叫端用 renderCards)  @param {(shown:number)=>void} [onChange] 已顯示張數變了(存捲動狀態用)
+ */
+export function createLazyList(listEl, moreEl, { batch = 40, rootMargin = '800px 0px', renderBatch, onChange }) {
+  let hits = [], shown = 0, ticking = false;
+  const btn = moreEl.querySelector('button'), txt = moreEl.querySelector('.more-txt');
+  const nearBottom = () => moreEl.getBoundingClientRect().top < window.innerHeight + 800;
+
+  function update() {
+    const left = hits.length - shown;
+    moreEl.hidden = left <= 0;
+    if (txt) txt.textContent = `已顯示 ${shown} / ${hits.length} 篇`;
+    if (btn) btn.textContent = `再載入 ${Math.min(batch, Math.max(left, 0))} 篇 ↓`;
+  }
+  function more() {
+    if (shown >= hits.length) return;
+    const slice = hits.slice(shown, shown + batch);
+    renderBatch(slice); shown += slice.length; update(); if (onChange) onChange(shown);
+    // 一批不夠高(例如桌機多欄)讓哨兵還在畫面裡時,下一幀再補,直到看不到或沒得補
+    if (!moreEl.hidden && !ticking) { ticking = true; requestAnimationFrame(() => { ticking = false; if (!moreEl.hidden && nearBottom()) more(); }); }
+  }
+  function set(list, keepShown) {
+    hits = list || [];
+    const target = keepShown ? Math.min(hits.length, Math.max(batch, shown)) : Math.min(hits.length, batch);
+    listEl.innerHTML = ''; shown = 0;
+    if (target) { renderBatch(hits.slice(0, target)); shown = target; }
+    update(); if (onChange) onChange(shown);
+  }
+  /** 至少顯示到第 n 張(一次補齊,不分批):跳到 #編號、從詳情 / 分享頁 / 上一頁返回時還原已載入張數用。回傳實際顯示張數。 */
+  function ensure(n) {
+    const target = Math.min(hits.length, Math.max(0, n | 0));
+    if (target > shown) { renderBatch(hits.slice(shown, target)); shown = target; update(); if (onChange) onChange(shown); }
+    return shown;
+  }
+  if (btn) btn.onclick = more;
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) more(); }, { rootMargin });
+    io.observe(moreEl);
+  }
+  return { set, more, ensure, shown: () => shown, hits: () => hits };
+}
+
+/** el 進入(或接近)視窗時執行一次 fn;不支援 IntersectionObserver 就立刻執行。輪播與熱門星系靠這個延後初始化。 */
+export function whenVisible(el, fn, rootMargin = '300px 0px') {
+  if (!el) return;
+  if (!('IntersectionObserver' in window)) { fn(); return; }
+  const io = new IntersectionObserver((es) => {
+    if (!es.some((e) => e.isIntersecting)) return;
+    io.disconnect(); fn();
+  }, { rootMargin });
+  io.observe(el);
 }
 
 const EMPTY = {
@@ -139,16 +199,18 @@ export function optAria(o, state) {
 
 /** 依目前狀態替面板標籤上色(on 粉底 / exc 紅刪除線)、aria 狀態,與「任一/全部」字樣(role=switch 的 aria-checked)。 */
 export function syncStyles(sel, modes) {
+  // 只在真的不同時才寫 className / textContent / aria,避免幾百個標籤每次重繪都觸發樣式失效
   document.querySelectorAll('.opt').forEach((o) => {
     if (o._key === undefined) return;   // 熱門星系的標籤沒有三態
-    const s = (sel[o._key] || {})[o._val];
-    o.className = 'opt' + (s === 'on' ? ' on' : s === 'exc' ? ' exc' : '');
-    optAria(o, s);
+    const s = (sel[o._key] || {})[o._val]; const cls = 'opt' + (s === 'on' ? ' on' : s === 'exc' ? ' exc' : '');
+    if (o.className !== cls) { o.className = cls; optAria(o, s); }
+    else if (!o.hasAttribute('aria-pressed')) optAria(o, s);
   });
   document.querySelectorAll('.mode').forEach((m) => {
-    const and = modes[m.dataset.k] === 'and';
-    m.className = 'mode' + (and ? ' and' : ''); m.textContent = and ? '全部' : '任一';
-    m.setAttribute('aria-checked', String(and));
+    const and = modes[m.dataset.k] === 'and'; const cls = 'mode' + (and ? ' and' : ''), txt = and ? '全部' : '任一';
+    if (m.className !== cls) m.className = cls;
+    if (m.textContent !== txt) m.textContent = txt;
+    if (m.getAttribute('aria-checked') !== String(and)) m.setAttribute('aria-checked', String(and));
   });
 }
 
@@ -215,36 +277,6 @@ export function annHTML(x, i, n) {
     <h2 id="sheetTitle">📻 星際廣播</h2>
     <div class="ann-meta">${x.pin ? '📌 置頂 · ' : ''}${x.date}</div>
     <div class="ann-full">${x.content}</div>` + navBar(i, n, '則');
-}
-
-/** 分頁列:上一頁 / 頁碼(目前頁 ±2 + 首尾)/ 下一頁 / 輸入頁數跳轉。 */
-export function renderPager(el, page, pages, gotoPage) {
-  el.innerHTML = '';
-  if (pages <= 1) { return; }
-  const add = (label, p, cls) => {
-    const c = cls || '', dots = c.includes('dots');
-    const b = document.createElement(dots ? 'span' : 'button'); b.className = 'pg ' + c; b.textContent = label;
-    if (!dots) { b.type = 'button'; if (c.includes('cur')) b.setAttribute('aria-current', 'page'); else if (!p) b.disabled = true; }
-    if (p && !c.includes('cur')) b.onclick = () => gotoPage(p); el.appendChild(b);
-  };
-  add('‹ 上一頁', page > 1 ? page - 1 : null, page > 1 ? '' : 'dis');
-  const win = 2, nums = new Set([1, pages]);
-  for (let i = page - win; i <= page + win; i++) if (i >= 1 && i <= pages) nums.add(i);
-  const sorted = [...nums].sort((a, b) => a - b); let prev = 0;
-  sorted.forEach((n) => { if (n - prev > 1) add('…', null, 'dots'); add(String(n), n, n === page ? 'cur' : ''); prev = n; });
-  add('下一頁 ›', page < pages ? page + 1 : null, page < pages ? '' : 'dis');
-  // 輸入頁數跳轉:Enter 或「前往」;超出範圍自動夾到 1~最後一頁,非數字不動作
-  const jump = document.createElement('span'); jump.className = 'pg-jump';
-  jump.innerHTML = `第 <input type="number" inputmode="numeric" min="1" max="${pages}" value="${page}" aria-label="輸入頁數"> / ${pages} 頁 <button type="button" class="pg">前往</button>`;
-  const inp = jump.querySelector('input');
-  const go = () => {
-    const v = parseInt(inp.value, 10); if (isNaN(v)) { inp.value = page; return; }
-    const p = Math.min(pages, Math.max(1, v)); if (p === page) { inp.value = page; return; } gotoPage(p);
-  };
-  inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } };
-  inp.onfocus = () => inp.select();
-  jump.querySelector('.pg').onclick = go;
-  el.appendChild(jump);
 }
 
 /** 詳情:作者 / 譯者列(名字可點看全部 + 平台連結)。refs = [{name, id}](personRefs)。 */

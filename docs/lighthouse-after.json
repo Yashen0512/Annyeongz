@@ -1,0 +1,197 @@
+{
+  "說明": "Lighthouse 13.6 行動版(simulate throttling、Moto G Power 模擬),對 python -m http.server 8000 的首頁量測;改動後(已 rebase 到 main,含統計星圖、書架匯出匯入、分享頁、a11y)。本機 http.server 不壓縮,線上 GitHub Pages 會 gzip(data.json 547KB → 約 130KB),實際會再快一些。連跑兩次,TBT 隨開場動畫的幀數有 110~290ms 的浮動,四項都 ≥ 90。",
+  "lighthouseVersion": "13.6.0",
+  "fetchTime": "2026-10-30T13:18:06.492Z",
+  "url": "http://localhost:8000/",
+  "scores": {
+    "performance": 97,
+    "accessibility": 100,
+    "best-practices": 96,
+    "seo": 100
+  },
+  "scores_before": {
+    "performance": 33,
+    "accessibility": 88,
+    "best-practices": 77,
+    "seo": 100
+  },
+  "runs": [
+    {
+      "fetchTime": "2026-10-30T13:17:52.367Z",
+      "scores": {
+        "performance": 92,
+        "accessibility": 100,
+        "best-practices": 96,
+        "seo": 100
+      },
+      "metrics": {
+        "first-contentful-paint": "1.4 s",
+        "largest-contentful-paint": "2.1 s",
+        "total-blocking-time": "290 ms",
+        "cumulative-layout-shift": "0",
+        "speed-index": "3.3 s"
+      }
+    },
+    {
+      "fetchTime": "2026-10-30T13:18:06.492Z",
+      "scores": {
+        "performance": 97,
+        "accessibility": 100,
+        "best-practices": 96,
+        "seo": 100
+      },
+      "metrics": {
+        "first-contentful-paint": "1.4 s",
+        "largest-contentful-paint": "2.1 s",
+        "total-blocking-time": "110 ms",
+        "cumulative-layout-shift": "0",
+        "speed-index": "3.2 s"
+      }
+    }
+  ],
+  "metrics": {
+    "first-contentful-paint": {
+      "score": 0.98,
+      "displayValue": "1.4 s"
+    },
+    "largest-contentful-paint": {
+      "score": 0.96,
+      "displayValue": "2.1 s"
+    },
+    "total-blocking-time": {
+      "score": 0.98,
+      "displayValue": "110 ms"
+    },
+    "cumulative-layout-shift": {
+      "score": 1,
+      "displayValue": "0"
+    },
+    "speed-index": {
+      "score": 0.92,
+      "displayValue": "3.2 s"
+    },
+    "interactive": {
+      "score": 0.98,
+      "displayValue": "2.4 s"
+    }
+  },
+  "metrics_before": {
+    "first-contentful-paint": {
+      "score": 0,
+      "displayValue": "8.1 s"
+    },
+    "largest-contentful-paint": {
+      "score": 0,
+      "displayValue": "25.2 s"
+    },
+    "total-blocking-time": {
+      "score": 0.19,
+      "displayValue": "1,260 ms"
+    },
+    "cumulative-layout-shift": {
+      "score": 1,
+      "displayValue": "0"
+    },
+    "speed-index": {
+      "score": 0.21,
+      "displayValue": "8.1 s"
+    },
+    "interactive": {
+      "score": 0,
+      "displayValue": "25.2 s"
+    }
+  },
+  "axe": "docs/axe-after.json:首頁(桌機 / iPhone SE)、詳情 dialog、手機篩選面板、匯出視窗、統計頁 共 9 個情境 0 violations",
+  "剩餘紅字": [
+    {
+      "audit": "errors-in-console",
+      "title": "Browser errors were logged to the console",
+      "score": 0,
+      "displayValue": "",
+      "weight": 1,
+      "備註": "本機沙箱連不到 val.run / gc.zgo.at(ERR_TUNNEL),上線環境不會發生"
+    },
+    {
+      "audit": "mainthread-work-breakdown",
+      "title": "Minimize main-thread work",
+      "score": 0,
+      "displayValue": "2.5 s",
+      "weight": 0,
+      "備註": "主要是開場動畫 2 秒內的 rAF 幀與首批 40 張書卡的樣式排版"
+    },
+    {
+      "audit": "unminified-css",
+      "title": "Minify CSS",
+      "score": 0.5,
+      "displayValue": "Est savings of 2 KiB",
+      "weight": 0,
+      "備註": "同上"
+    },
+    {
+      "audit": "unminified-javascript",
+      "title": "Minify JavaScript",
+      "score": 0,
+      "displayValue": "Est savings of 25 KiB",
+      "weight": 0,
+      "備註": "專案慣例不用 bundler / minify(CLAUDE.md)"
+    },
+    {
+      "audit": "cache-insight",
+      "title": "Use efficient cache lifetimes",
+      "score": 0,
+      "displayValue": "Est savings of 174 KiB",
+      "weight": 0,
+      "備註": "本機 http.server 沒有 Cache-Control;線上 GitHub Pages 有,且 service worker 另有快取"
+    },
+    {
+      "audit": "document-latency-insight",
+      "title": "Document request latency",
+      "score": 0.5,
+      "displayValue": "Est savings of 21 KiB",
+      "weight": 0,
+      "備註": "本機 http.server 沒有 gzip;線上 GitHub Pages 有"
+    },
+    {
+      "audit": "forced-reflow-insight",
+      "title": "Forced reflow",
+      "score": 0,
+      "displayValue": "",
+      "weight": 0,
+      "備註": "輪播箭頭讀 scrollWidth(已合併到同一幀)"
+    },
+    {
+      "audit": "image-delivery-insight",
+      "title": "Improve image delivery",
+      "score": 0,
+      "displayValue": "Est savings of 24 KiB",
+      "weight": 0,
+      "備註": "icon-192.png(apple-touch-icon)可再壓,24KB"
+    },
+    {
+      "audit": "network-dependency-tree-insight",
+      "title": "Network dependency tree",
+      "score": 0,
+      "displayValue": "",
+      "weight": 0,
+      "備註": "關鍵鏈只有 CSS"
+    },
+    {
+      "audit": "render-blocking-insight",
+      "title": "Render-blocking requests",
+      "score": 0,
+      "displayValue": "Est savings of 430 ms",
+      "weight": 0,
+      "備註": "六個 CSS 檔 + 同步的 intro.js(開場動畫必須同步才不閃);線上 HTTP/2 平行載入"
+    }
+  ],
+  "主要改動": [
+    "index.html 不再內嵌 1.4MB 資料:改成精簡格式 data.json(547KB,gzip 約 130KB),boot.js 等橫幅畫出來後再抓;統計星圖與 build_pages.py 也改讀 data.json",
+    "橫幅改 <picture>:手機只載 banner-mobile.webp(34KB),桌機 banner-1200/banner.webp(31/88KB),PNG 退路;有 width/height 與 aspect-ratio",
+    "主列表分批渲染(首批 40 張 + IntersectionObserver 補批)+ 書卡 content-visibility:auto;輪播區塊接近視窗才初始化;面板 / 統計在 idle 時建;vendor(lz-string / qrcode)按匯出匯入時才載",
+    "載入中先隱藏主內容(body.loading)、輪播固定最小高度 → CLS 0",
+    "對比與目標尺寸:沿用 #5 的 -t 文字色票與 <dialog>;原文已刪書卡不再半透明;標籤 / chip / 條件 chip 等可點目標 ≥ 24px → 無障礙 100",
+    "GoatCounter 改明確 https",
+    "PWA:sw.js 靜態 cache-first(版本號由建置帶入)+ data.json stale-while-revalidate(背景以 no-cache 重新驗證)+ 更新提示條 + 安裝鈕 + maskable 圖示",
+    "新增「跳到 #編號」與列表狀態記憶(從詳情 / 分享頁 / 上一頁返回時保留已載入張數與捲動位置)"
+  ]
+}

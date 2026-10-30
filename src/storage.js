@@ -10,6 +10,7 @@ export const KEYS = {
   THEME: 'azTheme',                 // localStorage:'dark' | 'light'(預設深色)
   INTRO: 'azIntro',                 // sessionStorage:本分頁已播過開場動畫(src/intro.js 直接用字串,須同步)
   VIEW_PREFIX: 'azv_',              // sessionStorage:azv_<編號> = 同一分頁同一篇只計一次觀測
+  LIST_STATE: 'azList',             // sessionStorage:主列表已載入張數與捲動位置 {sig, shown, y}(從詳情 / 分享頁 / 上一頁返回時還原)
 };
 
 export const SHELF_TABS = ['fav', 'todo', 'read'];
@@ -38,6 +39,14 @@ export function loadTheme() {
 }
 export function saveTheme(t) {
   try { localStorage.setItem(KEYS.THEME, t); } catch (e) {}
+}
+
+/** 主列表狀態(sessionStorage):{sig 篩選簽章, shown 已顯示張數, y 捲動位置}。壞掉或沒有回 null。 */
+export function loadListState() {
+  try { const o = JSON.parse(sessionStorage.getItem(KEYS.LIST_STATE) || 'null'); return o && typeof o === 'object' ? o : null; } catch (e) { return null; }
+}
+export function saveListState(st) {
+  try { sessionStorage.setItem(KEYS.LIST_STATE, JSON.stringify(st)); } catch (e) {}
 }
 
 /**
