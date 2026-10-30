@@ -197,6 +197,12 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
   `sig` 是會影響清單內容的全部狀態(標籤三態、任一全部、作者、搜尋字、排序、書架分頁、兩個勾選框)的 JSON;
   開站 `render()` 之後 `restoreList()`:簽章對得上就 `ensure(shown)` 再捲回 `y`,所以從詳情、分享頁(`p/<No>/` → `?p=`)或瀏覽器「上一頁」回來
   不會重置回第一批。`boot.js` 把 `history.scrollRestoration` 設成 `manual`,避免瀏覽器自己的還原跟分批渲染打架。
+- **彈窗開著時鎖住背景捲動**(`main.js` `lockScroll` / `unlockScroll`,樣式 `modal.css` 的 `body.az-lock`):iOS Safari 只靠 `overflow:hidden`
+  擋不住觸控捲動,所以 `showSheet()` 記下 `scrollY`、把 body 設成 `position:fixed; top:-scrollY; width:100%`(桌機另補回捲軸寬度不跳版),
+  關閉時還原並 `scrollTo` 回原位置;詳情 / 公告 / 三個書架工具視窗都走同一條路。`closeDetail()` **同步**解鎖後才 `close()`
+  (dialog 的 `close` 事件是非同步的,點標籤 / 作者後的 `scrollToToolbar` 才不會被還原捲動蓋掉),Esc / 點灰底由 `close` 事件補解鎖。
+  鎖住期間 `window.scrollY` 是 0,`saveList` 改存 `_lockY`、`restoreList` 的延後捲動在鎖住時改寫進鎖(`setLockedY`),
+  所以 `?p=` 開站即開詳情、關閉後列表位置與已載入張數照舊。`.modal` 與 `.sheet` 都有 `overscroll-behavior:contain`,內容在彈窗內捲、不外溢。
 - **延後初始化**:星際廣播 / 新星誕生 / 軌道更新 / 熱門星系四區在區塊接近視窗時才建 DOM(`render.js` `whenVisible`);
   分類面板、統計卡、愛心計數在 `requestIdleCallback` 裡做。詳情 / 公告彈窗的內容打開時才產生、關閉時清空。
 - **橫幅**:`<picture>`,≤560px 載 `assets/banner-mobile.webp`(2:1),其餘載 `assets/banner-1200.webp` / `assets/banner.webp`(6:1,依寬度),

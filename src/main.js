@@ -55,10 +55,35 @@ const q = $('q');
 // 詳情視窗:<dialog>(新樣板)用 open 屬性;舊的 index.html 還是 div 時退回 display:flex(同步前的過渡期不會壞)
 const isDialog = () => typeof $('modal').showModal === 'function';
 const modalOpen = () => (isDialog() ? $('modal').open : $('modal').style.display === 'flex');
+// ---- 彈窗開著時鎖住背景捲動 ----
+// iOS Safari 只靠 body{overflow:hidden} 擋不住觸控捲動(在彈窗裡滑、尤其滑到底之後會帶動整頁),
+// 所以用標準做法:記下 scrollY,把 body 固定(position:fixed; top:-scrollY; width:100%,class 在 modal.css),
+// 關閉時還原並 scrollTo 回原位置。_lockY = 鎖住期間的「真正」捲動位置(鎖住時 window.scrollY 會變 0,
+// 列表狀態記憶 saveList 與 restoreList 都要改看它,從詳情 / 分享頁回來的位置與已載入張數才不會跑掉)。
+let _lockY = null;
+const scrollLocked = () => _lockY !== null;
+function lockScroll() {
+  if (scrollLocked()) return;
+  _lockY = Math.round(window.scrollY);
+  const b = document.body, sb = window.innerWidth - document.documentElement.clientWidth;   // 桌機:補回捲軸寬度,版面不會跳
+  b.style.top = -_lockY + 'px';
+  if (sb > 0) b.style.paddingRight = sb + 'px';
+  b.classList.add('az-lock');
+}
+/** 鎖住期間要改背景位置(例如開站時 restoreList 的還原捲動在彈窗已開之後才執行)。 */
+function setLockedY(y) { _lockY = Math.round(y); document.body.style.top = -_lockY + 'px'; }
+function unlockScroll() {
+  if (!scrollLocked()) return;
+  const y = _lockY; _lockY = null;
+  const b = document.body;
+  b.classList.remove('az-lock'); b.style.top = ''; b.style.paddingRight = '';
+  window.scrollTo(0, y);
+}
 function showSheet() {
   const m = $('modal');
   if (modalOpen()) return;
   _opener = document.activeElement && document.activeElement !== document.body ? document.activeElement : _opener;
+  lockScroll();
   if (isDialog()) m.showModal(); else m.style.display = 'flex';
 }
 /** 重新填入詳情內容前後:把焦點留在同一個位置(例如按了收藏後重繪,焦點不掉回 body)。 */
@@ -199,7 +224,9 @@ function openDetail(a, opener) {
   showSheet();
   if (changed) { sheet.scrollTop = 0; if (isDialog()) sheet.querySelector('.close')?.focus(); }   // 換篇時焦點回到最上面的關閉鈕
 }
-function closeDetail() { stopScan(); const m = $('modal'); if (isDialog()) { if (m.open) m.close(); } else { m.style.display = 'none'; restoreFocus(); $('sheet').innerHTML = ''; } }
+// 關閉:先同步解鎖還原捲動,再 close()(<dialog> 的 close 事件是非同步的,點標籤 / 作者後緊接的 render + scrollToToolbar
+// 必須在解鎖之後執行,否則會被還原捲動蓋掉);Esc / 點灰底走瀏覽器的 close → 下面的 close 事件補解鎖
+function closeDetail() { stopScan(); unlockScroll(); const m = $('modal'); if (isDialog()) { if (m.open) m.close(); } else { m.style.display = 'none'; restoreFocus(); $('sheet').innerHTML = ''; } }
 /** 關閉後把焦點還給打開它的元素;那張卡若已重繪(例如按了收藏),改找同編號的卡。 */
 function restoreFocus() {
   let el = _opener; _opener = null;
@@ -211,7 +238,7 @@ function restoreFocus() {
   if (el && el.isConnected) el.focus();
 }
 $('modal').onclick = (e) => { if (e.target.id === 'modal') closeDetail(); };   // 點灰底(dialog 本身)關閉
-$('modal').addEventListener('close', () => { stopScan(); restoreFocus(); $('sheet').innerHTML = ''; });   // Esc / close() 都會經過這裡(Esc 關掉匯入視窗時也要停相機);內容清空,下次打開才建
+$('modal').addEventListener('close', () => { stopScan(); unlockScroll(); restoreFocus(); $('sheet').innerHTML = ''; });   // Esc / close() 都會經過這裡(Esc 關掉匯入視窗時也要停相機);先解鎖再還焦點(focus 可能捲動);內容清空,下次打開才建
 function openByNo(no) { const a = D.articles.find((x) => x.no === no); if (a) { _navList = null; openDetail(a); } }
 // 開站時網址帶 ?p=<No>(從分享頁 p/<No>/ 導回來)→ 打開該篇詳情,並把參數從網址拿掉(其他參數與 #f= 保留)
 function openSharedArticle() {
@@ -504,7 +531,7 @@ function listSig() {
   return JSON.stringify({ sel, modes, a: authorFilter, q: q.value.trim(), s: $('sort').value, sh: shelfOn ? shelfTab : '', hr: !!$('hideRead').checked, hd: !!$('hideDead').checked });
 }
 let _saveTm = 0;
-function saveList() { saveListState({ sig: listSig(), shown: lazyList.shown(), y: Math.round(window.scrollY) }); }
+function saveList() { saveListState({ sig: listSig(), shown: lazyList.shown(), y: scrollLocked() ? _lockY : Math.round(window.scrollY) }); }   // 彈窗開著時 scrollY 是 0,要存鎖住前的位置
 function scheduleSaveList() { if (_saveTm) return; _saveTm = setTimeout(() => { _saveTm = 0; saveList(); }, 250); }
 window.addEventListener('scroll', scheduleSaveList, { passive: true });
 window.addEventListener('pagehide', saveList);
@@ -512,7 +539,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 function restoreList() {
   const st = loadListState(); if (!st || st.sig !== listSig()) return false;
   if (st.shown > lazyList.shown()) lazyList.ensure(st.shown);
-  if (st.y > 0) requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, st.y)));   // 等補上的卡排版完再捲
+  if (st.y > 0) requestAnimationFrame(() => requestAnimationFrame(() => { if (scrollLocked()) setLockedY(st.y); else window.scrollTo(0, st.y); }));   // 等補上的卡排版完再捲;彈窗已開(?p= / ?s=)就先記在鎖裡,關閉時再捲
   return true;
 }
 
@@ -560,7 +587,7 @@ updateAllSnav();
 
 // ---- 回到頂部 ----
 const toTop = $('toTop');
-window.addEventListener('scroll', () => { toTop.classList.toggle('show', window.scrollY > 400); });
+window.addEventListener('scroll', () => { if (!scrollLocked()) toTop.classList.toggle('show', window.scrollY > 400); });   // 鎖住時 scrollY 變 0,不要讓按鈕閃一下
 toTop.onclick = (e) => { if (e.detail) toTop.blur(); window.scrollTo({ top: 0, behavior: scrollBehavior() }); };   // 滑鼠點才 blur(手機不留粉色殘影),鍵盤保留焦點
 
 // ---- 頁尾:統計 / 更新時間 ----
