@@ -6,8 +6,10 @@ import { personRefs } from './data.js';
 
 /** 宇宙誕生日(首頁頁尾同一天)。 */
 export const BIRTH = { y: 2023, m: 8, d: 7 };
-/** 每月趨勢起點(YYYYMM)。 */
-export const START_YM = 202308;
+/** 舊資料批次匯入 Notion 的月份(965 篇同月建立,不是真實收錄節奏)。 */
+export const IMPORT_YM = 202501;
+/** 每月趨勢起點(YYYYMM)= 匯入月的下一個月;匯入月(含)以前的篇數只算進累積的起始值。 */
+export const START_YM = 202502;
 
 // ---------- 日期小工具 ----------
 
@@ -305,6 +307,7 @@ export function createCharts(Chart, D, opt = {}) {
   const charts = [];
   const make = (cv, cfg) => { if (cv && cfg) charts.push(new Chart(cv, cfg)); };
 
+  // 每月趨勢從匯入月的下一個月畫起(匯入月以前的篇數進累積起始值,總覽的總數不受影響)
   make(canvases.monthly, monthlyChartConfig(monthlyCounts(D.articles, START_YM, Math.max(START_YM, ymOfDate(now))), colors));
 
   const tags = tagRanking(D.articles, D.facets, { excludeDead, top: 20 });

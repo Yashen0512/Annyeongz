@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   monthRange, monthlyCounts, tagRanking, authorRanking, deadRatio, personCount, tagCount, overview,
-  scatterPoints, yearlyDead, daysSince, ymOf, yearOf, ymLabel, withAlpha, BIRTH, START_YM,
+  scatterPoints, yearlyDead, daysSince, ymOf, yearOf, ymLabel, withAlpha, BIRTH, START_YM, IMPORT_YM,
   monthlyChartConfig, rankingChartConfig, scatterChartConfig, yearlyChartConfig,
 } from '../src/stats.js';
 import { art } from './fixtures.js';
@@ -58,11 +58,13 @@ describe('每月分組 monthlyCounts', () => {
     expect(r.counts).toEqual([2, 0]);
     expect(r.cumulative).toEqual([3, 3]);   // 2024/12 那篇算進起始值;2025/03 兩篇與 No.6 不計
   });
-  it('預設從 2023/08 起算', () => {
-    expect(START_YM).toBe(202308);
-    const r = monthlyCounts(ARTS, START_YM, 202309);
-    expect(r.labels[0]).toBe('2023/08');
-    expect(r.counts).toEqual([0, 0]);
+  it('預設從匯入月(2025/01)的下一個月起算,匯入批次只進累積起始值', () => {
+    expect(IMPORT_YM).toBe(202501);
+    expect(START_YM).toBe(202502);
+    const r = monthlyCounts(ARTS, START_YM, 202503);
+    expect(r.labels).toEqual(['2025/02', '2025/03']);
+    expect(r.counts).toEqual([0, 2]);          // 2025/01 那兩篇不畫在趨勢線上
+    expect(r.cumulative).toEqual([3, 5]);      // 但累積從 3 起算(2024/12 一篇 + 2025/01 兩篇),總數不變
   });
 });
 
