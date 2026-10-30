@@ -23,7 +23,7 @@ src/                       前端程式(ES modules,無框架)
   data.js                  載入與正規化 window.DATA、簡繁折算、資料存取小工具
   filter.js                篩選(純函式,不碰 DOM)
   sort.js                  排序(純函式,六種)
-  storage.js               localStorage / sessionStorage 的 key 與讀寫(集中管理)
+  storage.js               localStorage / sessionStorage 的 key 與讀寫(集中管理);書架 / 已讀的匯出匯入(exportState / importState)
   url.js                   篩選狀態 ⇄ 網址 #f= 參數
   render.js                書卡、輪播小卡、分類面板、條件列、分頁、詳情 / 公告彈窗、統計卡的 DOM 產生
   related.js               「類似的文」相似度(純函式)
@@ -34,8 +34,9 @@ src/                       前端程式(ES modules,無框架)
   stats_page.js            統計星圖的組裝:讀 CSS 變數當圖表顏色、主題切換重畫、「全部 / 排除已刪」、計數讀取與備份退路
 styles/                    樣式,依原本的 cascade 順序切成六個檔(index.html 依序載入)+ stats.css(統計星圖專用)
   base.css panel.css main.css modal.css responsive.css intro.css stats.css
+vendor/                    第三方單檔(Chart.js 統計星圖;lz-string 壓縮與 qrcode-generator 產 QR 給書架匯出),傳統 <script> 載入,不走 npm;版本與授權見 vendor/README.md
 tests/                     測試
-  *.test.js                Vitest(filter / sort / url / stats 純函式)+ fixtures.js
+  *.test.js                Vitest(filter / sort / url / stats / storage 純函式)+ fixtures.js
   py/                      pytest(build_site / fetch_data 純函式 + 用 30 篇 fixture 跑完整建置)
   fixtures/build_input/    30 篇的建置輸入(主表 / 作者 / 公告 CSV、article_links.json、expected.json),由 make_fixture.py 從 data.js 反推
 _build/                    建置工具(Python,只用標準庫)
@@ -62,7 +63,7 @@ Notion 三個資料庫(主表、作者/譯者資料庫、公告)
   ▼
   │  _build/build_site.py   套 facets_def.py(分面定義、改名合併、逐篇校正)→ DATA
   │                         → <輸出>/data.js、<輸出>/index.html(site_template.html 注入 /*__DATA__*/ 與簡繁表)
-  │                         → 複製 src/、styles/ 到 <輸出>(輸出就是倉庫根目錄時不動)
+  │                         → 複製 src/、styles/、vendor/ 到 <輸出>(輸出就是倉庫根目錄時不動)
   ▼
 GitHub Pages(static.yml:整個倉庫原樣上傳)
 ```
@@ -196,6 +197,18 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
 
 - 「隱藏已讀」「隱藏原文已刪」兩個勾選框本身**不記憶**(重新整理就清掉),也不會進分享網址。
 - 書架完全存本機,免登入,每台裝置各自一份。
+- **帶到另一台裝置(匯出 / 匯入,`storage.js` 檔尾)**:書架區「📤 匯出」「📥 匯入」「🗑 清除所有紀錄」三個按鈕(`render.js` 的
+  `shelfToolsHTML`,視窗與詳情共用 `#modal`,`main.js` 的 `_mode = 'tool'`)。
+  - 格式 `{ v: 1, shelf: [收藏編號], read: [已讀編號], exportedAt: ISO }`,用 `vendor/lz-string.min.js` 的
+    `compressToEncodedURIComponent` 壓成只含 `A-Z a-z 0-9 + - $` 的字串(待閱讀不在匯出範圍內)。
+  - 匯出提供「複製字串」「複製匯入連結」(`<網址>?s=<字串>`)與 QR code(`vendor/qrcode.js`,內容是匯入連結;字串超過
+    `QR_MAX` = 2000 字就不畫、提示改用複製)。
+  - 匯入:貼上字串或連結、或「掃描 QR」(只有 `BarcodeDetector` 可用的瀏覽器才有這顆按鈕)→ `decodeState` 驗證 `v` 與欄位型別
+    (不合法丟 Error、顯示訊息、原資料完全不動)→ 預覽「將加入 X 本書架、Y 篇已讀」→ 選「合併」(預設,聯集)或「覆蓋」→ 確認才寫入。
+    匯入的已讀會自動移出待閱讀;匯入的收藏會標進 `annyeongz_favs_sent`(原裝置已算過公開愛心,不再 +1)。
+  - 另一台裝置打開 `?s=<字串>` 會自動跳出匯入預覽(不自動寫入);匯入完成後 `history.replaceState` 移除 `?s=`(`#f=` 保留)。
+    解析 `?s=` **不能用 `URLSearchParams`**(會把 `+` 當空白),用 `extractPayload`。
+  - 清除所有紀錄:要輸入「清除」才能按;清掉收藏 / 待閱讀 / 已讀 / `favs_sent` / 書架分頁,並像逐篇取消收藏一樣把已計入的公開愛心扣回。
 
 ## 複製篩選連結(`src/url.js`)
 
@@ -226,7 +239,7 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
   (`REACT_API` / `REPORT_API` / `STATS_API` 三個 Val Town 端點;`build_site.py` 的架構自檢會檢查它們還在)、GoatCounter 追蹤碼。
 - 因為用 ES module,**本機要用 http 伺服器開**(`npm run serve` 或 `python3 -m http.server 8000`),直接雙擊 `index.html`(file://)不行。
 - `package.json` / `tests/` / `node_modules` 只為了測試,部署用不到(`node_modules` 不進版控)。
-- 改了 `src/` 或 `styles/` 的檔名,記得同步 `sw.js` 的預先快取清單並把 `CACHE` 版本號 +1。
+- 改了 `src/`、`styles/` 或 `vendor/` 的檔名,記得同步 `sw.js` 的預先快取清單並把 `CACHE` 版本號 +1。
 
 ## 統計星圖(`stats.html`)
 
@@ -245,7 +258,7 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
 
 ```bash
 npm install                       # 只需一次(vitest 是 devDependency)
-npm test                          # vitest run:tests/filter.test.js、sort.test.js、url.test.js、stats.test.js
+npm test                          # vitest run:tests/filter.test.js、sort.test.js、url.test.js、stats.test.js、storage.test.js
 pip install -r requirements-dev.txt   # 只需一次(pytest)
 python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆分與 ID、日期、30 篇 fixture 完整建置比對)、fetch_data(No 三種型別、token 來源)
 ```
@@ -253,6 +266,7 @@ python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆�
 - `.github/workflows/test.yml` 在 PR 時兩組都自動跑,不需要 Notion token。
 - fixture 由 `python3 tests/fixtures/make_fixture.py` 從 `data.js` 反推(30 篇:含空作者、多作者、譯文、站內互連、兩種 dead、收錄篇名);
   `expected.json` 是這 30 篇在 `data.js` 的原樣,測試斷言「從 CSV 重建 == 原本」。資料格式改了就重產 fixture。
+- `storage.test.js` 把 `vendor/lz-string.min.js` 當傳統 script 執行後掛到 `globalThis.LZString`(與瀏覽器同一份),並用假的 `localStorage`。
 - 純函式模組(filter / sort / url / related / stats)不可 import DOM 或 `window`,這樣才能在 Node 直接測;
   `build_site.py` / `fetch_data.py` 的 import 不能有副作用(網路、讀 CSV),主流程放 `main()`。
 - 改畫面或行為前後,建議用 Playwright 把舊版與新版同時跑一遍比對 DOM 與截圖(這次拆模組就是這樣驗的)。
@@ -261,6 +275,7 @@ python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆�
 
 - **繁體中文註解**(台灣用語),檔頭先寫這個模組負責什麼。
 - **不用框架、不引入大型相依套件**;前端只有原生 ES module,開發相依只有 Vitest 與 pytest。瀏覽器端沒有 bundler、沒有 transpile。
+  需要的第三方小工具以單檔放 `vendor/`(傳統 script 掛全域),`src/` 裡用 `globalThis.X` 取用並處理沒載到的情況。
 - **Python 腳本只用標準庫**(`csv`、`json`、`urllib`…,現況如此,維持),這樣站長電腦與 Actions 都不用裝套件。
 - 作者一律用 Notion 作者頁 ID 對應(`author_ids` / `people[id]`),顯示名只是顯示;改名同步之後會填 `aliases`。
 - 純函式與 DOM 分開:`filter.js`、`sort.js`、`url.js`、`related.js` 不碰 DOM;`render.js` 只產生 DOM,狀態與事件接線都在 `main.js`。

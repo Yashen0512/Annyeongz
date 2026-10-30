@@ -29,6 +29,14 @@ export function createReactions({ favs, deadNos, onChange }) {
     if (adding) { if (!favSent.has(no)) reactLike(no); }
     else if (favSent.has(no)) { favSent.delete(no); saveSet(KEYS.FAVS_SENT, favSent); bump(no, 0, -1); postReaction(no, 'unlike'); }
   }
+  /** 從別台裝置匯入的收藏:那邊已經算過愛心了,這裡只標成「已計入」,不再 +1(loadCounts 的補算也會略過)。 */
+  function markCounted(nos) {
+    let changed = false;
+    (nos || []).forEach((no) => { if (!favSent.has(no)) { favSent.add(no); changed = true; } });
+    if (changed) saveSet(KEYS.FAVS_SENT, favSent);
+  }
+  /** 清除所有紀錄後:忘掉「已計入」清單(key 已由 storage.clearAllRecords 移除)。 */
+  function forgetAll() { favSent.clear(); }
   /** 打開詳情時記一次觀測(同一分頁同一篇只算一次)。 */
   function markView(no) {
     if (!canReact(no)) return;
@@ -45,5 +53,5 @@ export function createReactions({ favs, deadNos, onChange }) {
       onChange();
     });
   }
-  return { canReact, cnt, likeNum, viewNum, onFavChange, markView, loadCounts };
+  return { canReact, cnt, likeNum, viewNum, onFavChange, markView, loadCounts, markCounted, forgetAll };
 }
