@@ -3,15 +3,16 @@
 //   sel / modes            標籤三態與任一/全部(見 filter.js)
 //   authorFilter           作者專頁
 //   shelfOn / shelfTab     書架模式與分頁
-//   page                   主列表目前頁數(每頁 PER 篇)
+//   lazyList               主列表分批渲染(每批 BATCH 張,捲到底前自動補;見 render.js createLazyList)
 //   _mode / _cur / _annIdx 詳情視窗:'art' 文章、'ann' 公告、'tool' 書架匯出 / 匯入 / 清除;_navList = 從哪一排點開(null = 主列表目前篩選+排序)
 //   _opener                打開詳情前的焦點元素(書卡標題鈕 / 輪播小卡 / 書架工具鈕),關閉後把焦點還回去(鍵盤使用者才不會迷路)
 // 無障礙:詳情是 <dialog>(showModal 原生鎖焦點、Esc 關閉);篩選結果數與輪播頁數用 aria-live 宣告;
 //        尊重 prefers-reduced-motion(捲動不用 smooth)。
+// 這支由 src/boot.js 在抓到 data.json 之後動態 import,所以執行時 window.DATA 一定已經有了。
 import { loadData, sg, buildTag2Facet, sortAnnouncements, makePersonLookup } from './data.js';
 import { passes, filterArticles, authorWorks, cycleTag, selectTag, removeTag, toggleMode, clearSelection, selectionChips } from './filter.js';
 import { sortArticles, pickRandom } from './sort.js';
-import { KEYS, loadSet, saveSet, loadShelfTab, saveShelfTab, loadTheme, saveTheme,
+import { KEYS, loadSet, saveSet, loadShelfTab, saveShelfTab, loadTheme, saveTheme, loadListState, saveListState,
   exportState, importState, decodeState, previewImport, extractPayload, buildImportURL, clearAllRecords, IMPORT_PARAM } from './storage.js';
 import { buildShareURL, parseShareHash, articleShareURL, parseArticleParam, stripArticleParam } from './url.js';
 import { relatedArticles } from './related.js';
@@ -37,7 +38,7 @@ function announce(id, text) { const el = $(id); if (el && el.textContent !== tex
 const sel = {}, modes = {};
 let authorFilter = null, _cur = null, shelfOn = false;
 let _mode = 'art', _annIdx = null, _navList = null, _opener = null;
-const PER = 30; let page = 1;
+const BATCH = 40;   // 主列表每批書卡數:先畫 40 張,其餘捲到底前再補
 
 // 我的書架:收藏 + 待閱讀 + 已讀,存瀏覽器本機
 const favs = loadSet(KEYS.FAVS), readSet = loadSet(KEYS.READ), todoSet = loadSet(KEYS.TODO);
@@ -107,34 +108,36 @@ function updateShelfBtn() {
 // ---- 主題切換(深/淺,記憶於 localStorage,預設深色配合品牌)----
 const _root = document.documentElement;
 function applyTheme(t) {
-  _root.setAttribute('data-theme', t); saveTheme(t);
+  if (_root.getAttribute('data-theme') !== t) _root.setAttribute('data-theme', t);   // 沒變就不重設(改 data-theme 會讓整頁樣式重算;開站時 head 的小 script 已先設好)
+  saveTheme(t);
   const b = $('theme'); if (b) { b.textContent = t === 'dark' ? '☀️' : '🌙'; b.setAttribute('aria-label', t === 'dark' ? '切換為白晝(淺色)' : '切換為黑夜(深色)'); }
 }
 applyTheme(loadTheme());
 $('theme').onclick = () => applyTheme(_root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
 
-// ---- 主列表 ----
-function render(keepPage) {
-  if (!keepPage) page = 1;
-  const list = $('list'); list.innerHTML = '';
+// ---- 主列表(分批渲染:先畫前 BATCH 張,捲到底前自動補下一批;篩選 / 排序改變時 render() 重置)----
+const lazyList = R.createLazyList($('list'), $('more'), {
+  batch: BATCH,
+  renderBatch: (slice) => R.renderCards($('list'), slice, ctx, (a, el) => { _navList = null; openDetail(a, el); }),
+  onChange: () => scheduleSaveList(),
+});
+// keepPos = true(搜尋 / 排序 / 勾選框 / 收藏重繪)時維持已顯示的張數,不跳回第一批(對應原站「不跳回第 1 頁」的行為)
+function render(keepPos) {
+  const list = $('list');
   const hits = currentHits();
-  const pages = Math.max(1, Math.ceil(hits.length / PER));
-  if (page > pages) page = pages;
   $('count').textContent = `共 ${hits.length} / ${D.total} 篇`;
   announce('liveCount', `找到 ${hits.length} 篇`);   // 篩選結果數變化 → aria-live 宣告
   { const pb = document.querySelector('.pbdone'); if (pb) pb.textContent = `看 ${hits.length} 篇 ✓`; }
   R.renderAuthorHead($('authorHead'), authorFilter, authorFilter ? authorWorks(D.articles, authorFilter, persons).length : 0, ctx,
     () => { authorFilter = null; render(); scrollToToolbar(); });
   if (!hits.length) {
+    lazyList.set([], false);
     list.innerHTML = R.emptyHTML(shelfOn && SHELF[shelfTab].size === 0 ? shelfTab : null);
-    $('pager').innerHTML = '';
     R.syncStyles(sel, modes); renderSelBar(); return;
   }
-  R.renderCards(list, hits.slice((page - 1) * PER, page * PER), ctx, (a, el) => { _navList = null; openDetail(a, el); });
-  R.renderPager($('pager'), page, pages, gotoPage);
+  lazyList.set(hits, !!keepPos);
   R.syncStyles(sel, modes); renderSelBar();
 }
-function gotoPage(p) { page = p; render(true); scrollToToolbar(); }
 function renderSelBar() {
   R.renderSelBar($('selbar'), selectionChips(sel), {
     onRemove: (k, v) => { removeTag(sel, k, v); render(); },
@@ -143,25 +146,40 @@ function renderSelBar() {
 }
 
 // ---- 輪播:星際廣播 / 新星誕生 / 軌道更新;熱門星系 ----
+// 四區都等該區塊接近視窗時才初始化(R.whenVisible),開站時主執行緒只忙首批書卡;輪播畫好後順便更新箭頭顯示
+let _snavRaf = 0;
+function lazySection(secId, fn) {
+  const sec = $(secId);
+  R.whenVisible(sec, () => {
+    fn();
+    // 箭頭要讀 scrollWidth(強制排版),幾個區塊同時畫好時合併到同一幀只讀一次
+    if (!_snavRaf) _snavRaf = requestAnimationFrame(() => { _snavRaf = 0; updateAllSnav(); document.querySelectorAll('.striprow').forEach(announceStripPage); });
+  });
+}
 function renderAnn() {
   if (!ANNS.length) return;
-  $('annSec').style.display = '';
-  R.renderStrip($('ann'), ANNS, { html: R.annCardHTML, cls: R.annCardCls, onClick: (x, i) => openAnn(i) });
+  $('annSec').style.display = '';   // 先顯示區塊,IntersectionObserver 才觀測得到
+  lazySection('annSec', () => R.renderStrip($('ann'), ANNS, { html: R.annCardHTML, cls: R.annCardCls, onClick: (x, i) => openAnn(i) }));
 }
 function renderLatest() {
-  // 最新收錄:依「建立時間(實際新增進資料庫)」由新到舊,不是按編號
-  const newest = D.articles.filter((a) => a.ck).sort((a, b) => b.ck - a.ck).slice(0, 8);
-  R.renderStrip($('latest'), newest, { html: R.latestCardHTML, onClick: (a, i, el) => { _navList = newest; openDetail(a, el); } });
+  lazySection('latestSec', () => {
+    // 最新收錄:依「建立時間(實際新增進資料庫)」由新到舊,不是按編號
+    const newest = D.articles.filter((a) => a.ck).sort((a, b) => b.ck - a.ck).slice(0, 8);
+    R.renderStrip($('latest'), newest, { html: R.latestCardHTML, onClick: (a, i, el) => { _navList = newest; openDetail(a, el); } });
+  });
 }
 function renderStatus() {
-  const arr = D.articles.filter((a) => a.ek).sort((a, b) => b.ek - a.ek).slice(0, 8);
-  R.renderStrip($('statusUpd'), arr, { html: R.statusCardHTML, onClick: (a, i, el) => { _navList = arr; openDetail(a, el); } });
+  lazySection('statusSec', () => {
+    const arr = D.articles.filter((a) => a.ek).sort((a, b) => b.ek - a.ek).slice(0, 8);
+    R.renderStrip($('statusUpd'), arr, { html: R.statusCardHTML, onClick: (a, i, el) => { _navList = arr; openDetail(a, el); } });
+  });
 }
 function renderHot() {
+  // 熱門星系只有 16 個 chip,直接畫;它的高度隨資料而定,不先畫好會把下面的列表往下推(CLS)
   R.renderHot($('hot'), D.facets, (key, v) => { selectTag(sel, key, v); render(); scrollToToolbar(); });
 }
 
-// ---- 詳情 / 公告視窗 ----
+// ---- 詳情 / 公告視窗(內容在打開時才產生 DOM,關閉時清空;#sheet 平常是空的)----
 function openAnn(i) {
   if (i < 0 || i >= ANNS.length) return;
   _mode = 'ann'; _annIdx = i; _cur = null;
@@ -181,15 +199,19 @@ function openDetail(a, opener) {
   showSheet();
   if (changed) { sheet.scrollTop = 0; if (isDialog()) sheet.querySelector('.close')?.focus(); }   // 換篇時焦點回到最上面的關閉鈕
 }
-function closeDetail() { stopScan(); const m = $('modal'); if (isDialog()) { if (m.open) m.close(); } else { m.style.display = 'none'; restoreFocus(); } }
+function closeDetail() { stopScan(); const m = $('modal'); if (isDialog()) { if (m.open) m.close(); } else { m.style.display = 'none'; restoreFocus(); $('sheet').innerHTML = ''; } }
 /** 關閉後把焦點還給打開它的元素;那張卡若已重繪(例如按了收藏),改找同編號的卡。 */
 function restoreFocus() {
   let el = _opener; _opener = null;
-  if (el && !el.isConnected && _cur) el = document.querySelector(`.card[data-no="${CSS.escape(_cur.no)}"] .card-open`);
+  // 從書卡打開、又用 ←→ 換了篇:焦點回到「最後看的那篇」的卡(列表裡有的話),沒有就回原卡;原卡重繪過也改找同編號的卡
+  const fromCard = el && el.classList && el.classList.contains('card-open');
+  if (_mode === 'art' && _cur && (fromCard || (el && !el.isConnected))) {
+    const c = document.querySelector(`.card[data-no="${CSS.escape(_cur.no)}"] .card-open`); if (c) el = c;
+  }
   if (el && el.isConnected) el.focus();
 }
 $('modal').onclick = (e) => { if (e.target.id === 'modal') closeDetail(); };   // 點灰底(dialog 本身)關閉
-$('modal').addEventListener('close', () => { stopScan(); restoreFocus(); });   // Esc / close() 都會經過這裡(Esc 關掉匯入視窗時也要停相機)
+$('modal').addEventListener('close', () => { stopScan(); restoreFocus(); $('sheet').innerHTML = ''; });   // Esc / close() 都會經過這裡(Esc 關掉匯入視窗時也要停相機);內容清空,下次打開才建
 function openByNo(no) { const a = D.articles.find((x) => x.no === no); if (a) { _navList = null; openDetail(a); } }
 // 開站時網址帶 ?p=<No>(從分享頁 p/<No>/ 導回來)→ 打開該篇詳情,並把參數從網址拿掉(其他參數與 #f= 保留)
 function openSharedArticle() {
@@ -246,8 +268,20 @@ function copyText(text, msgId, okText) {
   else { prompt('複製這段文字:', text); done(true); }
 }
 const siteBase = () => location.origin + location.pathname;
+// vendor 單檔(lz-string 壓縮、qrcode 產 QR)只有匯出 / 匯入才需要,用到時才載(不佔首頁啟動時間);離線時由 service worker 的預快取供應
+const _vendor = {};
+function loadScript(src) {
+  if (!_vendor[src]) _vendor[src] = new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => { delete _vendor[src]; rej(new Error(src + ' 載入失敗')); }; document.head.appendChild(s); });
+  return _vendor[src];
+}
+function ensureVendor() {
+  return Promise.all([window.LZString ? null : loadScript('vendor/lz-string.min.js'), window.qrcode ? null : loadScript('vendor/qrcode.js')]).catch(() => {});   // 載不到時 exportState / renderQR 自己會顯示錯誤
+}
 // 匯出:字串 + 複製 / 複製連結 / QR code(QR 內容是匯入連結,用相機掃到就直接開站)
-function shelfExport() {
+async function shelfExport() {
+  openTool(R.exportHTML({ payload: null, err: '⏳ 準備中…', counts: { shelf: favs.size, read: readSet.size, todo: todoSet.size } }));   // 先開視窗(焦點與 opener 在使用者動作當下記錄),再等 vendor
+  await ensureVendor();
+  if (!modalOpen() || _mode !== 'tool') return;
   let payload = null, err = '';
   try { payload = exportState({ favs, read: readSet, todo: todoSet }); } catch (e) { err = e.message; }
   openTool(R.exportHTML({ payload, err, counts: { shelf: favs.size, read: readSet.size, todo: todoSet.size } }));
@@ -266,8 +300,9 @@ function renderQR(el, text) {
 }
 // 匯入:貼上(或掃 QR)→ 預覽「將加入 X 本書架、Y 篇已讀、Z 篇待閱讀」→ 選合併 / 覆蓋 → 確認才寫入
 let _imPending = null, _imText = '';   // 解析成功、等待確認的匯入內容與原字串
-function shelfImport(prefill) {
+async function shelfImport(prefill) {
   _imPending = null; _imText = '';
+  await ensureVendor();
   const canScan = typeof window.BarcodeDetector === 'function' && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   openTool(R.importHTML({ canScan, prefill }));
   $('imPreview').onclick = () => previewImportText($('imIn').value);
@@ -438,6 +473,49 @@ $('filterToggle').onclick = () => setPanelOpen(!$('panel').classList.contains('o
 document.querySelector('.pbdone').onclick = () => setPanelOpen(false);
 $('panel').addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('panel').classList.contains('open')) setPanelOpen(false); });
 
+// ---- 跳到 #編號:在目前篩選結果裡找該篇,自動載入到那張卡、捲過去、短暫高亮並把焦點給它 ----
+function jumpTo(raw) {
+  const no = String(raw || '').replace(/^#/, '').trim(), msg = $('jumpMsg');
+  if (!no) { if (msg) msg.textContent = ''; return false; }
+  const idx = lazyList.hits().findIndex((a) => a.no === no);
+  if (idx < 0) {
+    if (msg) msg.textContent = D.articles.some((a) => a.no === no) ? `#${no} 不在目前的篩選結果裡,先放寬條件或重設篩選` : `沒有 #${no} 這篇`;
+    return false;
+  }
+  if (msg) msg.textContent = '';
+  lazyList.ensure(idx + 1);   // 還沒載到就一次補到那張(之後的仍照批載)
+  const card = $('list').querySelector(`.card[data-no="${CSS.escape(no)}"]`);
+  if (card) highlightCard(card);
+  return true;
+}
+function highlightCard(card) {
+  document.querySelectorAll('.card.hl').forEach((c) => c.classList.remove('hl'));
+  card.scrollIntoView({ block: 'center' });   // 即時捲動:可能一跳就是幾百張,平滑捲動反而暈且久
+  void card.offsetWidth;   // 重新觸發高亮動畫
+  card.classList.add('hl');
+  card.querySelector('.card-open')?.focus({ preventScroll: true });
+  setTimeout(() => card.classList.remove('hl'), 2400);
+}
+$('jumpForm').onsubmit = (e) => { e.preventDefault(); jumpTo($('jumpNo').value); };
+
+// ---- 記住主列表狀態(sessionStorage):從詳情、分享頁(p/<No>/ 導回來)或瀏覽器「上一頁」回來時,
+//      已載入的張數與捲動位置照舊,不會重置回第一批。簽章 = 會影響清單內容的所有狀態;對不上(篩選變了)就不還原。
+function listSig() {
+  return JSON.stringify({ sel, modes, a: authorFilter, q: q.value.trim(), s: $('sort').value, sh: shelfOn ? shelfTab : '', hr: !!$('hideRead').checked, hd: !!$('hideDead').checked });
+}
+let _saveTm = 0;
+function saveList() { saveListState({ sig: listSig(), shown: lazyList.shown(), y: Math.round(window.scrollY) }); }
+function scheduleSaveList() { if (_saveTm) return; _saveTm = setTimeout(() => { _saveTm = 0; saveList(); }, 250); }
+window.addEventListener('scroll', scheduleSaveList, { passive: true });
+window.addEventListener('pagehide', saveList);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveList(); });
+function restoreList() {
+  const st = loadListState(); if (!st || st.sig !== listSig()) return false;
+  if (st.shown > lazyList.shown()) lazyList.ensure(st.shown);
+  if (st.y > 0) requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, st.y)));   // 等補上的卡排版完再捲
+  return true;
+}
+
 // ---- 輪播箭頭:只在「有得捲」時出現(沒溢出全藏、捲到頭藏左、捲到底藏右)----
 function stripScroll(s, dir) { const amt = Math.max(220, s.clientWidth * 0.8); s.scrollBy({ left: dir * amt, behavior: scrollBehavior() }); }
 document.querySelectorAll('.snav').forEach((btn) => {
@@ -495,11 +573,19 @@ if (D.synced) { $('syncedNote').innerHTML = '📡 訊號同步:' + D.synced + ' 
 Object.assign(window, { toggleFav, toggleTodo, toggleRead, setShelfTab, filterByTag, filterName, openByNo, shareArticle, closeDetail, navDetail, toggleReport, pickReason, sendReport, shelfExport, shelfImport, shelfClear });
 
 // ---- 啟動 ----
-R.buildPanel($('panel'), D.facets, {
-  onTag: (key, val) => { cycleTag(sel, key, val); render(); },
-  onMode: (key) => { toggleMode(modes, key); render(); },
+// 先把主列表第一批畫出來(使用者最先看到的),其餘工作拆成獨立小工作延後,避免單一長工作卡住互動。
+// PWA(service worker、安裝鈕、更新提示)在 src/pwa.js,由 boot.js 啟動。
+const defer = (fn) => ('requestIdleCallback' in window ? requestIdleCallback(fn, { timeout: 800 }) : setTimeout(fn, 1));
+updateShelfBtn(); applyShareHash(); renderHot(); render();
+renderAnn(); renderLatest(); renderStatus();
+document.body.classList.remove('loading');   // 主內容(資料到了才有意義)此時一次顯示;輪播區塊有固定高度,之後補上不會推動版面
+restoreList();                               // 從詳情 / 分享頁 / 上一頁回來:已載入張數與捲動位置照舊
+applyImportParam(); openSharedArticle();     // ?s= 匯入預覽、?p= 分享頁導回來開詳情
+defer(() => {
+  R.buildPanel($('panel'), D.facets, {
+    onTag: (key, val) => { cycleTag(sel, key, val); render(); },
+    onMode: (key) => { toggleMode(modes, key); render(); },
+  });
+  R.syncStyles(sel, modes);
 });
-renderAnn(); renderLatest(); renderStatus(); renderHot(); renderStats(); loadLiveStats(); reactions.loadCounts(); updateShelfBtn(); applyShareHash(); render(); updateAllSnav(); applyImportParam(); openSharedArticle();
-document.querySelectorAll('.striprow').forEach(announceStripPage);
-// PWA:註冊 service worker(可加到主畫面、離線可看)
-if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {})); }
+defer(() => { renderStats(); loadLiveStats(); reactions.loadCounts(); updateAllSnav(); });

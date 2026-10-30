@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""一鍵更新 ③:讀 build_site.py 產出的 <輸出>/data.js,為每篇作品產生
+"""一鍵更新 ③:讀 build_site.py 產出的 <輸出>/data.json(精簡格式,用 build_site.expand_data 還原),為每篇作品產生
    - <輸出>/p/<No>/index.html  分享頁(社群預覽卡用的 meta,開啟後導回首頁 ?p=<No> 自動打開詳情)
    - <輸出>/p/<No>/og.png      1200×630 的預覽圖(Pillow 畫;字型在 _build/fonts/:Noto Sans TC,諺文回退 Noto Sans KR)
    並輸出 sitemap.xml、feed.xml(最新收錄 50 篇)、feed-updated.xml(最近編輯 50 篇)、robots.txt。
@@ -31,12 +31,13 @@ C_CHIP, C_CHIPTXT, C_DEAD, C_DEADBG, C_NO = '#2c2d37', '#c9c3b7', '#e08363', '#3
 # ---------- 讀資料 ----------
 
 def load_data(out_dir):
-    """讀 <輸出>/data.js(window.DATA = {...};)→ dict。"""
-    s = io.open(os.path.join(out_dir, 'data.js'), encoding='utf-8').read()
-    m = re.match(r'\s*window\.DATA\s*=\s*(.*?);?\s*$', s, re.S)
-    if not m:
-        raise ValueError('data.js 不是 window.DATA = {...}; 的格式')
-    return json.loads(m.group(1))
+    """讀 <輸出>/data.json(build_site.compact_data 的精簡格式)→ 完整 DATA dict(expand_data 還原;舊的完整格式也接受)。"""
+    with io.open(os.path.join(out_dir, 'data.json'), encoding='utf-8') as fh:
+        raw = json.load(fh)
+    if not isinstance(raw, dict) or 'articles' not in raw:
+        raise ValueError('data.json 不是 build_site.py 產出的格式')
+    import build_site
+    return build_site.expand_data(raw)
 
 # ---------- 純函式:文字 ----------
 

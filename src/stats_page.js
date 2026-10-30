@@ -1,14 +1,15 @@
-// 統計星圖(stats.html)的組裝:讀資料、讀 CSS 變數當圖表顏色、主題切換、「全部 / 排除已刪」切換、
-// 愛心 / 觀測計數(Val Town,失敗退回 _build/reactions_backup.json)。計算與圖表設定都在 stats.js。
-import { loadData } from './data.js';
+// 統計星圖(stats.html)的組裝:fetch data.json(精簡格式)→ expandData 還原、讀 CSS 變數當圖表顏色、主題切換、
+// 「全部 / 排除已刪」切換、愛心 / 觀測計數(Val Town,失敗退回 _build/reactions_backup.json)。計算與圖表設定都在 stats.js。
+// 資料載入與首頁同一條路:fetchData() → window.DATA → loadData()(expandData + normalizeData);抓到資料之後才跑 init()。
+import { loadData, fetchData } from './data.js';
 import { loadTheme, saveTheme } from './storage.js';
 import { encodeShare } from './url.js';
 import { REACT_API, fetchCounts } from './api.js';
 import { overview, createCharts } from './stats.js';
 
-const { D } = loadData();
 const $ = (id) => document.getElementById(id);
-const Chart = window.Chart;
+let D = null;
+const chartLib = () => window.Chart;
 
 /** 文章分享頁網址:Session B 的 /p/<編號>/ 合併後改成 `./p/${no}/`;目前先連回首頁帶 ?p=。 */
 export const articleURL = (no) => `./?p=${encodeURIComponent(no)}`;
@@ -23,6 +24,7 @@ function applyTheme(t) {
   saveTheme(t);
 }
 applyTheme(loadTheme());
+$('theme').onclick = () => { applyTheme(_root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'); if (D) draw(); };
 
 /** 圖表顏色一律從 CSS 變數讀,主題切換後重讀重畫。 */
 function readColors() {
@@ -50,7 +52,7 @@ let charts = [], counts = null, excludeDead = false;
 function destroyCharts() { charts.forEach((c) => c.destroy()); charts = []; }
 function draw() {
   destroyCharts();
-  const colors = readColors();
+  const colors = readColors(), Chart = chartLib();
   if (Chart) {
     Chart.defaults.font.family = colors.font;
     Chart.defaults.color = colors.ink;
@@ -85,16 +87,23 @@ async function loadCounts() {
   draw();
 }
 
-// ---- 事件 ----
-if (!Chart) {
-  document.querySelectorAll('.chart-box').forEach((b) => { b.innerHTML = '<div class="chart-err">⚠️ 圖表程式庫(vendor/chart.umd.js)載入失敗</div>'; });
+// ---- 啟動:抓到 data.json 才畫 ----
+function init() {
+  if (!chartLib()) {
+    document.querySelectorAll('.chart-box').forEach((b) => { b.innerHTML = '<div class="chart-err">⚠️ 圖表程式庫(vendor/chart.umd.js)載入失敗</div>'; });
+  }
+  $('tagAll').onclick = () => setExcludeDead(false);
+  $('tagAlive').onclick = () => setExcludeDead(true);
+  if (D.updated) $('updatedNote').textContent = '🗺️ 星圖更新:' + D.updated;
+  if (D.synced) $('syncedNote').textContent = '📡 訊號同步:' + D.synced;
+  renderOverview();
+  draw();
+  loadCounts();
 }
-$('theme').onclick = () => { applyTheme(_root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'); draw(); };
-$('tagAll').onclick = () => setExcludeDead(false);
-$('tagAlive').onclick = () => setExcludeDead(true);
-if (D.updated) $('updatedNote').textContent = '🗺️ 星圖更新:' + D.updated;
-if (D.synced) $('syncedNote').textContent = '📡 訊號同步:' + D.synced;
-
-renderOverview();
-draw();
-loadCounts();
+function showError(msg) {
+  const o = $('overview'); if (o) o.innerHTML = `<div class="chart-err">📡 星圖載入失敗:${msg}</div>`;
+}
+fetchData()
+  .then((j) => { window.DATA = j; D = loadData().D; return new Promise((r) => (document.readyState === 'loading' ? window.addEventListener('DOMContentLoaded', r) : r())); })
+  .then(init)
+  .catch((e) => showError((e && e.message) || '請檢查網路後再試'));

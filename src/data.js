@@ -1,6 +1,37 @@
 // 載入與正規化資料。
-// 資料由 _build/build_site.py 在建置時注入 index.html(window.DATA),簡繁對照表注入 window.AZ_STMAP。
-// 這裡只做讀取、正規化(加搜尋用的 _s)與幾個跨模組共用的資料存取小工具,不碰 DOM。
+// 資料由 _build/build_site.py 輸出成精簡格式的 data.json,由 src/boot.js 抓回來放到 window.DATA 再啟動 main.js;
+// 簡繁對照表由建置注入 index.html 的 window.AZ_STMAP。
+// 這裡做:精簡格式還原(expandData)、正規化(加搜尋用的 _s)與幾個跨模組共用的資料存取小工具,不碰 DOM。
+
+/**
+ * 把 build_site.py compact_data() 輸出的精簡格式(v=2)還原成 CLAUDE.md 記載的完整形狀;
+ * 沒有 v 欄位(舊的完整格式)就原樣回傳。與 build_site.expand_data() 邏輯一致,改一邊要改另一邊。
+ * 精簡鍵:n 編號、m 標題、a 作者、ai 作者 ID 索引(pids)、r 譯者、ri 譯者 ID 索引、p 人設、s 收錄篇名、
+ *         l 閱讀連結、d 原文已刪、c ck、e ek、g 標籤(依 facets 順序,每格是 options 索引或原字串)。
+ */
+export function expandData(C) {
+  if (!C || C.v !== 2) return C;
+  const facets = C.facets || [];
+  const pids = C.pids || Object.keys(C.people || {});
+  const ids = (lst) => (lst || []).map((i) => (typeof i === 'number' && i >= 0 && i < pids.length ? pids[i] : ''));
+  const dateOf = (k) => { if (!k) return ''; const s = String(k); return `${+s.slice(0, 4)}/${+s.slice(4, 6)}/${+s.slice(6, 8)}`; };
+  const articles = (C.articles || []).map((o) => {
+    const tags = {}, g = o.g || [];
+    facets.forEach((f, i) => {
+      tags[f.key] = (g[i] || []).map((v) => (typeof v === 'number' ? f.options[v][0] : v));
+    });
+    return {
+      no: o.n, name: o.m || '', persona: o.p || '',
+      author: o.a || '', author_ids: ids(o.ai), translator: o.r || '', translator_ids: ids(o.ri),
+      edited: dateOf(o.e), ek: o.e || 0, created: dateOf(o.c), ck: o.c || 0,
+      tags, links: o.l || [], dead: !!o.d, alias: o.s || '',
+    };
+  });
+  const D = {};
+  for (const k in C) if (k !== 'v' && k !== 'pids' && k !== 'articles') D[k] = C[k];
+  D.articles = articles;
+  return D;
+}
 
 /**
  * 建立簡繁折算函式:把繁體逐字對應成簡體再轉小寫,當作搜尋的統一基準
@@ -77,11 +108,16 @@ export function normalizeData(raw, fold = (s) => s.toLowerCase()) {
   return D;
 }
 
-/** 從建置注入的全域變數載入(瀏覽器端用)。 */
+/** 抓 data.json(精簡格式)→ Promise<物件>;HTTP 不是 2xx 就 reject。首頁 boot.js 與統計星圖 stats_page.js 共用。 */
+export function fetchData(url = 'data.json') {
+  return fetch(url).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+}
+
+/** 從全域變數載入(瀏覽器端用):window.DATA 由 boot.js / stats_page.js 抓 data.json 放進來(精簡或完整格式皆可)。 */
 export function loadData() {
   const st = (typeof window !== 'undefined' && window.AZ_STMAP) || { t: '', s: '' };
   const foldZH = makeFolder(st.t, st.s);
-  const D = normalizeData((typeof window !== 'undefined' && window.DATA) || {}, foldZH);
+  const D = normalizeData(expandData((typeof window !== 'undefined' && window.DATA) || {}), foldZH);
   return { D, foldZH };
 }
 

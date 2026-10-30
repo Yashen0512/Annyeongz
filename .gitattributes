@@ -4,4 +4,5 @@ sitemap.xml linguist-generated=true
 feed.xml linguist-generated=true
 feed-updated.xml linguist-generated=true
 index.html linguist-generated=true
-data.js linguist-generated=true
+data.json linguist-generated=true
+sw.js linguist-generated=true

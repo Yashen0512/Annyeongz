@@ -37,22 +37,17 @@
 }
 body{margin:0;font-family:"Microsoft JhengHei","PingFang TC",system-ui,sans-serif;
      background:var(--bg);color:var(--ink);font-size:15px;line-height:1.6}
-/* banner:模糊背景填滿 + 清晰原圖置中(換圖只要替換 site/banner.png) */
-.banner{position:relative;width:100%;aspect-ratio:6/1;overflow:hidden;
-        display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
-.banner .bblur{display:none}
-.banner .bimg-m{display:none}   /* 手機專用方圖,僅手機顯示(見 @media) */
-.banner .bimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.banner .bov{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.08),rgba(0,0,0,.38))}
-.banner .bt{position:relative;z-index:2;font-size:30px;font-weight:800;color:#fff;letter-spacing:1px;text-shadow:0 2px 16px rgba(0,0,0,.85);padding:0 16px}
-.banner .bsub{position:relative;z-index:2;color:#fff;font-size:14px;margin-top:8px;text-shadow:0 1px 12px rgba(0,0,0,.85);opacity:.95}
-[data-theme="dark"] .banner .bov{background:linear-gradient(180deg,rgba(0,0,0,.22),rgba(0,0,0,.5))}
+/* banner:<picture> 依寬度只載一張(桌機 6:1 寬圖、手機 2:1 方圖,見 responsive.css);aspect-ratio 先佔好高度,圖還沒到也不跳版 */
+.banner{position:relative;display:block;width:100%;aspect-ratio:6/1;overflow:hidden;background:var(--card)}
+.banner .bimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
 /* top bar */
 .topbar{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;
         padding:12px 22px;background:var(--card);border-bottom:1px solid var(--line);
         position:sticky;top:0;z-index:20}
 .brand{font-size:17px;font-weight:700;letter-spacing:.5px;margin:0}
 .theme{padding:7px 11px;border:1px solid var(--line);border-radius:999px;background:var(--bg);color:var(--ink);cursor:pointer;font-size:15px;line-height:1}
+.theme.install{font-size:13px;padding:8px 12px;border-color:var(--accent);color:var(--accent-t)}   /* 安裝到桌面:只在瀏覽器觸發 beforeinstallprompt 時顯示 */
+.theme.install[hidden]{display:none}
 .search{flex:1;max-width:420px;min-width:160px;padding:9px 14px;border:1px solid var(--line);
         border-radius:999px;font-size:14px;background:var(--bg);color:var(--ink)}
 .search::placeholder{color:var(--muted)}

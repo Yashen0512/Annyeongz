@@ -11,10 +11,10 @@
 .facet{border-bottom:1px solid var(--line);padding:8px 0}
 .facet:last-child{border-bottom:none}
 .facet h3{font-size:14px;margin:4px 0;cursor:pointer;display:flex;justify-content:space-between;align-items:center;user-select:none}
-.fh{flex:1;text-align:left;cursor:pointer;font-weight:inherit}   /* 分面標題的收合鈕(鍵盤可用;整列 h3 滑鼠點也能收合) */
+.fh{flex:1;text-align:left;cursor:pointer;font-weight:inherit;min-height:24px}   /* 分面標題的收合鈕(鍵盤可用;整列 h3 滑鼠點也能收合) */
 .facet h3 .rt{display:flex;gap:8px;align-items:center}
 .facet h3 .arw{color:var(--muted);font-size:11px}
-.mode{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:1px 6px;background:var(--bg);cursor:pointer}
+.mode{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:0 6px;min-height:24px;display:inline-flex;align-items:center;background:var(--bg);cursor:pointer}
 .mode.and{color:var(--accent-t);border-color:var(--accent);background:var(--accent-soft)}
 .opts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .opt{font-size:13px;padding:3px 9px;border:1px solid var(--line);border-radius:999px;background:var(--chip);cursor:pointer;white-space:nowrap;user-select:none}

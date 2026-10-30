@@ -14,19 +14,25 @@
 ## 目錄結構
 
 ```
-index.html                 由樣板建置出來的首頁(含注入的資料),不要手改 → 改 _build/site_template.html
-data.js                    window.DATA = {...} 全部資料(建置產物,也會注入 index.html)
-stats.html                 📊 統計星圖(靜態頁,不經樣板;用 <script src="data.js"> 讀同一份資料,圖表用 Chart.js)
+index.html                 由樣板建置出來的首頁(只注入簡繁表與端點;資料不再內嵌),不要手改 → 改 _build/site_template.html
+data.json                  全部資料的**精簡格式**(建置產物;前端由 src/boot.js 抓回、src/data.js expandData 還原)
+sw.js                      PWA service worker(建置產物:由 _build/sw_template.js 帶入版本號,不要手改;預先快取 src/、styles/、vendor/、assets/ 與 stats.html)
+manifest.webmanifest       PWA 設定(名稱、色、圖示 → assets/icons/)
+assets/                    圖示(icons/icon-192、icon-512、icon-maskable-512)與 WebP 橫幅(banner、banner-1200、banner-mobile)
+banner.png / banner-mobile.png   橫幅 PNG(<picture> 的退路,也是 og:image)
+stats.html                 📊 統計星圖(靜態頁,不經樣板;src/stats_page.js 同樣 fetch data.json 再 expandData,圖表用 Chart.js)
 p/<No>/index.html, og.png  每篇作品的靜態分享頁與 1200×630 預覽圖(build_pages.py 產物;.gitattributes 標 linguist-generated)
 sitemap.xml feed.xml feed-updated.xml robots.txt   同上(build_pages.py 產物)
 src/                       前端程式(ES modules,無框架)
-  main.js                  組裝:狀態、DOM 事件、呼叫各模組、啟動順序
-  data.js                  載入與正規化 window.DATA、簡繁折算、資料存取小工具
+  boot.js                  入口:fetch data.json → window.DATA → 動態 import main.js;並啟動 pwa.js
+  pwa.js                   service worker 註冊、「有新收錄 / 新版本」提示條、「安裝到桌面」鈕
+  main.js                  組裝:狀態、DOM 事件、呼叫各模組、啟動順序(分批渲染、輪播延後初始化)
+  data.js                  expandData(精簡 → 完整)、正規化 window.DATA、簡繁折算、資料存取小工具
   filter.js                篩選(純函式,不碰 DOM)
   sort.js                  排序(純函式,六種)
   storage.js               localStorage / sessionStorage 的 key 與讀寫(集中管理);書架 / 已讀的匯出匯入(exportState / importState)
   url.js                   篩選狀態 ⇄ 網址 #f= 參數
-  render.js                書卡、輪播小卡、分類面板、條件列、分頁、詳情 / 公告彈窗、統計卡的 DOM 產生
+  render.js                書卡(createLazyList 分批渲染)、輪播小卡、分類面板、條件列、詳情 / 公告彈窗、統計卡的 DOM 產生
   related.js               「類似的文」相似度(純函式)
   reactions.js             公開愛心數 / 觀測數的本機狀態與同步
   api.js                   站外服務(Val Town)的 fetch 包裝
@@ -35,24 +41,26 @@ src/                       前端程式(ES modules,無框架)
   stats_page.js            統計星圖的組裝:讀 CSS 變數當圖表顏色、主題切換重畫、「全部 / 排除已刪」、計數讀取與備份退路
 styles/                    樣式,依原本的 cascade 順序切成六個檔(index.html 依序載入)+ stats.css(統計星圖專用)
   base.css panel.css main.css modal.css responsive.css intro.css stats.css
-vendor/                    第三方單檔(Chart.js 統計星圖;lz-string 壓縮與 qrcode-generator 產 QR 給書架匯出),傳統 <script> 載入,不走 npm;版本與授權見 vendor/README.md
+vendor/                    第三方單檔(Chart.js 統計星圖;lz-string 壓縮與 qrcode-generator 產 QR 給書架匯出),傳統 <script> 載入、不走 npm;首頁的 lz-string / qrcode 由 main.js ensureVendor() 在按匯出 / 匯入時才載;版本與授權見 vendor/README.md
 tests/                     測試
-  *.test.js                Vitest(filter / sort / url / stats / storage 純函式)+ fixtures.js
-  py/                      pytest(build_site / fetch_data / build_pages 純函式 + 用 30 篇 fixture 跑完整建置與產頁)
-  fixtures/build_input/    30 篇的建置輸入(主表 / 作者 / 公告 CSV、article_links.json、expected.json),由 make_fixture.py 從 data.js 反推
-_build/                    建置工具(Python,只用標準庫)
+  *.test.js                Vitest(filter / sort / url / data(expandData)/ stats / storage 純函式)+ fixtures.js
+  py/                      pytest(build_site / fetch_data / build_pages 純函式 + 用 30 篇 fixture 跑完整建置與產頁、精簡格式 round-trip、sw 版本號)
+  fixtures/build_input/    30 篇的建置輸入(主表 / 作者 / 公告 CSV、article_links.json、expected.json),由 make_fixture.py 從 data.json 反推
+  fixtures/compact_30.json 同 30 篇的精簡格式(vitest 與 pytest 的對照檔,make_fixture.py 一起重產)
+docs/                      lighthouse-before.json / lighthouse-after.json(行動版四項分數與主要紅字)、axe-before.json / axe-after.json(無障礙掃描)
+_build/                    建置工具(Python,只用標準庫;build_pages.py 另需 Pillow)
   fetch_data.py            從 Notion API 抓主表 / 作者 / 公告 / 每篇連結 → CSV + article_links.json(主流程在 main())
-  build_site.py            CSV → data.js + index.html(樣板注入資料與簡繁對照表)+ 複製 src/、styles/、vendor/、stats.html;含編號重複 / 架構自檢(build_data / write_site 可被 import)
-  build_pages.py           data.js → p/<No>/{index.html, og.png} + sitemap.xml + feed.xml / feed-updated.xml + robots.txt;只重產內容 hash 有變的(build_pages 可被 import)
+  build_site.py            CSV → data.json(compact_data 精簡)+ index.html(樣板注入簡繁對照表)+ sw.js(版本號)+ 複製 src/、styles/、vendor/、assets/、stats.html;
+                           含編號重複 / 架構自檢(build_data / write_site / compact_data / expand_data 可被 import)
+  build_pages.py           data.json(expand_data 還原)→ p/<No>/{index.html, og.png} + sitemap.xml + feed.xml / feed-updated.xml + robots.txt;只重產內容 hash 有變的(build_pages 可被 import)
   fonts/                   OG 圖字型:Noto Sans TC / KR 的 Regular、Bold(Google Fonts,OFL);諺文用 KR 回退、TC 沒有的簡體字用 stmap 轉繁、emoji 略過
   og_brand.png             OG 圖左上的 🐶❤️🐰(預先畫好,Actions 不用裝 emoji 字型)
   site_template.html       首頁樣板(真正要改的 HTML 在這裡)
+  sw_template.js           service worker 樣板(__SW_VERSION__ 由 build_site.py 以 synced 時間戳帶入)
   facets_def.py            分面定義、標籤改名 / 合併規則、逐篇人工校正(單一事實來源)
   stmap.txt                簡繁對照表(兩行:繁字串 / 簡字串,逐字對應)
   article_links.json       每篇閱讀連結(fetch_data.py 產生)
   reactions_backup.json    愛心 / 觀測計數的備份({編號: [愛心, 觀測]})
-sw.js                      PWA service worker(network-first;預先快取 src/、styles/、vendor/ 與 stats.html)
-manifest.webmanifest       PWA 設定
 .github/workflows/         sync.yml(同步 Notion + 建置 + 部署)、static.yml(push main → 部署)、test.yml(PR → Vitest + pytest)
 requirements.txt           建置相依:只有 Pillow(build_pages.py 畫 OG 圖);sync.yml 與站長電腦都要裝
 package.json / pytest.ini / requirements-dev.txt   只為了測試,部署用不到
@@ -67,10 +75,11 @@ Notion 三個資料庫(主表、作者/譯者資料庫、公告)
   │                         stats.json(有 GOATCOUNTER_TOKEN 才抓)、reactions_backup.json(愛心 / 觀測備份)
   ▼
   │  _build/build_site.py   套 facets_def.py(分面定義、改名合併、逐篇校正)→ DATA
-  │                         → <輸出>/data.js、<輸出>/index.html(site_template.html 注入 /*__DATA__*/ 與簡繁表)
-  │                         → 複製 src/、styles/、vendor/ 到 <輸出>(輸出就是倉庫根目錄時不動)
+  │                         → <輸出>/data.json(compact_data 精簡格式)、<輸出>/index.html(site_template.html 注入簡繁表)、
+  │                           <輸出>/sw.js(sw_template.js 帶入版本號 = synced 時間戳)
+  │                         → 複製 src/、styles/、assets/ 與 manifest / 橫幅 PNG 到 <輸出>(輸出就是倉庫根目錄時不動)
   ▼
-  │  _build/build_pages.py  讀 <輸出>/data.js → <輸出>/p/<No>/index.html + og.png(每篇分享頁與預覽圖,內容 hash 沒變就跳過)
+  │  _build/build_pages.py  讀 <輸出>/data.json(expand_data 還原)→ <輸出>/p/<No>/index.html + og.png(每篇分享頁與預覽圖,內容 hash 沒變就跳過)
   │                         → <輸出>/sitemap.xml、feed.xml(最新收錄 50)、feed-updated.xml(最近編輯 50)、robots.txt
   ▼
 GitHub Pages(static.yml:整個倉庫原樣上傳)
@@ -80,25 +89,32 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
   - GitHub Actions `sync.yml`:只有 `workflow_dispatch`(檔案裡**沒有 cron**),每天台灣時間 **08:31 與 21:01** 的自動執行是由外部
     觸發這個 dispatch;`build_site.py` 會把這兩個時段後 8 分鐘內的建置時間貼齊顯示成 08:31 / 21:01(頁尾「訊號同步」)。
     環境變數 `SITE_OUT=..` → 直接輸出到倉庫根目錄,
-    然後 `git add index.html data.js p sitemap.xml feed.xml feed-updated.xml robots.txt _build/article_links.json _build/reactions_backup.json`
+    然後 `git add index.html data.json sw.js p sitemap.xml feed.xml feed-updated.xml robots.txt _build/article_links.json _build/reactions_backup.json`
     commit 回 `main` 再部署。Actions 會先 `pip install -r requirements.txt`(Pillow)。
   - 本機 `更新網站.bat`(不在 repo 裡,在站長電腦上)跑同一組 `fetch_data.py` → `build_site.py` → `build_pages.py`,沒設 `SITE_OUT` 時輸出到 `../site`
     (也就是 `_build/` 旁的 `site/` 資料夾,已 gitignore);`deploy.py`(同樣不在 repo 裡)負責把本機腳本同步進 `_build/`,
     也要把 `site/p/`、`sitemap.xml`、`feed*.xml`、`robots.txt` 一併部署。站長電腦要 `pip install -r requirements.txt` 一次。
-    `build_site.py` 會把 `src/`、`styles/`、`vendor/` 與 `stats.html` 一起複製進輸出資料夾(`STATIC_DIRS` / `STATIC_FILES`),
-    所以本機產出的 `site/` 用 http 伺服器開就能用(含統計星圖)。
-- **結論:`index.html`、`data.js`、`p/`、`sitemap.xml`、`feed*.xml` 都是產物,不要直接改。** 要改前端一律改 `_build/site_template.html` 與它引用的 `src/`、`styles/`,
-  再由 `build_site.py` 產出;要改分享頁 / OG 圖 / sitemap / RSS 改 `_build/build_pages.py`(改了版面記得把 `PAGE_VERSION` / `OG_VERSION` +1,才會全部重產)。
+    `build_site.py` 會把 `src/`、`styles/`、`vendor/`、`assets/` 與 `stats.html`、manifest、橫幅 PNG 一起複製進輸出資料夾(`STATIC_DIRS` / `STATIC_FILES`),
+    所以本機產出的 `site/` 用 http 伺服器開就能用(含統計星圖),.bat 與 deploy.py 不需要改。
+- **結論:`index.html`、`data.json`、`sw.js`、`p/`、`sitemap.xml`、`feed*.xml` 都是產物,不要直接改。** 要改前端一律改 `_build/site_template.html`、`_build/sw_template.js`
+  與它引用的 `src/`、`styles/`,再由 `build_site.py` 產出;要改分享頁 / OG 圖 / sitemap / RSS 改 `_build/build_pages.py`(改了版面記得把 `PAGE_VERSION` / `OG_VERSION` +1,才會全部重產)。
+  `sw.js` 的版本號(`VERSION`)由建置以 `synced` 時間戳帶入(`sw_version()`,格式 `YYYYMMDD-HHMM`),每次建置都不同,靜態快取靠它分版;**不要手寫**。
 - Token:`fetch_data.py` 先看 `NOTION_TOKEN` 環境變數(Actions 的 secret)、再看 `_build/notion_token.txt`(本機,不進版控)、
   都沒有就**不帶 Authorization header** 直接送,交給雲端開發環境的網路代理注入。本機與 Actions 行為不變。
 - 沒有 Notion 時,`tests/fixtures/build_input/` 的 30 篇 fixture 可以跑完整個 `build_site.py`(見「測試」)。
 
 ## 資料檔
 
-- **位置**:`data.js`(`window.DATA = {...};`),建置時同一份 JSON 也被注入 `index.html` 的
-  `<script>/*__DATA__*/</script>`,所以首頁**不會另外請求 data.js**;`src/data.js` 的 `loadData()` 直接讀 `window.DATA`。
+- **位置**:`data.json`(**精簡格式**,約 550KB、gzip 後約 130KB;GitHub Pages 會 gzip)。首頁不內嵌資料:`src/boot.js` 用 `fetch('data.json')`
+  抓回來放到 `window.DATA`,再動態 `import('./main.js')`;`src/data.js` 的 `loadData()` 先 `expandData()` 還原成下面記載的完整形狀再正規化。
+  `boot.js` 會等橫幅畫出來(最多 800ms)才開始抓,讓首屏與 LCP 不被半 MB 的資料下載拖住;回訪時 service worker 直接從快取給。
+- **精簡格式(v=2)**:`build_site.compact_data()` ⇄ `expand_data()`(Python)與 `src/data.js` 的 `expandData()`(JS)互為反函式,
+  **改一邊要改另一邊**,pytest 與 vitest 都用 `tests/fixtures/compact_30.json` 對照。頂層多 `v: 2` 與 `pids`(people 的鍵依序排成陣列),
+  每篇:`n` 編號、`m` 標題、`a` 作者、`ai` 作者 ID 索引(指向 `pids`,-1 = 無)、`r` / `ri` 譯者、`p` 人設、`s` 收錄篇名、`l` 連結、
+  `d` 原文已刪(只在 true 時輸出 1)、`c` ck、`e` ek、`g` 標籤(依 `facets` 順序的陣列,每格是該分面 `options` 的索引;空分面省略、結尾的空陣列去掉)。
+  `created` / `edited` 由 `ck` / `ek` 推回。空字串 / 空陣列 / false 一律不輸出。**前端其餘模組只看完整形狀**,不要去讀精簡鍵。
 - **來源**:Notion 資料庫 → `_build/fetch_data.py` → CSV → `_build/build_site.py`。欄位意義以 `build_site.py` 為準。
-- **頂層欄位**:
+- **頂層欄位(完整形狀)**:
 
 | 欄位 | 意義 |
 |---|---|
@@ -156,6 +172,33 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
   由 `src/reactions.js` 在開站時 GET 回來;收藏 / 取消收藏 / 打開詳情時 POST `{no, type:'like'|'unlike'|'view'}`。
   `REACT_API` 留空或讀取失敗時只是不顯示數字(愛心 / 觀測排序會退回編號大→小),書架照常。
   `_build/reactions_backup.json` 是這份計數的備份。
+
+## 主列表的分批渲染與 PWA
+
+- **分批渲染**(`render.js` `createLazyList`,`main.js` 接線):主列表不分頁,先畫前 40 張(`BATCH`),`#more` 哨兵進到視窗下方 800px 內
+  (IntersectionObserver)就自動補下一批;哨兵裡的「再載入 N 篇」按鈕是沒有 IntersectionObserver 時的退路。
+  篩選 / 排序 / 書架切換 → `render()` 重置回第一批;搜尋 / 排序下拉 / 勾選框 / 收藏重繪 → `render(true)` **維持已顯示的張數**
+  (對應原站「不跳回第 1 頁」)。詳情的 ←→ 上下篇仍走完整的篩選結果,不受已顯示張數影響。
+  書卡 CSS 加了 `content-visibility:auto`,畫面外的書卡不排版不繪製,所以沒有另外做虛擬捲動。
+- **跳到 #編號**(列表上方 `#jumpForm`,`main.js` `jumpTo`):在目前篩選結果裡找該篇,`lazyList.ensure(idx+1)` 一次補到那張,
+  即時捲到畫面中央、加 `.hl` 高亮約 2 秒、焦點給卡片標題鈕;不在結果裡 / 不存在會在 `#jumpMsg`(role=status)提示。
+- **列表狀態記憶**(`storage.js` `KEYS.LIST_STATE`,sessionStorage `azList`):捲動 / 補批 / 離開頁面時存 `{sig, shown, y}`,
+  `sig` 是會影響清單內容的全部狀態(標籤三態、任一全部、作者、搜尋字、排序、書架分頁、兩個勾選框)的 JSON;
+  開站 `render()` 之後 `restoreList()`:簽章對得上就 `ensure(shown)` 再捲回 `y`,所以從詳情、分享頁(`p/<No>/` → `?p=`)或瀏覽器「上一頁」回來
+  不會重置回第一批。`boot.js` 把 `history.scrollRestoration` 設成 `manual`,避免瀏覽器自己的還原跟分批渲染打架。
+- **延後初始化**:星際廣播 / 新星誕生 / 軌道更新 / 熱門星系四區在區塊接近視窗時才建 DOM(`render.js` `whenVisible`);
+  分類面板、統計卡、愛心計數在 `requestIdleCallback` 裡做。詳情 / 公告彈窗的內容打開時才產生、關閉時清空。
+- **橫幅**:`<picture>`,≤560px 載 `assets/banner-mobile.webp`(2:1),其餘載 `assets/banner-1200.webp` / `assets/banner.webp`(6:1,依寬度),
+  PNG 當退路;`<img>` 有 width/height 與 CSS aspect-ratio,圖沒到也不跳版。
+- **主題不閃爍**:`<head>` 有一段 inline script 先從 `localStorage.azTheme` 設 `data-theme`(key 與 `storage.js` 同步,改要一起改)。
+- **PWA**(`sw_template.js` → `sw.js`、`src/pwa.js`、`manifest.webmanifest`):
+  - 靜態資源(index.html、CSS、JS、圖示、WebP 橫幅、manifest)**cache-first**,快取名 `az-static-<VERSION>`;新版啟用時清掉舊版。
+    新版 sw.js 安裝完成在等待時,頁面顯示「🚀 網站有新版本,點此重新整理」,點了送 `{type:'skipWaiting'}`,`controllerchange` 後自動重新整理。
+  - `data.json` **stale-while-revalidate**(快取名 `az-data`,不分版):先回快取、背景抓新版;ETag / Last-Modified(都沒有才比內文)不同
+    → `postMessage({type:'data-updated'})` → 頁面顯示「✨ 有新收錄,點此重新整理」(`#updateBar`)。
+  - 跨網域(Postype / Lofter / AO3 / AFF 閱讀連結、Val Town、GoatCounter)一律不攔、不快取。
+  - 「⬇️ 安裝」鈕(`#installBtn`)只在 `beforeinstallprompt` 觸發時顯示;`appinstalled` 後隱藏。
+  - 改了 `src/`、`styles/`、`assets/` 的檔名,記得同步 `_build/sw_template.js` 的 `PRECACHE` 清單與 `index.html` 的 modulepreload。
 
 ## 篩選邏輯(`src/filter.js`)
 
@@ -258,21 +301,22 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
 
 ## 部署
 
-- **GitHub Pages,沒有 build 步驟**:整個倉庫原樣上傳(`static.yml` 的 `path: '.'`),所以 `src/`、`styles/` 就是線上檔案。
+- **GitHub Pages,沒有 build 步驟**:整個倉庫原樣上傳(`static.yml` 的 `path: '.'`),所以 `src/`、`styles/`、`assets/` 就是線上檔案。
   push 到 `main` 就部署;`.nojekyll` 關掉 Jekyll。
-- **資料更新**走 `sync.yml`(手動觸發,或排程 08:31 / 21:01):`fetch_data.py` → `build_site.py` 產出 `index.html`、`data.js`,
+- **資料更新**走 `sync.yml`(手動觸發,或排程 08:31 / 21:01):`fetch_data.py` → `build_site.py` 產出 `index.html`、`data.json`、`sw.js`,
   commit 回 `main` 再部署。**改 HTML 一律改 `_build/site_template.html`**,`index.html` 會被下一次同步覆蓋。
-  本機沒有 Notion CSV 時,可用與 `build_site.py` 相同的三個取代(`__STMAP_T__`、`__STMAP_S__`、`/*__DATA__*/`)從樣板重產 `index.html`。
-- `index.html` 裡由建置 / 部署決定的東西:注入的 `window.DATA`、`window.AZ_STMAP`(簡繁表)、`window.AZ_CONFIG`
+  本機沒有 Notion CSV 時,可用現有 `data.json`(`expand_data` 還原)呼叫 `build_site.write_site(DATA, '_build', '.', repo_root='.')` 重產三個產物。
+- `index.html` 裡由建置 / 部署決定的東西:`window.AZ_STMAP`(簡繁表)、`window.AZ_CONFIG`
   (`REACT_API` / `REPORT_API` / `STATS_API` 三個 Val Town 端點;`build_site.py` 的架構自檢會檢查它們還在)、GoatCounter 追蹤碼。
 - 因為用 ES module,**本機要用 http 伺服器開**(`npm run serve` 或 `python3 -m http.server 8000`),直接雙擊 `index.html`(file://)不行。
 - `package.json` / `tests/` / `node_modules` 只為了測試,部署用不到(`node_modules` 不進版控)。
-- 改了 `src/`、`styles/` 或 `vendor/` 的檔名,記得同步 `sw.js` 的預先快取清單並把 `CACHE` 版本號 +1。
+- 改了 `src/`、`styles/`、`vendor/`、`assets/` 的檔名,記得同步 `_build/sw_template.js` 的 `PRECACHE` 清單與 `index.html` 的 modulepreload(版本號不用動,建置會帶)。
 
 ## 統計星圖(`stats.html`)
 
-- 首頁頁尾「🌌 宇宙誕生於 2023/08/07」旁的「📊 統計星圖」連過來。**靜態頁、不經樣板注入**:`<script src="data.js">` 讀同一份 `window.DATA`,
-  所以資料跟首頁一樣在每次同步後更新;`build_site.py` 會把它與 `vendor/` 複製進輸出資料夾,`sync.yml` / `static.yml` 原樣上傳整個倉庫就部署了。
+- 首頁頁尾「🌌 宇宙誕生於 2023/08/07」旁的「📊 統計星圖」連過來。**靜態頁、不經樣板注入**:`src/stats_page.js` 與首頁一樣 `fetchData()` 抓 `data.json`
+  再 `expandData` 還原,所以資料跟首頁一樣在每次同步後更新(service worker 的 stale-while-revalidate 也同一份快取);
+  `build_site.py` 會把它與 `vendor/` 複製進輸出資料夾,`sync.yml` / `static.yml` 原樣上傳整個倉庫就部署了。
 - 圖表用 **Chart.js 4 的 UMD 本機副本**(`vendor/chart.umd.js`,不走 CDN),六塊:總覽數字卡、每月收錄趨勢(從匯入月 2025/01 的下一個月畫起,新收錄 + 累積右軸;匯入批次只進累積起始值,圖下有說明)、
   標籤篇數排行(前 20,可切「全部 / 排除已刪」,只算多選分面、與熱門星系一致)、作者篇數排行(前 20,作者 + 譯者都算、以作者頁 ID 歸戶;
   點長條 → 首頁 `#f={"a":名字}`)、愛心 × 觀測散佈(每點一篇,hover 顯示標題,點了開 `./?p=<編號>`;分享頁 `/p/<編號>/` 上線後改 `stats_page.js` 的 `articleURL`)、
@@ -286,16 +330,20 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
 
 ```bash
 npm install                       # 只需一次(vitest 是 devDependency)
-npm test                          # vitest run:tests/filter.test.js、sort.test.js、url.test.js、stats.test.js、storage.test.js
-pip install -r requirements-dev.txt   # 只需一次(pytest)
-python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆分與 ID、日期、30 篇 fixture 完整建置比對)、fetch_data(No 三種型別、token 來源)、
+npm test                          # vitest run:tests/filter.test.js、sort.test.js、url.test.js、data.test.js(expandData)、stats.test.js、storage.test.js
+pip install -r requirements-dev.txt   # 只需一次(pytest + Pillow)
+python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆分與 ID、日期、精簡格式 round-trip、sw 版本號、30 篇 fixture 完整建置比對)、fetch_data(No 三種型別、token 來源)、
                                   #          build_pages(描述 / 標題折行 / 字型回退 / sitemap / RSS、30 篇產頁與 hash 跳過重產)
 ```
 
 - `.github/workflows/test.yml` 在 PR 時兩組都自動跑,不需要 Notion token。
-- fixture 由 `python3 tests/fixtures/make_fixture.py` 從 `data.js` 反推(30 篇:含空作者、多作者、譯文、站內互連、兩種 dead、收錄篇名);
-  `expected.json` 是這 30 篇在 `data.js` 的原樣,測試斷言「從 CSV 重建 == 原本」。資料格式改了就重產 fixture。
+- fixture 由 `python3 tests/fixtures/make_fixture.py` 從 `data.json` 反推(30 篇:含空作者、多作者、譯文、站內互連、兩種 dead、收錄篇名);
+  `expected.json` 是這 30 篇還原後的原樣,測試斷言「從 CSV 重建 == 原本」;`compact_30.json` 是同 30 篇的精簡格式。資料格式改了就重產 fixture。
 - `storage.test.js` 把 `vendor/lz-string.min.js` 當傳統 script 執行後掛到 `globalThis.LZString`(與瀏覽器同一份),並用假的 `localStorage`。
+- Lighthouse(行動版):`python3 -m http.server 8000` 後
+  `CHROME_PATH=<chrome> lighthouse http://localhost:8000/ --form-factor=mobile --screenEmulation.mobile --output=json --only-categories=performance,accessibility,best-practices,seo`;
+  前後分數在 `docs/lighthouse-before.json` / `docs/lighthouse-after.json`。本機 http.server 不壓縮,線上 GitHub Pages 會 gzip,實際更快。
+  axe(無障礙)用 Playwright 注入 axe-core 跑首頁,結果在 `docs/axe-after.json`。
 - 純函式模組(filter / sort / url / related / stats)不可 import DOM 或 `window`,這樣才能在 Node 直接測;
   `build_site.py` / `fetch_data.py` / `build_pages.py` 的 import 不能有副作用(網路、讀 CSV、載字型),主流程放 `main()`。
 - 改畫面或行為前後,建議用 Playwright 把舊版與新版同時跑一遍比對 DOM 與截圖(這次拆模組就是這樣驗的)。
@@ -313,7 +361,8 @@ python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆�
   這些函式在 `main.js` 結尾用 `Object.assign(window, {...})` 掛到全域;新增這類函式要一起掛上去。
 - 本機儲存的 key 只能從 `storage.js` 的 `KEYS` 拿,**key 名稱不可改**(改了讀者的書架就不見了)。
 - `index.html` 的文案、emoji、全形標點(「：」「（）」)是刻意的,不要「順手」改成半形。
-- 原站的幾個既有行為是刻意保留的,改之前先確認:搜尋 / 排序 / 勾選框觸發重繪時**不會跳回第 1 頁**(只會夾到最後一頁);
+- 原站的幾個既有行為是刻意保留的,改之前先確認:搜尋 / 排序 / 勾選框觸發重繪時**不會跳回第一批**(維持已顯示張數,只會夾到清單長度);
+  從詳情 / 分享頁 / 上一頁返回也不會重置(見「列表狀態記憶」);
   分面標籤三態循環是 包含 → 排除 → 取消;穿越蟲洞略過原文已刪與無連結的文。
 - 標籤名稱、分面順序、改名合併規則都在 `_build/facets_def.py`,前端不要寫死標籤清單(`related.js` 的 `REL_FACETS` 與
   `render.js` 的狀態色對照 `STMAP` 是僅有的例外)。

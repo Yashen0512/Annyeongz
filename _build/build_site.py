@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """一鍵更新 ②:把 fetch_data.py 產出的 CSV / article_links.json 套上 facets_def 分面定義,
-   輸出 data.js 與 index.html(樣板注入資料與簡繁對照表),並把 src/、styles/、vendor/(Chart.js、lz-string、qrcode)與 stats.html(統計星圖)一起複製到輸出資料夾。
+   輸出 data.json(精簡格式)、index.html(樣板注入簡繁對照表)與 sw.js(帶入版本號),並把 src/、styles/、vendor/(Chart.js、lz-string、qrcode)、assets/
+   與 stats.html(統計星圖)、manifest、橫幅 PNG 一起複製到輸出資料夾。
    只用標準庫。所有步驟都是函式,pytest 可以用 fixture 資料夾直接呼叫 build_data() / write_site()。"""
 import csv, glob, io, json, os, re, shutil
 from collections import Counter, OrderedDict
@@ -349,19 +350,113 @@ def build_data(src_dir='.', now=None):
     report = {'dead_conflicts': dead_conflicts, 'H': H}
     return DATA, report
 
-def data_decl(DATA):
-    return 'window.DATA = ' + json.dumps(DATA, ensure_ascii=False, sort_keys=True) + ';'
+# ---------- 精簡資料格式(data.json)----------
+# 前端只抓 data.json(不再內嵌 index.html)。為了讓檔案小、gzip 友善,輸出時把每篇壓成短鍵、去掉空欄位、
+# 標籤與作者 ID 改成索引;瀏覽器端由 src/data.js 的 expandData() 還原成 CLAUDE.md 記載的完整形狀,
+# 其餘前端模組與測試都只看完整形狀。這裡的 compact_data / expand_data 互為反函式(pytest 有 round-trip 測試)。
+#
+# 每篇精簡後的鍵:n 編號、m 標題、a 作者、ai 作者 ID 索引(pids 的位置,-1 = 無)、r 譯者、ri 譯者 ID 索引、
+#   p 人設、s 收錄篇名、l 閱讀連結、d 原文已刪(1)、c ck、e ek、g 標籤(依 facets 順序的陣列,每格是 options 索引)。
+#   created / edited 顯示字串由 ck / ek 推回,所以不輸出。
+COMPACT_VERSION = 2
+
+def _date_of(key):
+    """ck / ek(YYYYMMDDHHMM)→ '2026/7/13';0 → ''。與 parse_dt 的顯示字串一致。"""
+    if not key:
+        return ''
+    s = str(key)
+    return '%d/%d/%d' % (int(s[0:4]), int(s[4:6]), int(s[6:8]))
+
+def compact_data(DATA):
+    """完整 DATA → 精簡 dict(v=2)。標籤找不到在 options 裡的位置時保留原字串(expand 兩種都接受)。"""
+    fkeys = [f['key'] for f in DATA['facets']]
+    fopt = [{o[0]: i for i, o in enumerate(f['options'])} for f in DATA['facets']]
+    pids = list(DATA['people'].keys())
+    pidx = {p: i for i, p in enumerate(pids)}
+    def ids(lst):
+        return [pidx.get(i, -1) if i else -1 for i in lst]
+    out = []
+    for a in DATA['articles']:
+        o = {'n': a['no'], 'm': a['name']}
+        if a.get('author'): o['a'] = a['author']
+        if a.get('author_ids'): o['ai'] = ids(a['author_ids'])
+        if a.get('translator'): o['r'] = a['translator']
+        if a.get('translator_ids'): o['ri'] = ids(a['translator_ids'])
+        if a.get('persona'): o['p'] = a['persona']
+        if a.get('alias'): o['s'] = a['alias']
+        if a.get('links'): o['l'] = a['links']
+        if a.get('dead'): o['d'] = 1
+        if a.get('ck'): o['c'] = a['ck']
+        if a.get('ek'): o['e'] = a['ek']
+        g = [[fopt[i].get(t, t) for t in (a['tags'].get(k) or [])] for i, k in enumerate(fkeys)]
+        while g and not g[-1]:
+            g.pop()
+        if g: o['g'] = g
+        out.append(o)
+    C = OrderedDict((k, v) for k, v in DATA.items() if k != 'articles')
+    C['v'] = COMPACT_VERSION
+    C['pids'] = pids
+    C['articles'] = out
+    return C
+
+def expand_data(C):
+    """精簡 dict → 完整 DATA(與 build_data() 的輸出相同;沒有 v 欄位的舊格式原樣回傳)。
+    與 src/data.js 的 expandData() 邏輯一致,改一邊要改另一邊。"""
+    if not C or C.get('v') != COMPACT_VERSION:
+        return C
+    facets = C['facets']
+    pids = C.get('pids') or list(C['people'].keys())
+    def ids(lst):
+        return [pids[i] if isinstance(i, int) and 0 <= i < len(pids) else '' for i in lst]
+    arts = []
+    for o in C['articles']:
+        tags = OrderedDict()
+        g = o.get('g') or []
+        for i, f in enumerate(facets):
+            vals = g[i] if i < len(g) else []
+            tags[f['key']] = [f['options'][v][0] if isinstance(v, int) else v for v in vals]
+        arts.append({
+            'no': o['n'], 'name': o.get('m', ''), 'persona': o.get('p', ''),
+            'author': o.get('a', ''), 'author_ids': ids(o.get('ai') or []),
+            'translator': o.get('r', ''), 'translator_ids': ids(o.get('ri') or []),
+            'edited': _date_of(o.get('e', 0)), 'ek': o.get('e', 0),
+            'created': _date_of(o.get('c', 0)), 'ck': o.get('c', 0),
+            'tags': tags, 'links': o.get('l') or [], 'dead': bool(o.get('d')), 'alias': o.get('s', ''),
+        })
+    D = OrderedDict((k, v) for k, v in C.items() if k not in ('v', 'pids', 'articles'))
+    D['articles'] = arts
+    return D
+
+def data_json(DATA):
+    """data.json 的內容:精簡格式、無空白、UTF-8 不轉義(gzip 後最小)。"""
+    return json.dumps(compact_data(DATA), ensure_ascii=False, separators=(',', ':'), sort_keys=True)
 
 def render_index(tpl, DATA, stmap):
-    """樣板 → index.html:注入簡繁對照表與資料(佔位符 __STMAP_T__ / __STMAP_S__ / /*__DATA__*/)。"""
-    tpl = tpl.replace('__STMAP_T__', stmap[0]).replace('__STMAP_S__', stmap[1])
-    return tpl.replace('/*__DATA__*/', data_decl(DATA))
+    """樣板 → index.html:注入簡繁對照表(佔位符 __STMAP_T__ / __STMAP_S__)。資料不再內嵌,前端自己抓 data.json。"""
+    return tpl.replace('__STMAP_T__', stmap[0]).replace('__STMAP_S__', stmap[1])
 
-STATIC_DIRS = ('src', 'styles', 'vendor')   # 前端程式、樣式、第三方單檔(vendor/:Chart.js 統計星圖、lz-string 與 qrcode 書架匯出),源頭在倉庫根目錄,建置時一起複製到輸出資料夾
-STATIC_FILES = ('stats.html',)              # 不經樣板注入的靜態頁(統計星圖讀 data.js),同樣要跟著複製
+def sw_version(synced):
+    """synced 顯示字串『2026/10/30 2:05 PM』→ service worker 版本號 '20261030-1405'(24 時制,每次建置都不同)。
+    解析不了就退回去掉非英數的原字串,確保仍然每次不同。"""
+    m = re.match(r'(\d+)/(\d+)/(\d+)\s+(\d+):(\d+)\s*(AM|PM)?', synced or '')
+    if not m:
+        return re.sub(r'[^0-9A-Za-z]', '', synced or '') or 'dev'
+    y, mo, d, h, mi, ap = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4)), int(m.group(5)), m.group(6)
+    if ap == 'PM' and h < 12: h += 12
+    if ap == 'AM' and h == 12: h = 0
+    return '%04d%02d%02d-%02d%02d' % (y, mo, d, h, mi)
+
+SW_PLACEHOLDER = '__SW_VERSION__'
+
+def render_sw(sw_tpl, DATA):
+    """sw_template.js → sw.js:把版本號佔位符換成本次建置的 synced 時間戳(快取分版靠它,不要手寫)。"""
+    return sw_tpl.replace(SW_PLACEHOLDER, sw_version(DATA.get('synced', '')))
+
+STATIC_DIRS = ('src', 'styles', 'vendor', 'assets')   # 前端程式、樣式、第三方單檔(vendor/:Chart.js 統計星圖、lz-string 與 qrcode 書架匯出)、圖示 / WebP 橫幅;源頭在倉庫根目錄,建置時一起複製到輸出資料夾
+STATIC_FILES = ('stats.html', 'manifest.webmanifest', 'banner.png', 'banner-mobile.png')   # 不經樣板的靜態頁(統計星圖)與根目錄單檔資源,同樣複製(沒有就略過)
 
 def copy_static(repo_root, out_dir):
-    """把 repo_root 的 STATIC_DIRS 資料夾與 STATIC_FILES 檔案複製到 out_dir(輸出就是倉庫根目錄時不動)。"""
+    """把 repo_root 的 STATIC_DIRS 與 STATIC_FILES 複製到 out_dir(輸出就是倉庫根目錄時不動)。回傳複製了的資料夾 / 檔案名。"""
     copied = []
     if os.path.abspath(repo_root) == os.path.abspath(out_dir):
         return copied
@@ -381,12 +476,14 @@ def copy_static(repo_root, out_dir):
     return copied
 
 def write_site(DATA, src_dir, out_dir, repo_root=None):
-    """輸出 data.js、index.html,並複製 src/、styles/、vendor/、stats.html。回傳 (樣板字串, 複製了哪些資料夾 / 檔案)。"""
+    """輸出 data.json、index.html、sw.js(版本號帶入),並複製 src/、styles/、vendor/、assets/ 與 stats.html / manifest / 橫幅 PNG。
+    回傳 (樣板字串, 複製了哪些資料夾 / 檔案)。"""
     os.makedirs(out_dir, exist_ok=True)
-    decl = data_decl(DATA)
-    io.open(os.path.join(out_dir, 'data.js'), 'w', encoding='utf-8').write(decl)   # 也單獨輸出 data.js(供分檔部署)
+    io.open(os.path.join(out_dir, 'data.json'), 'w', encoding='utf-8').write(data_json(DATA))
     tpl = io.open(os.path.join(src_dir, 'site_template.html'), encoding='utf-8').read()
     io.open(os.path.join(out_dir, 'index.html'), 'w', encoding='utf-8').write(render_index(tpl, DATA, load_stmap(src_dir)))
+    sw_tpl = io.open(os.path.join(src_dir, 'sw_template.js'), encoding='utf-8').read()
+    io.open(os.path.join(out_dir, 'sw.js'), 'w', encoding='utf-8').write(render_sw(sw_tpl, DATA))
     copied = copy_static(repo_root or os.path.join(src_dir, '..'), out_dir)
     return tpl, copied
 
@@ -453,6 +550,14 @@ def self_check(tpl, H, out_dir):
     for _f, _why in (('lz-string.min.js', '書架匯出 / 匯入會失效'), ('qrcode.js', '匯出 QR code 畫不出來')):
         if not os.path.isfile(os.path.join(out_dir, 'vendor', _f)):
             _warn.append('輸出資料夾缺少 vendor/%s(%s)' % (_f, _why))
+    # 8) 資料檔與 service worker:data.json 要在、sw.js 的版本號佔位符要被換掉(否則快取永遠不更新)
+    if not os.path.isfile(os.path.join(out_dir, 'data.json')):
+        _warn.append('輸出資料夾缺少 data.json(首頁會載不到資料)')
+    _swp = os.path.join(out_dir, 'sw.js')
+    if not os.path.isfile(_swp):
+        _warn.append('輸出資料夾缺少 sw.js(PWA 離線 / 安裝會失效)')
+    elif SW_PLACEHOLDER in io.open(_swp, encoding='utf-8').read():
+        _warn.append('sw.js 版本號佔位符未被取代(讀者永遠拿到舊快取)')
     return _warn
 
 def main():
@@ -476,7 +581,7 @@ def main():
             print('  ⚠️ ' + _w)
         print('==============================================================')
     else:
-        print('架構自檢:通過 ✅(端點/欄位/簡繁注入/模組複製/統計星圖都正常)')
+        print('架構自檢:通過 ✅(端點/欄位/簡繁注入/模組複製/統計星圖/data.json/sw.js 都正常)')
 
 
 if __name__ == '__main__':

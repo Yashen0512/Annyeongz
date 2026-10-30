@@ -1,9 +1,10 @@
 /* Annyeongz 平行宇宙 — 統計星圖(stats.html):總覽數字卡、圖表卡;手機單欄、圖表可橫向捲動 */
 .stats-wrap{max-width:1200px;margin:0 auto;padding:18px 28px}
 .stats-lead{color:var(--muted);font-size:13px;margin:-4px 0 16px}
-.stats-lead a,.stats-back{color:var(--accent);text-decoration:none}
+.stats-lead a,.stats-back{color:var(--accent-t);text-decoration:underline;text-underline-offset:2px}   /* 文字裡的連結要有底線,不能只靠顏色(axe link-in-text-block) */
 .stats-back{font-size:13px;white-space:nowrap}
-.stats-back:hover{text-decoration:underline}
+.stats-back:hover{text-decoration-thickness:2px}
+.chart-scroll:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 /* 總覽數字卡 */
 .overview{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px}
 .ov-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px}

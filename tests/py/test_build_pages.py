@@ -83,9 +83,9 @@ def site(tmp_path_factory):
     out = tmp_path_factory.mktemp('site')
     DATA, _ = B.build_data(FIXTURE, now=datetime(2026, 10, 30, 14, 5, tzinfo=timezone(timedelta(hours=8))))
     src = tmp_path_factory.mktemp('build')
-    shutil.copy(os.path.join(ROOT, '_build', 'site_template.html'), src / 'site_template.html')
-    shutil.copy(os.path.join(ROOT, '_build', 'stmap.txt'), src / 'stmap.txt')
-    B.write_site(DATA, str(src), str(out), repo_root=ROOT)
+    for fn in ('site_template.html', 'stmap.txt', 'sw_template.js'):
+        shutil.copy(os.path.join(ROOT, '_build', fn), src / fn)
+    B.write_site(DATA, str(src), str(out), repo_root=ROOT)   # 產出 data.json(精簡格式),build_pages 用 load_data 還原
     st = P.build_pages(P.load_data(str(out)), str(out), images=True)
     return out, DATA, st
 
@@ -148,6 +148,9 @@ def test_sitemap_and_feeds_are_valid_xml(site):
         assert ch.find('lastBuildDate').text == P.rss_xml.__globals__['format_datetime'](P.key_to_dt(max(dates)))
     assert (out / 'robots.txt').read_text(encoding='utf-8') == 'User-agent: *\nAllow: /\nSitemap: https://yashen0512.github.io/Annyeongz/sitemap.xml\n'
 
-def test_load_data_parses_data_js(tmp_path):
-    (tmp_path / 'data.js').write_text('window.DATA = {"total": 1, "articles": []};', encoding='utf-8')
+def test_load_data_reads_compact_data_json(tmp_path):
+    (tmp_path / 'data.json').write_text('{"total": 1, "articles": []}', encoding='utf-8')   # 舊的完整格式原樣回傳
     assert P.load_data(str(tmp_path)) == {'total': 1, 'articles': []}
+    DATA, _ = B.build_data(FIXTURE)
+    (tmp_path / 'data.json').write_text(B.data_json(DATA), encoding='utf-8')               # 精簡格式 → expand_data 還原
+    assert P.load_data(str(tmp_path)) == json.loads(json.dumps(DATA))
