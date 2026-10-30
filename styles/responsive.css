@@ -1,0 +1,63 @@
+/* Annyeongz 平行宇宙 — 平板與手機版面(≤860px、≤560px) */
+/* 平板/手機 */
+.panelbar{display:none}
+body.noscroll{overflow:hidden}
+@media(max-width:860px){
+  .wrap{flex-direction:column;align-items:stretch;padding:14px}  /* 直向時 main 撐滿寬度,避免橫向卡片列把整頁撐寬溢出 */
+  .panel{display:none}
+  /* 手機:篩選改全螢幕乾淨面板(像 App 的「分類」頁)*/
+  .panel.open{display:block;position:fixed;inset:0;z-index:60;width:auto;max-height:none;
+    margin:0;border:none;border-radius:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    padding:0 18px calc(env(safe-area-inset-bottom) + 24px)}
+  .panel.open .paneltitle{display:none}
+  .panelbar{display:flex;justify-content:space-between;align-items:center;
+    position:sticky;top:0;z-index:2;background:var(--card);
+    margin:0 -18px 8px;padding:16px 18px;border-bottom:1px solid var(--line);
+    font-size:19px;font-weight:800}
+  .pbdone{font-size:16px;padding:9px 22px;background:var(--accent);color:#fff;border:none;border-radius:999px;font-weight:700}
+  .panel .facet{padding:14px 0}
+  .panel .facet h3{font-size:17px;margin:6px 0}
+  .panel .facet h3 .arw{font-size:13px}
+  .panel .facet h3 .mode{font-size:13px}
+  .panel .opts{gap:9px;margin-top:10px}
+  .panel .opt{font-size:16px;padding:9px 16px;border-radius:999px}
+  .panel .opt .c{font-size:13px;margin-left:5px}
+  #filterToggle{display:inline-block}
+  .grid{grid-template-columns:1fr}
+  .topbar{padding:10px 14px;gap:10px}
+  .brand{font-size:15px}
+  .search{order:3;flex-basis:100%;max-width:none;font-size:16px;padding:12px 16px}
+}
+/* 手機 */
+@media(max-width:560px){
+  body{font-size:16px}                /* 整體字級提高 */
+  .banner{aspect-ratio:2.6/1}                 /* 退路:沒有手機專用圖時,用桌機6:1圖裁切加高 */
+  .banner .bimg-m{display:block;position:static;width:100%;height:auto}  /* 手機專用方圖:完整、不裁切 */
+  .banner:has(.bimg-m){aspect-ratio:auto}     /* 有方圖時高度跟著圖走 */
+  .banner:has(.bimg-m) .bimg{display:none}    /* 有方圖時隱藏桌機6:1圖 */
+  .search{font-size:16px;padding:13px 18px}   /* 搜尋列加大 */
+  #toTop{width:56px;height:56px;font-size:27px;right:16px;bottom:16px}  /* 置頂鍵加大 */
+  .close{width:48px;height:48px;font-size:30px;line-height:1;top:14px;right:14px}     /* 圓縮小一點、✕ 放大(使用者 2026/7/30 要求) */
+  .wrap{padding:12px}
+  .brand{font-size:14px;letter-spacing:0}
+  .sech{font-size:20px}                        /* 區塊標題加大 */
+  .ctl{font-size:15px;padding:9px 14px}        /* 功能按鈕(篩選/排序/隨機/重設)加大 */
+  .card .t{font-size:17.5px}
+  .card .t .no{font-size:12px}
+  .badge{font-size:12.5px;padding:2px 9px}
+  .card .persona{font-size:13.5px}
+  .tg span{font-size:12.5px;padding:2px 8px}
+  .hint{font-size:13px}
+  .opt{font-size:14px;padding:6px 12px}
+  .scard{flex:0 0 180px}
+  .scard .st{font-size:15px}
+  .scard .sm{font-size:12px}
+  .toolbar .count{margin-left:0;flex-basis:100%;font-size:14px}
+  .snav{display:none}            /* 手機用滑的,不顯示箭頭 */
+  .sheet{padding:20px 16px;max-height:90vh}
+  .dnav{bottom:-20px;margin:16px -16px -20px;padding:10px 16px}
+  .sheet h2{font-size:19px}
+  .drow{flex-direction:column;gap:2px;font-size:15px}    /* 詳情:標籤在上、值在下 */
+  .dk{flex-basis:auto}
+  .plat{padding:6px 13px;font-size:13.5px}
+}

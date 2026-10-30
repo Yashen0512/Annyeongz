@@ -1,7 +1,10 @@
 // Annyeongz PWA service worker — network-first(更新優先),離線時用快取
-const CACHE = 'annyeongz-v1';
+const CACHE = 'annyeongz-v2';
 const ASSETS = ['./', './index.html', './manifest.webmanifest',
-  './banner.png', './banner-mobile.png', './icon-192.png', './icon-512.png'];
+  './banner.png', './banner-mobile.png', './icon-192.png', './icon-512.png',
+  './styles/base.css', './styles/panel.css', './styles/main.css', './styles/modal.css', './styles/responsive.css', './styles/intro.css',
+  './src/intro.js', './src/main.js', './src/data.js', './src/filter.js', './src/sort.js', './src/storage.js',
+  './src/url.js', './src/render.js', './src/related.js', './src/reactions.js', './src/api.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));

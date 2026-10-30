@@ -261,7 +261,7 @@ os.makedirs(OUT, exist_ok=True)
 data_decl = 'window.DATA = ' + json.dumps(DATA, ensure_ascii=False, sort_keys=True) + ';'
 # also emit data.js (for deploy if ever served as separate files)
 io.open(os.path.join(OUT, 'data.js'), 'w', encoding='utf-8').write(data_decl)
-# self-contained index.html (works via double-click / preview / file://)
+# index.html = 樣板 + 注入資料/簡繁表;程式與樣式在 src/、styles/(ES module,需用 http 伺服器開,file:// 不行)
 tpl = io.open('site_template.html', encoding='utf-8').read()
 # 注入簡繁對照表(搜尋簡繁互通);stmap.txt 兩行=繁字串 / 簡字串
 try:
@@ -304,9 +304,9 @@ if _reg:
 # ---- 架構自檢:把「靜默失敗」變成看得到的警告 ----
 _warn = []
 # 1) 樣板端點還在不在(val 端點/計數器被改壞會導致統計或回報靜默失效)
-for _name, _pat in (('即時統計 STATS_API', r'STATS_API="https://[a-z0-9-]+--[a-z0-9]+\.web\.val\.run"'),
-                    ('回報 REPORT_API', r'REPORT_API="https://[a-z0-9-]+--[a-z0-9]+\.web\.val\.run"'),
-                    ('愛心/查看 REACT_API', r'REACT_API="https://[a-z0-9-]+--[a-z0-9]+\.web\.val\.run"'),
+for _name, _pat in (('即時統計 STATS_API', r'STATS_API[:=]"https://[a-z0-9-]+--[a-z0-9]+\.web\.val\.run"'),
+                    ('回報 REPORT_API', r'REPORT_API[:=]"https://[a-z0-9-]+--[a-z0-9]+\.web\.val\.run"'),
+                    ('愛心/查看 REACT_API', r'REACT_API[:=]"https://[a-z0-9-]+--[a-z0-9]+\.web\.val\.run"'),
                     ('GoatCounter 追蹤碼', r'gc\.zgo\.at/count\.js')):
     if not re.search(_pat, tpl):
         _warn.append('樣板缺少 %s(統計/回報會靜默失效)' % _name)
