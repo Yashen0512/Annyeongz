@@ -157,3 +157,5 @@ def test_report_markdown_sections():
     md = CL.report_markdown(rep)
     assert '## 已刪' in md and '## 復活' in md and '## 改名' in md
     assert 'No.1《T》PT — https://p/1' in md and '改名:A → B(Postype)' in md and '略過 9 筆' in md
+    rep['renames'] = []
+    assert '## 改名\n(無)' in CL.report_markdown(rep) and '## 復活\n(無)' in CL.report_markdown(rep)

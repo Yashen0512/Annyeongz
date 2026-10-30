@@ -338,8 +338,9 @@ def report_markdown(rep):
                                              ';HTTP %s' % x['code'] if x.get('code') else '') for x in items] or ['(無)']
     L += ['## 已刪'] + link_lines(rep['new_dead']) + ['']
     L += ['## 復活'] + link_lines(rep['revived']) + ['']
-    L += ['## 改名'] + ['- 改名:%s → %s(%s);依據 No.%s' % (r['old'], r['new'], checkers.PLATFORM_LABEL[r['platform']], '、'.join(r['nos']))
-                        for r in rep['renames']] or ['(無)']
+    rn = ['- 改名:%s → %s(%s);依據 No.%s' % (r['old'], r['new'], checkers.PLATFORM_LABEL[r['platform']], '、'.join(r['nos']))
+          for r in rep['renames']]
+    L += ['## 改名'] + (rn or ['(無)'])
     if rep['rename_candidates']:
         L += ['', '### 待確認的改名候選(作者庫沒有該平台網址可核對,未寫回)']
         L += ['- %s → %s(%s);依據 No.%s' % (r['old'], r['new'], checkers.PLATFORM_LABEL[r['platform']], '、'.join(r['nos']))
