@@ -34,6 +34,10 @@ describe('匯出格式', () => {
     const o = JSON.parse(globalThis.LZString.decompressFromEncodedURIComponent(s));
     expect(o).toEqual({ v: EXPORT_VERSION, shelf: ['12', '7'], read: ['7', '300'], exportedAt: '2026-10-30T12:34:56.000Z' });
   });
+  it('有給 todo 就多一個 todo 欄,版本仍是 1', () => {
+    const o = JSON.parse(globalThis.LZString.decompressFromEncodedURIComponent(exportState({ favs: ['1'], read: [], todo: new Set(['9', '9', '8']) })));
+    expect(o.v).toBe(1); expect(o.todo).toEqual(['9', '8']); expect(Object.keys(o)).toEqual(['v', 'shelf', 'read', 'todo', 'exportedAt']);
+  });
   it('書架是空的也能匯出', () => {
     expect(decodeState(exportState({ favs: new Set(), read: new Set() }))).toMatchObject({ shelf: [], read: [] });
   });
@@ -56,7 +60,7 @@ describe('匯出再匯入', () => {
   it('decodeState 會去重並回傳匯出時間', () => {
     const when = new Date('2026-01-02T03:04:05.000Z');
     const d = decodeState(exportState({ favs: ['5', '5', '6'], read: [] }, when));
-    expect(d).toEqual({ shelf: ['5', '6'], read: [], exportedAt: '2026-01-02T03:04:05.000Z' });
+    expect(d).toEqual({ shelf: ['5', '6'], read: [], todo: null, exportedAt: '2026-01-02T03:04:05.000Z' });
   });
 });
 
@@ -81,7 +85,7 @@ describe('合併模式(預設,聯集)', () => {
     const next = mergeState(cur, inc, 'merge');
     expect(sorted(next.favs)).toEqual(['1', '2', '3']); expect(sorted(next.read)).toEqual(['1', '2', '9']);
     expect(sorted(cur.favs)).toEqual(['1']); expect(sorted(cur.read)).toEqual(['1', '2']);
-    expect(previewImport(cur, inc, 'merge')).toEqual({ addShelf: 2, addRead: 1, removeShelf: 0, removeRead: 0, shelfTotal: 3, readTotal: 3 });
+    expect(previewImport(cur, inc, 'merge')).toEqual({ addShelf: 2, addRead: 1, addTodo: 0, removeShelf: 0, removeRead: 0, removeTodo: 0, shelfTotal: 3, readTotal: 3, todoTotal: 0 });
   });
 });
 
@@ -97,7 +101,53 @@ describe('覆蓋模式', () => {
   });
   it('previewImport 覆蓋模式會算出移除數', () => {
     const cur = { favs: new Set(['1', '2']), read: new Set(['5']) }, inc = { shelf: ['2'], read: [] };
-    expect(previewImport(cur, inc, 'replace')).toEqual({ addShelf: 0, addRead: 0, removeShelf: 1, removeRead: 1, shelfTotal: 1, readTotal: 0 });
+    expect(previewImport(cur, inc, 'replace')).toEqual({ addShelf: 0, addRead: 0, addTodo: 0, removeShelf: 1, removeRead: 1, removeTodo: 0, shelfTotal: 1, readTotal: 0, todoTotal: 0 });
+  });
+});
+
+describe('待閱讀(todo,可選欄位)', () => {
+  it('匯出再匯入:待閱讀也跟著過去;已讀的不會進待閱讀', () => {
+    const src = sets(['1'], ['2'], ['3', '4']);
+    const dst = sets([], [], []);
+    const r = importState(exportState(src), dst);
+    expect(sorted(dst.todo)).toEqual(['3', '4']); expect(sorted(r.addedTodo)).toEqual(['3', '4']);
+    expect(JSON.parse(store.get(KEYS.TODO)).sort()).toEqual(['3', '4']);
+  });
+  it('舊格式(沒有 todo 欄)仍可匯入,且不動這台的待閱讀(合併與覆蓋都一樣)', () => {
+    const LZ = globalThis.LZString;
+    const old = LZ.compressToEncodedURIComponent(JSON.stringify({ v: 1, shelf: ['1'], read: ['2'], exportedAt: '2026-01-01T00:00:00.000Z' }));
+    expect(decodeState(old).todo).toBeNull();
+    const a = sets([], [], ['7']); importState(old, a);
+    expect(sorted(a.todo)).toEqual(['7']); expect(store.has(KEYS.TODO)).toBe(false);   // 沒改就不寫
+    const b = sets(['9'], [], ['7']); const r = importState(old, { ...b, mode: 'replace' });
+    expect(sorted(b.favs)).toEqual(['1']); expect(sorted(b.todo)).toEqual(['7']); expect(r.addedTodo).toEqual([]); expect(r.removedTodo).toEqual([]);
+  });
+  it('合併:待閱讀聯集;匯入的已讀會把這台的待閱讀擠掉', () => {
+    const payload = exportState(sets([], ['5'], ['3']));
+    const dst = sets([], [], ['4', '5']);
+    const st = previewImport({ favs: dst.favs, read: dst.read, todo: dst.todo }, decodeState(payload), 'merge');
+    expect(st).toMatchObject({ addRead: 1, addTodo: 1, removeTodo: 1, todoTotal: 2 });
+    const r = importState(payload, dst);
+    expect(sorted(dst.todo)).toEqual(['3', '4']); expect(r.addedTodo).toEqual(['3']); expect(r.removedTodo).toEqual(['5']);
+  });
+  it('覆蓋:以匯入的待閱讀為準', () => {
+    const payload = exportState(sets([], [], ['3']));
+    const dst = sets([], [], ['4']);
+    const r = importState(payload, { ...dst, mode: 'replace' });
+    expect(sorted(dst.todo)).toEqual(['3']); expect(r.removedTodo).toEqual(['4']);
+    expect(JSON.parse(store.get(KEYS.TODO))).toEqual(['3']);
+  });
+  it('呼叫端沒給 todo 集合 → 完全不處理待閱讀', () => {
+    const dst = { favs: new Set(), read: new Set() };
+    const r = importState(exportState(sets([], [], ['3'])), dst);
+    expect(r.addedTodo).toEqual([]); expect(store.has(KEYS.TODO)).toBe(false);
+  });
+  it('todo 欄型別不對 → 整段拒絕,資料不變', () => {
+    const LZ = globalThis.LZString;
+    const bad = LZ.compressToEncodedURIComponent(JSON.stringify({ v: 1, shelf: [], read: [], todo: 'x' }));
+    const dst = sets(['1'], [], ['2']);
+    expect(() => importState(bad, dst)).toThrow(/todo/);
+    expect(sorted(dst.favs)).toEqual(['1']); expect(sorted(dst.todo)).toEqual(['2']);
   });
 });
 

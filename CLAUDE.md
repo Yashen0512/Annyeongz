@@ -199,13 +199,14 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
 - 書架完全存本機,免登入,每台裝置各自一份。
 - **帶到另一台裝置(匯出 / 匯入,`storage.js` 檔尾)**:書架區「📤 匯出」「📥 匯入」「🗑 清除所有紀錄」三個按鈕(`render.js` 的
   `shelfToolsHTML`,視窗與詳情共用 `#modal`,`main.js` 的 `_mode = 'tool'`)。
-  - 格式 `{ v: 1, shelf: [收藏編號], read: [已讀編號], exportedAt: ISO }`,用 `vendor/lz-string.min.js` 的
-    `compressToEncodedURIComponent` 壓成只含 `A-Z a-z 0-9 + - $` 的字串(待閱讀不在匯出範圍內)。
+  - 格式 `{ v: 1, shelf: [收藏編號], read: [已讀編號], todo: [待閱讀編號], exportedAt: ISO }`,用 `vendor/lz-string.min.js` 的
+    `compressToEncodedURIComponent` 壓成只含 `A-Z a-z 0-9 + - $` 的字串。`todo` 是後加的**可選欄位**(版本仍是 1):
+    舊字串沒有這欄照樣能匯入,且不動這台的待閱讀;要再加欄位也比照辦理,不要升版本。
   - 匯出提供「複製字串」「複製匯入連結」(`<網址>?s=<字串>`)與 QR code(`vendor/qrcode.js`,內容是匯入連結;字串超過
     `QR_MAX` = 2000 字就不畫、提示改用複製)。
   - 匯入:貼上字串或連結、或「掃描 QR」(只有 `BarcodeDetector` 可用的瀏覽器才有這顆按鈕)→ `decodeState` 驗證 `v` 與欄位型別
-    (不合法丟 Error、顯示訊息、原資料完全不動)→ 預覽「將加入 X 本書架、Y 篇已讀」→ 選「合併」(預設,聯集)或「覆蓋」→ 確認才寫入。
-    匯入的已讀會自動移出待閱讀;匯入的收藏會標進 `annyeongz_favs_sent`(原裝置已算過公開愛心,不再 +1)。
+    (不合法丟 Error、顯示訊息、原資料完全不動)→ 預覽「將加入 X 本書架、Y 篇已讀、Z 篇待閱讀」→ 選「合併」(預設,聯集)或「覆蓋」→ 確認才寫入。
+    匯入的已讀會自動移出待閱讀(`mergeState` 最後一步);匯入的收藏會標進 `annyeongz_favs_sent`(原裝置已算過公開愛心,不再 +1)。
   - 另一台裝置打開 `?s=<字串>` 會自動跳出匯入預覽(不自動寫入);匯入完成後 `history.replaceState` 移除 `?s=`(`#f=` 保留)。
     解析 `?s=` **不能用 `URLSearchParams`**(會把 `+` 當空白),用 `extractPayload`。
   - 清除所有紀錄:要輸入「清除」才能按;清掉收藏 / 待閱讀 / 已讀 / `favs_sent` / 書架分頁,並像逐篇取消收藏一樣把已計入的公開愛心扣回。
