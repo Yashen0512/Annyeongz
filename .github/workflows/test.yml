@@ -1,4 +1,5 @@
-# PR 時自動跑 Vitest(filter / sort / url 純函式測試);與 GitHub Pages 部署無關
+# PR 時自動跑測試:前端 Vitest(filter / sort / url 純函式)+ 後端 pytest(build_site / fetch_data 純函式與 30 篇 fixture 建置)。
+# 與 GitHub Pages 部署無關;不需要 Notion token。
 name: Test
 
 on:
@@ -9,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  vitest:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,3 +20,15 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm test
+
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+        env:
+          PYTHONIOENCODING: utf-8

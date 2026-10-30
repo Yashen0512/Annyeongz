@@ -3,7 +3,8 @@
 // 篩選狀態 f 的欄位(全部選填):
 //   sel      {分面: {標籤: 'on' | 'exc'}}  標籤三態:on=包含、exc=排除、沒有=未選
 //   modes    {分面: 'and'}                 區標題切成「全部」的分面(沒有 = 任一/OR)
-//   author   string | null                作者/譯者專頁(名字須完全相同)
+//   author   string | null                作者/譯者專頁(目前名字或曾用名;有 lookup 時以 Notion 作者頁 ID 對應)
+//   lookup   data.js makePersonLookup() 的結果(選填;沒有就只比對名字字串)
 //   term     string                        搜尋字(已經過 data.js 的 foldZH 折算),比對 a._s
 //   shelf    Set | null                    書架模式:只顯示集合內的編號;null = 未開書架
 //   shelfTab 'fav' | 'todo' | 'read'       書架目前分頁(在「已讀」分頁時不套「隱藏已讀」)
@@ -13,7 +14,21 @@
 // 規則:同區多選 = OR(任一)、跨區 = AND、exc = 排除(有任一排除標籤就不顯示)、
 //      區標題切「全部」後同區變 AND。
 
-import { persons } from './data.js';
+import { persons, personRefs } from './data.js';
+
+/**
+ * 這篇的作者 / 譯者是否就是專頁的那位:
+ * 1. 顯示名字完全相同(舊資料、沒有 ID 的關聯也能用)
+ * 2. 或名字 / 曾用名透過 lookup 對到的 ID,出現在這篇的 author_ids / translator_ids(改名後仍對得到)
+ */
+export function matchesAuthor(a, name, lookup) {
+  if (!name) return true;
+  if (persons(a).includes(name)) return true;
+  const id = lookup && lookup.idOf(name);
+  if (!id) return false;
+  const refs = personRefs(a);
+  return refs.authors.concat(refs.translators).some((r) => r.id === id);
+}
 
 /** 單篇是否通過篩選。 */
 export function passes(a, f = {}) {
@@ -21,7 +36,7 @@ export function passes(a, f = {}) {
   if (!(f.shelf && f.shelfTab === 'read') && f.hideRead && f.readSet && f.readSet.has(a.no)) return false;
   if (a.dead && f.hideDead) return false;
   if (f.term) { if (!(a._s || '').includes(f.term)) return false; }
-  if (f.author) { if (!persons(a).includes(f.author)) return false; }
+  if (f.author) { if (!matchesAuthor(a, f.author, f.lookup)) return false; }
   const sel = f.sel || {}, modes = f.modes || {};
   for (const key in sel) {
     const s = sel[key];
@@ -43,8 +58,8 @@ export function filterArticles(articles, f = {}) {
 }
 
 /** 某位作者/譯者的所有作品(作者專頁的篇數)。 */
-export function authorWorks(articles, name) {
-  return (articles || []).filter((a) => persons(a).includes(name));
+export function authorWorks(articles, name, lookup) {
+  return (articles || []).filter((a) => matchesAuthor(a, name, lookup));
 }
 
 /**

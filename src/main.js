@@ -5,7 +5,7 @@
 //   shelfOn / shelfTab     書架模式與分頁
 //   page                   主列表目前頁數(每頁 PER 篇)
 //   _mode / _cur / _annIdx 詳情視窗:'art' 文章、'ann' 公告;_navList = 從哪一排點開(null = 主列表目前篩選+排序)
-import { loadData, sg, buildTag2Facet, sortAnnouncements } from './data.js';
+import { loadData, sg, buildTag2Facet, sortAnnouncements, makePersonLookup } from './data.js';
 import { passes, filterArticles, authorWorks, cycleTag, selectTag, removeTag, toggleMode, clearSelection, selectionChips } from './filter.js';
 import { sortArticles, pickRandom } from './sort.js';
 import { KEYS, loadSet, saveSet, loadShelfTab, saveShelfTab, loadTheme, saveTheme } from './storage.js';
@@ -17,6 +17,7 @@ import * as R from './render.js';
 
 const { D, foldZH } = loadData();
 const deadAuthors = new Set(D.dead_authors || []);
+const persons = makePersonLookup(D.people);   // 作者以 Notion 作者頁 ID 對應(改名也不會斷)
 const tag2facet = buildTag2Facet(D.facets);
 const ANNS = sortAnnouncements(D.announcements);
 const deadNos = new Set(D.articles.filter((a) => a.dead).map((a) => a.no));
@@ -39,7 +40,7 @@ const SHELF = { fav: favs, todo: todoSet, read: readSet };
 const reactions = createReactions({ favs, deadNos, onChange: () => { render(true); if (modalOpen() && _cur) openDetail(_cur); } });
 
 // 傳給 render.js 的畫面脈絡
-const ctx = { facets: D.facets, people: D.people, deadAuthors, favs, readSet, todoSet, likeNum: reactions.likeNum, viewNum: reactions.viewNum };
+const ctx = { facets: D.facets, persons, deadAuthors, favs, readSet, todoSet, likeNum: reactions.likeNum, viewNum: reactions.viewNum };
 
 const q = $('q');
 const modalOpen = () => $('modal').style.display === 'flex';
@@ -47,7 +48,7 @@ const modalOpen = () => $('modal').style.display === 'flex';
 // ---- 篩選 / 排序 ----
 function filterState() {
   return {
-    sel, modes, author: authorFilter, term: foldZH(q.value.trim()),
+    sel, modes, author: authorFilter, lookup: persons, term: foldZH(q.value.trim()),
     shelf: shelfOn ? SHELF[shelfTab] : null, shelfTab,
     hideRead: !!$('hideRead')?.checked, readSet,
     hideDead: !!$('hideDead')?.checked,
@@ -94,7 +95,7 @@ function render(keepPage) {
   if (page > pages) page = pages;
   $('count').textContent = `共 ${hits.length} / ${D.total} 篇`;
   { const pb = document.querySelector('.pbdone'); if (pb) pb.textContent = `看 ${hits.length} 篇 ✓`; }
-  R.renderAuthorHead($('authorHead'), authorFilter, authorFilter ? authorWorks(D.articles, authorFilter).length : 0, ctx,
+  R.renderAuthorHead($('authorHead'), authorFilter, authorFilter ? authorWorks(D.articles, authorFilter, persons).length : 0, ctx,
     () => { authorFilter = null; render(); scrollToToolbar(); });
   if (!hits.length) {
     list.innerHTML = R.emptyHTML(shelfOn && SHELF[shelfTab].size === 0 ? shelfTab : null);

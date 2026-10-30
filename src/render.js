@@ -6,9 +6,15 @@
 //   closeDetail / navDetail / toggleReport / pickReason / sendReport
 //
 // ctx(由 main.js 組好傳入)欄位:
-//   facets, people, deadAuthors(Set), favs / readSet / todoSet(Set),
-//   likeNum(no) 公開愛心數(0 不顯示)、viewNum(no) 觀測數
-import { sg, isExt, liveCount } from './data.js';
+//   facets, persons(data.js makePersonLookup:以作者頁 ID 查名字 / 平台 / 已刪帳號)、deadAuthors(Set,相容舊資料),
+//   favs / readSet / todoSet(Set)、likeNum(no) 公開愛心數(0 不顯示)、viewNum(no) 觀測數
+import { sg, isExt, liveCount, personRefs } from './data.js';
+
+/** 作者資料(以 ID 為主、名字為輔)→ {urls, dead}。 */
+function personInfo(ctx, name, id) {
+  const p = ctx.persons ? ctx.persons.find(name, id) : null;
+  return { urls: (p && p.urls) || {}, dead: !!(p && p.dead) || ctx.deadAuthors.has(name) };
+}
 
 export const endCls = (e) => ({ HE: 'he', BE: 'be', OE: 'oe' }[e] || '');
 export const STMAP = { '完結': 'done', '完結+番外': 'done', '連載中': 'ongoing', '未完': 'wip', '斷更': 'hiatus', '建置中': 'building', '不定期更新': 'irregular' };
@@ -149,10 +155,10 @@ export function renderSelBar(bar, chips, { onRemove, onClearAll }) {
 /** 作者專頁標頭(名字、篇數、平台連結、返回全部)。name 為 null 時隱藏。 */
 export function renderAuthorHead(el, name, count, ctx, onClear) {
   if (!name) { el.style.display = 'none'; return; }
-  const p = (ctx.people && ctx.people[name]) || {};
+  const info = personInfo(ctx, name), p = info.urls;
   const links = Object.keys(p).map((k) => `<a class="plat" href="${p[k]}" target="_blank" rel="noopener">${k}</a>`).join('');
   el.style.display = 'block';
-  const deadTag = ctx.deadAuthors.has(name) ? '<span class="deadauth">(已刪帳號)</span>' : '';
+  const deadTag = info.dead ? '<span class="deadauth">(已刪帳號)</span>' : '';
   el.innerHTML = `<div class="ah-row"><span class="ah-name">✍️ ${name}${deadTag}</span><span class="ah-cnt">共 ${count} 篇</span>`
     + `<button class="ah-clear">✕ 返回全部</button></div>`
     + (links ? `<div class="ah-links">${links}</div>` : '');
@@ -208,14 +214,14 @@ export function renderPager(el, page, pages, gotoPage) {
   el.appendChild(jump);
 }
 
-/** 詳情:作者 / 譯者列(名字可點看全部 + 平台連結)。 */
-export function personRow(label, namesStr, ctx) {
-  if (!namesStr) return '';
-  const inner = namesStr.split('、').map((nm) => {
-    const p = (ctx.people && ctx.people[nm]) || {};
+/** 詳情:作者 / 譯者列(名字可點看全部 + 平台連結)。refs = [{name, id}](personRefs)。 */
+export function personRow(label, refs, ctx) {
+  if (!refs || !refs.length) return '';
+  const inner = refs.map(({ name: nm, id }) => {
+    const info = personInfo(ctx, nm, id), p = info.urls;
     const links = Object.keys(p).map((k) => `<a class="plat pp" href="${p[k]}" target="_blank" rel="noopener">${k}</a>`).join('');
     const see = `<a class="plat pp" href="#" onclick="filterName('${encodeURIComponent(nm)}');return false">看全部</a>`;
-    const dead = ctx.deadAuthors.has(nm) ? '<span class="deadauth">(已刪帳號)</span>' : '';
+    const dead = info.dead ? '<span class="deadauth">(已刪帳號)</span>' : '';
     return `<div class="person"><b class="aname" onclick="filterName('${encodeURIComponent(nm)}')">${nm}</b>${dead} ${links} ${see}</div>`;
   }).join('');
   return `<div class="drow"><span class="dk">${label}</span><span class="dv">${inner}</span></div>`;
@@ -276,8 +282,8 @@ export function detailHTML(a, ctx, { rel, navIndex, navLen }) {
     </div>
     ${deadBar(a)}
     ${vw ? `<div class="viewline">🔭 被觀測 ${vw.toLocaleString()} 次</div>` : ''}
-    ${personRow('作者', a.author, ctx)}
-    ${personRow('譯者', a.translator, ctx)}
+    ${personRow('作者', personRefs(a).authors, ctx)}
+    ${personRow('譯者', personRefs(a).translators, ctx)}
     ${a.persona ? `<div class="drow"><span class="dk">人設</span><span class="dv">${a.persona.replace(/\n/g, '<br>')}</span></div>` : ''}
     ${a.alias ? `<div class="drow"><span class="dk">收錄篇名</span><span class="dv">${a.alias.replace(/\n/g, '<br>')}</span></div>` : ''}
     ${rows}

@@ -30,10 +30,13 @@ src/                       前端程式(ES modules,無框架)
   intro.js                 開場動畫(傳統 script,非 module;需同步執行)
 styles/                    樣式,依原本的 cascade 順序切成六個檔(index.html 依序載入)
   base.css panel.css main.css modal.css responsive.css intro.css
-tests/                     Vitest 單元測試(filter / sort / url)+ fixtures.js
-_build/                    建置工具(Python)
-  fetch_data.py            從 Notion API 抓主表 / 作者 / 公告 / 每篇連結 → CSV + article_links.json
-  build_site.py            CSV → data.js + index.html(樣板注入資料與簡繁對照表),含編號重複 / 架構自檢
+tests/                     測試
+  *.test.js                Vitest(filter / sort / url 純函式)+ fixtures.js
+  py/                      pytest(build_site / fetch_data 純函式 + 用 30 篇 fixture 跑完整建置)
+  fixtures/build_input/    30 篇的建置輸入(主表 / 作者 / 公告 CSV、article_links.json、expected.json),由 make_fixture.py 從 data.js 反推
+_build/                    建置工具(Python,只用標準庫)
+  fetch_data.py            從 Notion API 抓主表 / 作者 / 公告 / 每篇連結 → CSV + article_links.json(主流程在 main())
+  build_site.py            CSV → data.js + index.html(樣板注入資料與簡繁對照表)+ 複製 src/、styles/;含編號重複 / 架構自檢(build_data / write_site 可被 import)
   site_template.html       首頁樣板(真正要改的 HTML 在這裡)
   facets_def.py            分面定義、標籤改名 / 合併規則、逐篇人工校正(單一事實來源)
   stmap.txt                簡繁對照表(兩行:繁字串 / 簡字串,逐字對應)
@@ -41,8 +44,37 @@ _build/                    建置工具(Python)
   reactions_backup.json    愛心 / 觀測計數的備份({編號: [愛心, 觀測]})
 sw.js                      PWA service worker(network-first;預先快取 src/ 與 styles/)
 manifest.webmanifest       PWA 設定
-.github/workflows/         sync.yml(手動:同步 Notion + 建置 + 部署)、static.yml(push main → 部署)、test.yml(PR → 測試)
+.github/workflows/         sync.yml(同步 Notion + 建置 + 部署)、static.yml(push main → 部署)、test.yml(PR → Vitest + pytest)
+package.json / pytest.ini / requirements-dev.txt   只為了測試,部署用不到
 ```
+
+## 資料流(整個 repo 的骨幹)
+
+```
+Notion 三個資料庫(主表、作者/譯者資料庫、公告)
+  │  _build/fetch_data.py   Notion API → Annyeongz_<主表ID>_all.csv、_authors/authors_all.csv、_announce/announce_all.csv、
+  │                         article_links.json(每篇內文的閱讀連結,增量:新 No 或頁面編輯過才重抓)、
+  │                         stats.json(有 GOATCOUNTER_TOKEN 才抓)、reactions_backup.json(愛心 / 觀測備份)
+  ▼
+  │  _build/build_site.py   套 facets_def.py(分面定義、改名合併、逐篇校正)→ DATA
+  │                         → <輸出>/data.js、<輸出>/index.html(site_template.html 注入 /*__DATA__*/ 與簡繁表)
+  │                         → 複製 src/、styles/ 到 <輸出>(輸出就是倉庫根目錄時不動)
+  ▼
+GitHub Pages(static.yml:整個倉庫原樣上傳)
+```
+
+- **兩條路徑,同一組腳本**:
+  - GitHub Actions `sync.yml`:只有 `workflow_dispatch`(檔案裡**沒有 cron**),每天台灣時間 **08:31 與 21:01** 的自動執行是由外部
+    觸發這個 dispatch;`build_site.py` 會把這兩個時段後 8 分鐘內的建置時間貼齊顯示成 08:31 / 21:01(頁尾「訊號同步」)。
+    環境變數 `SITE_OUT=..` → 直接輸出到倉庫根目錄,
+    然後 `git add index.html data.js _build/article_links.json _build/reactions_backup.json` commit 回 `main` 再部署。
+  - 本機 `更新網站.bat`(不在 repo 裡,在站長電腦上)跑同一組 `fetch_data.py` → `build_site.py`,沒設 `SITE_OUT` 時輸出到 `../site`
+    (也就是倉庫旁的 `site/` 資料夾,不進版控);`deploy.py`(同樣不在 repo 裡)負責把本機腳本同步進 `_build/`。
+    `build_site.py` 現在會把 `src/`、`styles/` 一起複製進輸出資料夾,所以本機產出的 `site/` 用 http 伺服器開就能用,.bat 與 deploy.py 不需要改。
+- **結論:`index.html` 與 `data.js` 是產物,不要直接改。** 要改前端一律改 `_build/site_template.html` 與它引用的 `src/`、`styles/`,再由 `build_site.py` 產出。
+- Token:`fetch_data.py` 先看 `NOTION_TOKEN` 環境變數(Actions 的 secret)、再看 `_build/notion_token.txt`(本機,不進版控)、
+  都沒有就**不帶 Authorization header** 直接送,交給雲端開發環境的網路代理注入。本機與 Actions 行為不變。
+- 沒有 Notion 時,`tests/fixtures/build_input/` 的 30 篇 fixture 可以跑完整個 `build_site.py`(見「測試」)。
 
 ## 資料檔
 
@@ -56,11 +88,11 @@ manifest.webmanifest       PWA 設定
 | `total` | 文章總數(主列表「共 N / total 篇」) |
 | `facets` | 分面清單 `[{key, type:'single'|'multi', options:[[標籤, 篇數], ...]}]`;single = 文章類型 / 文章篇幅 / 結局 / 文章狀態(每篇最多一個值),multi = 其餘(CP配對、氛圍、情感梗、背景設定、類型世界觀、題材梗、分級、形式/性質、三個合集活動面)。options 順序就是面板顯示順序 |
 | `articles` | 文章陣列,**預設依編號大→小** |
-| `people` | 作者 / 譯者的平台連結 `{名字: {平台: 網址}}` |
+| `people` | 作者 / 譯者資料庫,**以 Notion 作者頁 ID(32 碼)為鍵**:`{id: {name 目前顯示名, urls:{平台: 網址}, aliases:[曾用名,先留空、之後由巡檢填], dead 已刪帳號}}`。作者庫每一位都在(沒填平台的 `urls` 是 `{}`);主表關聯到但作者庫讀不到的,會用名字補一筆 |
 | `announcements` | 公告 `[{content, date:'2026/10/18', dk:20261018, pin:true}]` |
 | `updated` | 資料庫更新時間(所有文章最新的編輯時間,頁尾「星圖更新」) |
 | `synced` | 本次建置時間(頁尾「訊號同步」) |
-| `dead_authors` | 已刪帳號的作者名字陣列(顯示「(已刪帳號)」) |
+| `dead_authors` | 已刪帳號的作者**名字**陣列(= people 裡 dead 的 name;相容舊前端,新前端以 people[id].dead 為準) |
 | `stats` | 建置時抓到的瀏覽人次 `{today, week, month, lastmonth, year, total, asof}`;可能是 null |
 
 - **每篇文章(`articles[]`)**:
@@ -70,7 +102,8 @@ manifest.webmanifest       PWA 設定
 | `no` | 編號(字串;10000 以上是活動系列)。排序、書架、計數都用它當 key |
 | `name` | 標題 |
 | `alias` | 收錄篇名(多行,以 `\n` 分隔;書卡只顯示第一筆 +「等 N 篇」,詳情顯示全部) |
-| `author` / `translator` | 作者 / 譯者,多人用「、」分隔。譯文(形式/性質含「譯文」)時第一人是作者、其餘是譯者 |
+| `author` / `translator` | 作者 / 譯者顯示字串,多人用「、」分隔。譯文(形式/性質含「譯文」)且兩人以上時第一人是作者、其餘是譯者 |
+| `author_ids` / `translator_ids` | 與上面以「、」拆開後**一一對應**的 Notion 作者頁 ID(穩定鍵;關聯只有名字沒有網址時為空字串) |
 | `persona` | 人設(安、員),多行 |
 | `tags` | `{分面: [標籤, ...]}`,鍵與 `facets[].key` 相同;單選分面也是陣列(取第一個) |
 | `links` | 閱讀連結 `[[名稱, 網址]]` 或 `[[名稱, 網址, 1]]`;第三格 1 = **該連結已失效**(Notion 連結名稱裡的 ❌)。網址 `annyeongz:<編號>` 是站內互連(前傳 / 續寫),不算有效或失效連結 |
@@ -79,12 +112,38 @@ manifest.webmanifest       PWA 設定
 | `edited` / `ek` | **最近編輯日** 與整數;「軌道更新」用 `ek` |
 | `_s` | (執行期才有)標題 + 作者 + 譯者 + 人設 + 收錄篇名經簡繁折算、小寫後的搜尋字串,由 `src/data.js` 補上 |
 
+- **各欄位對應的 Notion 欄**(`fetch_data.py` 讀 → CSV 欄名 → `build_site.py`):
+
+| data.js | Notion(主表) | 說明 |
+|---|---|---|
+| `name` | `文章名稱`(title) | |
+| `no` | `No`(number / unique_id / title 或 rich_text 三種型別都接受,`read_no`) | 轉成字串 |
+| `edited` / `ek` | 頁面 `last_edited_time` → CSV `上次編輯時間`(台北時間中文格式) | `parse_dt` |
+| `created` / `ck` | 頁面 `created_time` → CSV `建立時間` | 同上 |
+| `persona` | `人設(安、員)`(rich_text) | |
+| `author` / `translator` / `*_ids` | `作者/譯者資料庫`(relation)→ CSV 寫成 `名字 (https://www.notion.so/<頁面ID>), …` | `author_parts` 用網址邊界拆,保留 ID |
+| `tags` 單選 | `文章狀態` / `文章篇幅` / `文章類型` / `結局`(select) | |
+| `tags` 多選 | `文章標籤`(舊的 multi_select,經 REMAP / DROP / ADD 拆進各分面)+ 11 個分面欄(`CP配對`…`1st鳳梨汁推薦`,multi_select) | `facets_def.bucketize` + `merge_facet_cols` |
+| `links` | 頁面**內文**區塊裡的連結(`article_links.json`);`@` 提及站內另一篇 → `annyeongz:<No>` | 名稱含 ❌ → 第三格 1 |
+| `dead` | 頁面圖示紅色(CSV `紅標` = Y)或 ❌ 連結過半 | `is_dead` |
+| `alias` | `收錄篇名`(rich_text) | |
+| `people[id]` | 作者庫:`作者名稱`(title)、`作者平台(AF/AO3/LFT/LFT2/PT/WB/X/其他)`(url)、頁面圖示紅色 → `紅標`、頁面 ID → `頁面ID` | 舊版作者 CSV 沒有 `頁面ID` 欄時,ID 由主表作者欄的網址回填 |
+| `announcements` | 公告庫:`內容`、`日期`、`置頂`(checkbox) | |
+
+- **鐵則:作品 `No` 永不重編。** 站內跳轉(`annyeongz:<No>`)、書架與已讀的 localStorage、分享網址、`article_links.json` 的鍵、
+  愛心 / 觀測計數(Val Town)全都以 `No` 為鍵;改了編號等於把讀者的書架與所有計數弄丟。**10000 以上是活動系列專用號段**,
+  一般文的下一個編號由 `build_site.py` 建置時印出(優先回填空號)。重複編號會在建置時印警告,要回 Notion 修。
+- **`dead`(原文已刪)的判定**(`build_site.is_dead`):Notion 頁面圖示是紅色(紅標),**或**頁面內文的閱讀連結名稱含 ❌ 的
+  比例超過一半(站內互連 `annyeongz:編號` 不計入分子分母)。紅標 = Y 但還有沒標 ❌ 的連結,建置時會列出待人工確認。
 - **愛心數與觀測數不在資料檔裡**。它們是即時計數,存在 Val Town(`REACT_API`),格式 `{編號: [愛心, 觀測]}`,
   由 `src/reactions.js` 在開站時 GET 回來;收藏 / 取消收藏 / 打開詳情時 POST `{no, type:'like'|'unlike'|'view'}`。
   `REACT_API` 留空或讀取失敗時只是不顯示數字(愛心 / 觀測排序會退回編號大→小),書架照常。
   `_build/reactions_backup.json` 是這份計數的備份。
 
 ## 篩選邏輯(`src/filter.js`)
+
+共 **15 個面**:4 個單選(文章類型、文章篇幅、結局、文章狀態)、8 個多選分面(CP配對、氛圍、情感梗、背景設定、類型世界觀、
+題材梗、分級、形式/性質)、3 個合集面(命定站賀文合集、계간윶녕 : 𝐋𝐎𝐕𝐄 𝐆𝐀𝐌𝐄、1st鳳梨汁推薦)。清單與順序在 `_build/facets_def.py`。
 
 篩選狀態的形狀:`sel = {分面: {標籤: 'on' | 'exc'}}`、`modes = {分面: 'and'}`,加上作者、搜尋字、書架、隱藏已讀 / 原文已刪。
 
@@ -94,7 +153,9 @@ manifest.webmanifest       PWA 設定
   排除是硬條件:文章只要有任一個被排除的標籤就不顯示,不管包含怎麼設。
 - **區標題可切「任一 / 全部」**:多選分面的標題右邊有個 `任一` 小標,點一下變 `全部`(`modes[分面]='and'`),
   該區的包含標籤就變成 AND(全部都要有);只影響該區,其他區照舊。單選分面沒有這個切換。
-- 其他疊加條件(都是 AND):搜尋字(比對 `_s`,簡繁皆可)、作者 / 譯者專頁(名字完全相同)、
+- 其他疊加條件(都是 AND):搜尋字(比對 `_s`,簡繁皆可,`_s` 含作者 / 譯者的曾用名)、
+  作者 / 譯者專頁(`matchesAuthor`:顯示名字相同,**或**名字 / 曾用名經 `makePersonLookup` 對到的作者頁 ID 出現在該篇的
+  `author_ids` / `translator_ids`;分享網址的 `a` 仍是名字)、
   書架模式(只顯示該分頁集合內的編號)、隱藏已讀(在書架「已讀」分頁時不套用)、隱藏原文已刪。
 - 熱門星系、書卡標籤、詳情標籤:點了直接設成包含(`selectTag`),不走循環。
 
@@ -165,22 +226,29 @@ manifest.webmanifest       PWA 設定
 ## 測試
 
 ```bash
-npm install      # 只需一次(vitest 是 devDependency)
-npm test         # vitest run:tests/filter.test.js、sort.test.js、url.test.js
+npm install                       # 只需一次(vitest 是 devDependency)
+npm test                          # vitest run:tests/filter.test.js、sort.test.js、url.test.js
+pip install -r requirements-dev.txt   # 只需一次(pytest)
+python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆分與 ID、日期、30 篇 fixture 完整建置比對)、fetch_data(No 三種型別、token 來源)
 ```
 
-- `.github/workflows/test.yml` 在 PR 時自動跑。
-- 純函式模組(filter / sort / url / related)不可 import DOM 或 `window`,這樣才能在 Node 直接測。
+- `.github/workflows/test.yml` 在 PR 時兩組都自動跑,不需要 Notion token。
+- fixture 由 `python3 tests/fixtures/make_fixture.py` 從 `data.js` 反推(30 篇:含空作者、多作者、譯文、站內互連、兩種 dead、收錄篇名);
+  `expected.json` 是這 30 篇在 `data.js` 的原樣,測試斷言「從 CSV 重建 == 原本」。資料格式改了就重產 fixture。
+- 純函式模組(filter / sort / url / related)不可 import DOM 或 `window`,這樣才能在 Node 直接測;
+  `build_site.py` / `fetch_data.py` 的 import 不能有副作用(網路、讀 CSV),主流程放 `main()`。
 - 改畫面或行為前後,建議用 Playwright 把舊版與新版同時跑一遍比對 DOM 與截圖(這次拆模組就是這樣驗的)。
 
 ## 程式慣例
 
 - **繁體中文註解**(台灣用語),檔頭先寫這個模組負責什麼。
-- **不用框架、不引入大型相依套件**;前端只有原生 ES module,唯一的開發相依是 Vitest。瀏覽器端沒有 bundler、沒有 transpile。
+- **不用框架、不引入大型相依套件**;前端只有原生 ES module,開發相依只有 Vitest 與 pytest。瀏覽器端沒有 bundler、沒有 transpile。
+- **Python 腳本只用標準庫**(`csv`、`json`、`urllib`…,現況如此,維持),這樣站長電腦與 Actions 都不用裝套件。
+- 作者一律用 Notion 作者頁 ID 對應(`author_ids` / `people[id]`),顯示名只是顯示;改名同步之後會填 `aliases`。
 - 純函式與 DOM 分開:`filter.js`、`sort.js`、`url.js`、`related.js` 不碰 DOM;`render.js` 只產生 DOM,狀態與事件接線都在 `main.js`。
 - 詳情彈窗與書卡的 HTML 字串用 inline `onclick` 呼叫 `toggleFav`、`filterByTag`、`navDetail` 等函式,
   這些函式在 `main.js` 結尾用 `Object.assign(window, {...})` 掛到全域;新增這類函式要一起掛上去。
-- 本機儲存的 key 只能從 `storage.js` 的 `KEYS` 拿。
+- 本機儲存的 key 只能從 `storage.js` 的 `KEYS` 拿,**key 名稱不可改**(改了讀者的書架就不見了)。
 - `index.html` 的文案、emoji、全形標點(「：」「（）」)是刻意的,不要「順手」改成半形。
 - 原站的幾個既有行為是刻意保留的,改之前先確認:搜尋 / 排序 / 勾選框觸發重繪時**不會跳回第 1 頁**(只會夾到最後一頁);
   分面標籤三態循環是 包含 → 排除 → 取消;穿越蟲洞略過原文已刪與無連結的文。

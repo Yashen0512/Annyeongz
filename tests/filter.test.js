@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { passes, filterArticles, cycleTag, toggleMode, removeTag, clearSelection, selectionChips, authorWorks } from '../src/filter.js';
-import { ARTICLES } from './fixtures.js';
+import { passes, filterArticles, cycleTag, toggleMode, removeTag, clearSelection, selectionChips, authorWorks, matchesAuthor } from '../src/filter.js';
+import { makePersonLookup, personRefs } from '../src/data.js';
+import { ARTICLES, art } from './fixtures.js';
 
 const nos = (list) => list.map((a) => a.no);
 
@@ -92,5 +93,31 @@ describe('搜尋與作者', () => {
     expect(nos(filterArticles(ARTICLES, { author: '譯者C' }))).toEqual(['4']);
     expect(nos(authorWorks(ARTICLES, '作者A'))).toEqual(['1', '3', '4', '5']);
     expect(nos(filterArticles(ARTICLES, { author: '作者' }))).toEqual([]);
+  });
+});
+
+describe('作者 ID 對應(author_ids / people 以 Notion 作者頁 ID 為鍵)', () => {
+  const ID_A = 'a'.repeat(32), ID_B = 'b'.repeat(32);
+  const people = { [ID_A]: { name: '新名字', urls: {}, aliases: ['舊名字'], dead: false }, [ID_B]: { name: '作者B', urls: {}, aliases: [], dead: true } };
+  const lookup = makePersonLookup(people);
+  const withId = art(9, {}, { author: '新名字', author_ids: [ID_A] });
+  const renamed = art(10, {}, { author: '舊名字', author_ids: [ID_A] });   // 建檔時叫舊名字,同一個作者頁
+  const noId = art(11, {}, { author: '舊名字' });                            // 舊資料沒有 ID
+  it('personRefs 把名字與 ID 一一對應', () => {
+    expect(personRefs(withId)).toEqual({ authors: [{ name: '新名字', id: ID_A }], translators: [] });
+    expect(personRefs(art(12, {}, { author: '甲、乙', author_ids: [ID_A], translator: '丙', translator_ids: [ID_B] })))
+      .toEqual({ authors: [{ name: '甲', id: ID_A }, { name: '乙', id: '' }], translators: [{ name: '丙', id: ID_B }] });
+  });
+  it('lookup:名字與曾用名都能對到同一個 ID', () => {
+    expect(lookup.idOf('新名字')).toBe(ID_A); expect(lookup.idOf('舊名字')).toBe(ID_A); expect(lookup.idOf('沒這人')).toBeNull();
+    expect(lookup.find('任何名字', ID_B).name).toBe('作者B');
+    expect(lookup.find('舊名字').name).toBe('新名字');
+  });
+  it('作者專頁:同時比對目前名字與曾用名,透過 ID 對應', () => {
+    expect(nos(filterArticles([withId, renamed, noId, ARTICLES[0]], { author: '新名字', lookup }))).toEqual(['9', '10']);
+    expect(nos(filterArticles([withId, renamed, noId, ARTICLES[0]], { author: '舊名字', lookup }))).toEqual(['9', '10', '11']);
+    expect(matchesAuthor(noId, '新名字', lookup)).toBe(false);   // 沒 ID 又名字不同 → 對不到
+    expect(matchesAuthor(noId, '舊名字')).toBe(true);           // 沒 lookup 時只比名字字串
+    expect(nos(authorWorks([withId, renamed], '新名字', lookup))).toEqual(['9', '10']);
   });
 });

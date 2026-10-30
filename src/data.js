@@ -17,9 +17,48 @@ export function makeFolder(t = '', s = '') {
   };
 }
 
-/** 每篇可搜尋的文字:標題、作者、譯者、人設、收錄篇名。 */
-export function searchText(a) {
-  return (a.name || '') + ' ' + (a.author || '') + ' ' + (a.translator || '') + ' ' + (a.persona || '') + ' ' + (a.alias || '');
+/** 每篇可搜尋的文字:標題、作者、譯者、人設、收錄篇名(+ 作者 / 譯者的曾用名,有才加)。 */
+export function searchText(a, people) {
+  let s = (a.name || '') + ' ' + (a.author || '') + ' ' + (a.translator || '') + ' ' + (a.persona || '') + ' ' + (a.alias || '');
+  if (people) {
+    const refs = personRefs(a);
+    refs.authors.concat(refs.translators).forEach((r) => {
+      const p = r.id && people[r.id];
+      if (p && p.aliases && p.aliases.length) s += ' ' + p.aliases.join(' ');
+    });
+  }
+  return s;
+}
+
+/**
+ * 一篇的作者 / 譯者參照:{authors:[{name,id}], translators:[{name,id}]}。
+ * name 來自 author / translator 以「、」拆開,id 來自 author_ids / translator_ids 一一對應(舊資料沒有就是空字串)。
+ */
+export function personRefs(a) {
+  const split = (names, ids) => (names || '').split('、').map((nm, i) => ({ name: nm, id: (ids || [])[i] || '' })).filter((r) => r.name);
+  return { authors: split(a.author, a.author_ids), translators: split(a.translator, a.translator_ids) };
+}
+
+/**
+ * 作者查詢:people 以 Notion 作者頁 ID 為鍵 {id: {name, urls, aliases, dead}}。
+ *   byId(id)        → 該作者資料或 null
+ *   find(name, id)  → 先用 id,沒有(舊資料 / 只有名字的關聯)再用目前名字、曾用名找
+ *   idOf(name)      → 名字或曾用名對到的 ID(作者專頁篩選用)
+ */
+export function makePersonLookup(people) {
+  people = people || {};
+  const byName = new Map(), byAlias = new Map();
+  for (const id in people) {
+    const p = people[id] || {};
+    if (p.name && !byName.has(p.name)) byName.set(p.name, id);
+    (p.aliases || []).forEach((al) => { if (al && !byAlias.has(al)) byAlias.set(al, id); });
+  }
+  const idOf = (name) => byName.get(name) || byAlias.get(name) || null;
+  return {
+    byId: (id) => (id && people[id]) || null,
+    find: (name, id) => (id && people[id]) || people[idOf(name)] || null,
+    idOf,
+  };
 }
 
 /**
@@ -34,7 +73,7 @@ export function normalizeData(raw, fold = (s) => s.toLowerCase()) {
   D.announcements = D.announcements || [];
   D.dead_authors = D.dead_authors || [];
   D.total = D.total == null ? D.articles.length : D.total;
-  D.articles.forEach((a) => { a._s = fold(searchText(a)); });
+  D.articles.forEach((a) => { a._s = fold(searchText(a, D.people)); });
   return D;
 }
 
