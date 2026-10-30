@@ -1,10 +1,14 @@
 /* Annyeongz 平行宇宙 — 基礎:色票變數、body、橫幅、頂欄、搜尋列、主版面容器 */
 :root{
-  --bg:#f6f4ef; --card:#fff; --line:#e6e0d5; --ink:#2c2a26; --muted:#8a8377;
+  --bg:#f6f4ef; --card:#fff; --line:#e6e0d5; --ink:#2c2a26; --muted:#706a60;
   --accent:#d9788f; --accent-soft:#fbe9ee; --exc:#c0563f; --exc-soft:#fbe6e1;
   --chip:#f0ece3; --badgec:#5c564b; --persona:#6f685c;
   --he:#3f9d6b; --he-bg:#e4f3ea; --be:#5b7fb5; --be-bg:#e7eef7; --oe:#c79a3e; --oe-bg:#f7efda;
   --typec:#b9743f; --type-bg:#f6e6da; --purp:#8a5fc0; --purp-bg:#efe6f7;
+  /* 文字專用色(-t):淺色主題的粉 / 紅 / 綠 / 藍 / 黃 / 橘 / 紫當「文字」時對比不到 WCAG AA 4.5:1,
+     所以文字另用較深的一組;邊框與底色仍用原色,外觀才不會變。深色主題原色就達標,-t 直接等於原色。 */
+  --accent-t:#c13657; --exc-t:#ab4d38; --he-t:#317a53; --be-t:#496ca1; --oe-t:#876827; --typec-t:#935c32; --purp-t:#7f50ba;
+  --on-accent:#2c2a26;   /* 粉底上的字(目前頁碼、手機「完成」鈕、hover):白字在粉底上不到 3:1,改深字 */
 }
 [data-theme="dark"]{
   --bg:#15161b; --card:#21222b; --line:#34353f; --ink:#ece9e3; --muted:#9b948a;
@@ -12,8 +16,25 @@
   --chip:#2c2d37; --badgec:#c9c3b7; --persona:#b3aa9c;
   --he:#74c89a; --he-bg:#26352d; --be:#8aaad8; --be-bg:#283340; --oe:#d8b25e; --oe-bg:#3a3322;
   --typec:#df9d6f; --type-bg:#3a2c22; --purp:#b491e0; --purp-bg:#332a44;
+  --accent-t:#e58aa0; --exc-t:#e08363; --he-t:#74c89a; --be-t:#8aaad8; --oe-t:#d8b25e; --typec-t:#df9d6f; --purp-t:#b491e0;
+  --on-accent:#15161b;
 }
 *{box-sizing:border-box}
+/* 無障礙:鍵盤聚焦一律看得見(不用 outline:none);滑鼠點擊不顯示外框 */
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* 「跳到主內容」:只有鍵盤 Tab 到時才出現 */
+.skip{position:absolute;left:8px;top:8px;z-index:10001;padding:8px 14px;border-radius:10px;background:var(--accent);color:var(--on-accent);
+      font-weight:700;text-decoration:none;transform:translateY(-200%);transition:transform .15s}
+.skip:focus{transform:none}
+/* 只給螢幕閱讀器的文字(aria-live 宣告用) */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+/* 原本是 span / div 的可點元素改成 <button> 後,把瀏覽器預設的按鈕外觀歸零(各自的樣式在後面的檔案裡照舊套上) */
+.opt,.chip,.fchip,.pg,.relitem,.aname,.scard,.mode,.fh,.tg button,.card .t{
+  font:inherit;line-height:inherit;color:inherit;text-align:inherit;margin:0;padding:0;border:0;background:none;appearance:none;-webkit-appearance:none}
+/* 使用者要求減少動態效果:關掉所有過場與動畫(開場動畫在 intro.css 另外處理) */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition-duration:0s!important;animation-duration:0s!important;animation-iteration-count:1!important;scroll-behavior:auto!important}
+}
 body{margin:0;font-family:"Microsoft JhengHei","PingFang TC",system-ui,sans-serif;
      background:var(--bg);color:var(--ink);font-size:15px;line-height:1.6}
 /* banner:模糊背景填滿 + 清晰原圖置中(換圖只要替換 site/banner.png) */
@@ -30,7 +51,7 @@ body{margin:0;font-family:"Microsoft JhengHei","PingFang TC",system-ui,sans-seri
 .topbar{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;
         padding:12px 22px;background:var(--card);border-bottom:1px solid var(--line);
         position:sticky;top:0;z-index:20}
-.brand{font-size:17px;font-weight:700;letter-spacing:.5px}
+.brand{font-size:17px;font-weight:700;letter-spacing:.5px;margin:0}
 .theme{padding:7px 11px;border:1px solid var(--line);border-radius:999px;background:var(--bg);color:var(--ink);cursor:pointer;font-size:15px;line-height:1}
 .search{flex:1;max-width:420px;min-width:160px;padding:9px 14px;border:1px solid var(--line);
         border-radius:999px;font-size:14px;background:var(--bg);color:var(--ink)}

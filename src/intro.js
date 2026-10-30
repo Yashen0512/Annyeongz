@@ -8,6 +8,7 @@
   const ttl=o.querySelector('.ttl'), p=o.querySelector('.pair'), cv=o.querySelector('canvas'), T=[];
   function close(){T.forEach(clearTimeout); if(!o.isConnected||o.classList.contains('out'))return; o.classList.add('out'); setTimeout(()=>o.remove(),520);}
   o.onclick=close;
+  document.addEventListener('keydown',function k(e){ if(e.key==='Escape'||e.key==='Enter'||e.key===' '){close();} if(!o.isConnected) document.removeEventListener('keydown',k); });   // 鍵盤也能略過
   const dpr=Math.min(devicePixelRatio||1,2), W=innerWidth, H=innerHeight;
   cv.width=W*dpr; cv.height=H*dpr; const g=cv.getContext('2d'); g.scale(dpr,dpr);
   const S=Array.from({length:170},()=>({x:Math.random()*W,y:Math.random()*H,r:Math.random()*1.3+.3,

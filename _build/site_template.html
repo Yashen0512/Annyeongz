@@ -33,34 +33,38 @@
 <link rel="stylesheet" href="styles/intro.css">
 </head>
 <body>
+<a class="skip" href="#main">跳到主內容</a>
 <div id="intro" title="點一下略過" aria-hidden="true"><canvas></canvas>
   <div class="ttl"><div class="pair"><span class="d">🐶</span><span class="h">❤️</span><span class="r">🐰</span></div><div class="nm">Annyeongz 平行宇宙</div></div>
 </div>
 <script src="src/intro.js"></script>
-<div class="banner" id="banner">
-  <img class="bimg" src="banner.png" alt="🐶❤️🐰 Annyeongz 平行宇宙 🐰❤️🐶">
-  <img class="bimg-m" src="banner-mobile.png" alt="🐶❤️🐰 Annyeongz 平行宇宙 🐰❤️🐶" onerror="this.remove()">
+<!-- 橫幅是裝飾圖(站名在下面頂欄的 h1),對輔助科技隱藏 -->
+<div class="banner" id="banner" aria-hidden="true">
+  <img class="bimg" src="banner.png" alt="">
+  <img class="bimg-m" src="banner-mobile.png" alt="" onerror="this.remove()">
 </div>
 <header class="topbar">
-  <div class="brand">🐶❤️🐰 Annyeongz 平行宇宙 🐰❤️🐶</div>
-  <input id="q" class="search" placeholder="🔍 搜尋標題 / 番外篇名 / 作者 / 譯者 / 人設(簡繁皆可)">
+  <h1 class="brand">🐶❤️🐰 Annyeongz 平行宇宙 🐰❤️🐶</h1>
+  <input id="q" class="search" placeholder="🔍 搜尋標題 / 番外篇名 / 作者 / 譯者 / 人設(簡繁皆可)" aria-label="搜尋標題 / 番外篇名 / 作者 / 譯者 / 人設(簡繁皆可)">
   <button id="theme" class="theme" title="切換白晝 / 黑夜" aria-label="切換白晝 / 黑夜">🌙</button>
 </header>
 
 <div class="wrap">
-  <aside class="panel" id="panel"><div class="panelbar"><span>🔧 分類篩選</span><button class="ctl pbdone" onclick="document.getElementById('panel').classList.remove('open');document.body.classList.remove('noscroll')">完成</button></div><div class="paneltitle">分類篩選</div></aside>
-  <main class="main">
+  <!-- 面板標題用 h2(手機顯示 panelbar 的、桌機顯示 paneltitle 的),分面才是 h3,標題層級才不會從 h1 跳到 h3 -->
+  <aside class="panel" id="panel" aria-label="分類篩選"><div class="panelbar"><h2>🔧 分類篩選</h2><button type="button" class="ctl pbdone">完成</button></div><h2 class="paneltitle">分類篩選</h2></aside>
+  <main class="main" id="main" tabindex="-1">
+    <!-- 輪播:role=region + aria-roledescription=輪播;‹ › 可 Tab 聚焦、小卡上 ← → 切換;.strip-page 以 aria-live 宣告目前頁數 -->
     <section id="annSec" style="display:none">
-      <h2 class="sech">📻 星際廣播</h2>
-      <div class="striprow"><button class="snav l">‹</button><div class="strip" id="ann"></div><button class="snav r">›</button></div>
+      <h2 class="sech" id="annH">📻 星際廣播</h2>
+      <div class="striprow" role="region" aria-roledescription="輪播" aria-labelledby="annH"><button type="button" class="snav l" aria-label="星際廣播：往前捲">‹</button><div class="strip" id="ann"></div><button type="button" class="snav r" aria-label="星際廣播：往後捲">›</button><span class="sr-only strip-page" aria-live="polite"></span></div>
     </section>
     <section id="latestSec">
-      <h2 class="sech">✨ 新星誕生</h2>
-      <div class="striprow"><button class="snav l">‹</button><div class="strip" id="latest"></div><button class="snav r">›</button></div>
+      <h2 class="sech" id="latestH">✨ 新星誕生</h2>
+      <div class="striprow" role="region" aria-roledescription="輪播" aria-labelledby="latestH"><button type="button" class="snav l" aria-label="新星誕生：往前捲">‹</button><div class="strip" id="latest"></div><button type="button" class="snav r" aria-label="新星誕生：往後捲">›</button><span class="sr-only strip-page" aria-live="polite"></span></div>
     </section>
     <section id="statusSec">
-      <h2 class="sech">🛰️ 軌道更新 <span style="font-size:12px;color:var(--muted);font-weight:400">(依最近編輯)</span></h2>
-      <div class="striprow"><button class="snav l">‹</button><div class="strip" id="statusUpd"></div><button class="snav r">›</button></div>
+      <h2 class="sech" id="statusH">🛰️ 軌道更新 <span style="font-size:12px;color:var(--muted);font-weight:400">(依最近編輯)</span></h2>
+      <div class="striprow" role="region" aria-roledescription="輪播" aria-labelledby="statusH"><button type="button" class="snav l" aria-label="軌道更新：往前捲">‹</button><div class="strip" id="statusUpd"></div><button type="button" class="snav r" aria-label="軌道更新：往後捲">›</button><span class="sr-only strip-page" aria-live="polite"></span></div>
     </section>
     <section id="hotSec">
       <h2 class="sech">🌠 熱門星系 <span style="font-size:12px;color:var(--muted);font-weight:400">(依收錄篇數)</span></h2>
@@ -69,21 +73,22 @@
     <section>
       <div class="toolbar">
         <h2 class="sech" style="margin:0">🌌 平行宇宙 🪐</h2>
-        <button class="ctl" id="filterToggle">🔧 篩選</button>
-        <select id="sort" class="ctl">
+        <button type="button" class="ctl" id="filterToggle" aria-expanded="false" aria-controls="panel">🔧 篩選</button>
+        <select id="sort" class="ctl" aria-label="排序方式">
           <option value="old">編號 小→大</option>
           <option value="new">編號 大→小</option>
           <option value="latest">🆕 最新收錄</option>
           <option value="likes">❤️ 愛心最多</option>
           <option value="views">🔭 最多人觀測</option>
         </select>
-        <button class="ctl" id="rand">🌀 穿越蟲洞</button>
-        <button class="ctl" id="shelfBtn">📚 書架</button>
+        <button type="button" class="ctl" id="rand" aria-label="穿越蟲洞，隨機開一篇">🌀 穿越蟲洞</button>
+        <button type="button" class="ctl" id="shelfBtn" aria-pressed="false" aria-label="書架，只看我收藏 / 待閱讀 / 已讀的文">📚 書架</button>
         <label class="ctl chk"><input type="checkbox" id="hideRead">隱藏已讀</label>
         <label class="ctl chk"><input type="checkbox" id="hideDead">隱藏原文已刪</label>
-        <button class="ctl" id="shareBtn" title="複製目前篩選的網址,分享給別人">🔗 複製篩選</button>
-        <button class="ctl" id="reset">重設篩選</button>
+        <button type="button" class="ctl" id="shareBtn" title="複製目前篩選的網址,分享給別人" aria-label="複製篩選，把目前篩選的網址複製到剪貼簿">🔗 複製篩選</button>
+        <button type="button" class="ctl" id="reset" aria-label="重設篩選，清除所有條件">重設篩選</button>
         <span class="count" id="count"></span>
+        <span class="sr-only" id="liveCount" aria-live="polite" aria-atomic="true"></span>
       </div>
       <div class="shelf-tabs" id="shelfTabs" style="display:none"></div>
       <div class="hint">同區點多個＝任一(OR)、跨區＝同時(AND)、再點一下＝排除(紅刪除線);區標題可切「任一/全部」。點書卡看詳情。</div>
@@ -104,8 +109,9 @@
 </footer>
 <script data-goatcounter="https://yashen0512.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 
-<div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
-<button id="toTop" title="回到頂部">↑</button>
+<!-- 詳情 / 公告彈窗:<dialog>(showModal 鎖焦點、Esc 關閉);標題在 sheet 裡的 #sheetTitle -->
+<dialog class="modal" id="modal" aria-labelledby="sheetTitle"><div class="sheet" id="sheet"></div></dialog>
+<button type="button" id="toTop" title="回到頂部" aria-label="回到頂部">↑</button>
 
 <script>/*__DATA__*/</script>
 <script>

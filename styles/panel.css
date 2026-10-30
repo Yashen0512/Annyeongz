@@ -7,16 +7,17 @@
 .panel::-webkit-scrollbar-track{background:transparent}
 .panel::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
 .panel:hover::-webkit-scrollbar-thumb{background:var(--muted)}
-.paneltitle{font-size:13px;color:var(--muted);font-weight:700;letter-spacing:1px;padding:8px 0 2px}
+.paneltitle{font-size:13px;color:var(--muted);font-weight:700;letter-spacing:1px;padding:8px 0 2px;margin:0}
 .facet{border-bottom:1px solid var(--line);padding:8px 0}
 .facet:last-child{border-bottom:none}
 .facet h3{font-size:14px;margin:4px 0;cursor:pointer;display:flex;justify-content:space-between;align-items:center;user-select:none}
+.fh{flex:1;text-align:left;cursor:pointer;font-weight:inherit}   /* 分面標題的收合鈕(鍵盤可用;整列 h3 滑鼠點也能收合) */
 .facet h3 .rt{display:flex;gap:8px;align-items:center}
 .facet h3 .arw{color:var(--muted);font-size:11px}
-.mode{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:1px 6px;background:var(--bg)}
-.mode.and{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+.mode{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:1px 6px;background:var(--bg);cursor:pointer}
+.mode.and{color:var(--accent-t);border-color:var(--accent);background:var(--accent-soft)}
 .opts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .opt{font-size:13px;padding:3px 9px;border:1px solid var(--line);border-radius:999px;background:var(--chip);cursor:pointer;white-space:nowrap;user-select:none}
-.opt .c{color:var(--muted);font-size:11px;margin-left:3px}
-.opt.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
-.opt.exc{background:var(--exc-soft);border-color:var(--exc);color:var(--exc);text-decoration:line-through}
+.opt .c{color:var(--muted);font-size:11px;margin-left:0}   /* 篇數前面是一個空白字元(無障礙名稱需要),所以不再加 margin */
+.opt.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-t)}
+.opt.exc{background:var(--exc-soft);border-color:var(--exc);color:var(--exc-t);text-decoration:line-through}
