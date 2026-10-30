@@ -46,6 +46,10 @@
 /* 書架分頁:已收藏/待閱讀/已讀 */
 .shelf-tabs{gap:8px;flex-wrap:wrap;margin:2px 0 10px}
 .shelf-tabs .sc{font-size:12px;opacity:.75;margin-left:2px;font-variant-numeric:tabular-nums}
+/* 書架工具列:匯出 / 匯入 / 清除所有紀錄(跟分頁同一列,靠右;窄螢幕自動換行) */
+.shelf-tools{display:inline-flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+.ctl.danger{color:var(--exc)}
+.ctl.danger:not([disabled]):hover{background:var(--exc-soft);border-color:var(--exc)}
 .detail-actions{display:flex;gap:8px;margin:4px 0 12px}
 .detail-actions .ctl{font-size:13px}
 /* 類似的文 */

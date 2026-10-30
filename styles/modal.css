@@ -15,3 +15,29 @@
 .plat.pp{padding:2px 9px;font-size:11px;margin:0 4px 0 0}
 .person{margin:4px 0;line-height:2}
 #filterToggle{display:none}
+/* 書架匯出 / 匯入 / 清除所有紀錄(與詳情共用 .sheet,深淺色都走 CSS 變數) */
+.xfer{display:flex;flex-direction:column;gap:12px;font-size:14px}
+.xfer p{margin:0;color:var(--muted);font-size:13px;line-height:1.7}
+.xfer p b{color:var(--ink)}
+.xfer textarea,.xfer input[type=text]{width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:10px;
+  background:var(--bg);color:var(--ink);font-size:13px;line-height:1.5}
+.xfer textarea{font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all;resize:vertical}
+.xfer input[type=text]{font-size:15px}
+.xfer textarea:focus,.xfer input[type=text]:focus{outline:none;border-color:var(--accent)}
+.xfer .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.xfer .ctl.pri{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.xfer .ctl[disabled]{opacity:.45;cursor:default}
+.xmsg{font-size:13px;color:var(--muted);line-height:1.6}
+.xmsg.err{color:var(--exc);font-weight:600}
+.xmsg.ok{color:var(--he);font-weight:700;font-size:15px}
+.xpre{background:var(--accent-soft);border:1px solid var(--accent);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.xpre b{font-size:17px;color:var(--accent)}
+.xpre .xwhen{font-size:12px;color:var(--muted);margin-left:6px}
+.xpre .xmode label{display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:13px}
+.xpre .xmode input{margin:0;accent-color:var(--accent)}
+.qrbox{display:flex;justify-content:center}
+.qrbox svg{width:min(260px,100%);height:auto;display:block;background:#fff;border-radius:12px;padding:8px;box-sizing:content-box}
+.cam{position:relative;background:#000;border-radius:12px;overflow:hidden}
+.cam video{width:100%;max-height:55vh;display:block}
+.cam .ctl{position:absolute;right:10px;bottom:10px}
+@media(max-width:560px){.xfer textarea,.xfer input[type=text]{font-size:16px}}  /* iOS 輸入框 <16px 會自動放大畫面 */

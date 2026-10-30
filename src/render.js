@@ -3,7 +3,7 @@
 //
 // 注意:詳情與書卡的 HTML 字串裡用 inline onclick 呼叫下列全域函式(由 main.js 掛到 window):
 //   toggleFav / toggleTodo / toggleRead / setShelfTab / filterByTag / filterName / openByNo /
-//   closeDetail / navDetail / toggleReport / pickReason / sendReport
+//   closeDetail / navDetail / toggleReport / pickReason / sendReport / shelfExport / shelfImport / shelfClear
 //
 // ctx(由 main.js 組好傳入)欄位:
 //   facets, persons(data.js makePersonLookup:以作者頁 ID 查名字 / 平台 / 已刪帳號)、deadAuthors(Set,相容舊資料),
@@ -309,4 +309,98 @@ export function renderStats(el, s, live) {
   el.innerHTML = '<div class="stats-card"><div class="stats-title">🛸 星際旅人統計' + badge + '</div><div class="stats-grid">'
     + cells.map(([l, v]) => `<div class="stat"><div class="sl">${l}</div><div class="sv">${(v || 0).toLocaleString()}</div></div>`).join('')
     + '</div></div>';
+}
+
+// ---- 書架匯出 / 匯入 / 清除(與詳情共用 #modal / .sheet;事件在 main.js 接)----
+
+/** 書架工具列:接在書架分頁後面的三個按鈕(inline onclick → main.js 掛到 window 的 shelfExport / shelfImport / shelfClear)。 */
+export function shelfToolsHTML() {
+  return `<span class="shelf-tools">`
+    + `<button class="ctl" onclick="shelfExport()" title="把書架與已讀帶到另一台裝置">📤 匯出</button>`
+    + `<button class="ctl" onclick="shelfImport()" title="從另一台裝置匯入書架與已讀">📥 匯入</button>`
+    + `<button class="ctl danger" onclick="shelfClear()" title="清掉這台裝置的收藏 / 待閱讀 / 已讀">🗑 清除所有紀錄</button>`
+    + `</span>`;
+}
+
+/** HTML 跳脫(匯入字串可能來自網址 ?s=,內容不可信)。 */
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+export const QR_MAX = 2000;   // 匯出字串超過這個長度就不畫 QR code(太密不好掃),改提示用複製
+
+/**
+ * 匯出視窗。payload = 壓縮字串(null = 產生失敗,err 是原因),counts = {shelf, read}。
+ * QR code 由 main.js 畫進 #xpQr(需要 window.qrcode)。
+ */
+export function exportHTML({ payload, err, counts }) {
+  const head = `<button class="close" onclick="closeDetail()">✕</button><h2>📤 匯出書架與已讀</h2>`;
+  if (!payload) return head + `<div class="xfer"><div class="xmsg err">⚠️ ${err || '匯出失敗'}</div></div>`;
+  const n = payload.length, tooLong = n > QR_MAX;
+  return head + `<div class="xfer">
+    <p>收藏 <b>${counts.shelf}</b> 篇、已讀 <b>${counts.read}</b> 篇 → 字串 <b>${n.toLocaleString()}</b> 字。內容只有作品編號,不含任何個人資料。</p>
+    <textarea id="xpOut" rows="4" readonly spellcheck="false" aria-label="匯出字串">${payload}</textarea>
+    <div class="row">
+      <button class="ctl pri" id="xpCopy">📋 複製字串</button>
+      <button class="ctl" id="xpLink" title="另一台裝置打開這個連結就會跳出匯入預覽">🔗 複製匯入連結</button>
+      <span class="xmsg" id="xpMsg"></span>
+    </div>
+    ${tooLong
+      ? `<div class="xmsg err">字串超過 ${QR_MAX.toLocaleString()} 字,QR code 會太密、不好掃,請改用「複製字串」或「複製匯入連結」帶到另一台裝置。</div>`
+      : `<div class="qrbox" id="xpQr"></div><p>用另一台裝置的相機掃描,會直接打開本站並跳出匯入預覽;或在那邊的「📥 匯入」裡按「掃描 QR」。</p>`}
+    <p>在另一台裝置:打開本站 → 📚 書架 → 📥 匯入 → 貼上字串(或連結)→ 預覽 → 確認。</p>
+  </div>`;
+}
+
+/** 匯入視窗。canScan = 瀏覽器支援 BarcodeDetector 才有「掃描 QR」。預覽區由 main.js 填入 #imPre。 */
+export function importHTML({ canScan, prefill }) {
+  return `<button class="close" onclick="closeDetail()">✕</button><h2>📥 匯入書架與已讀</h2>
+  <div class="xfer">
+    <p>貼上另一台裝置匯出的字串或匯入連結;匯入前會先顯示預覽,確認後才寫入。</p>
+    <textarea id="imIn" rows="4" spellcheck="false" placeholder="貼上匯出的字串,或整個匯入連結" aria-label="匯出字串">${esc(prefill)}</textarea>
+    <div class="row">
+      <button class="ctl pri" id="imPreview">🔍 預覽</button>
+      ${canScan ? `<button class="ctl" id="imScan">📷 掃描 QR</button>` : ''}
+      <span class="xmsg" id="imMsg"></span>
+    </div>
+    <div class="cam" id="imCam" style="display:none"><video autoplay playsinline muted></video><button class="ctl" id="imScanStop">停止掃描</button></div>
+    <div class="xpre" id="imPre" style="display:none"></div>
+  </div>`;
+}
+
+/** 匯入預覽區內容:加入 / 移除幾筆 + 合併 / 覆蓋切換 + 確認鍵。st = previewImport 的結果。 */
+export function importPreviewHTML(st, mode, exportedAt) {
+  const when = exportedAt ? new Date(exportedAt) : null;
+  const whenStr = when && !isNaN(when) ? `${when.getFullYear()}/${when.getMonth() + 1}/${when.getDate()} ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}` : '';
+  const removed = (st.removeShelf || st.removeRead) ? `<div class="xmsg err">覆蓋模式會移除目前的 ${st.removeShelf} 本書架、${st.removeRead} 篇已讀</div>` : '';
+  return `<div>將加入 <b>${st.addShelf}</b> 本書架、<b>${st.addRead}</b> 篇已讀${whenStr ? `<span class="xwhen">(匯出於 ${whenStr})</span>` : ''}</div>
+    <div class="xmsg">匯入後:收藏 ${st.shelfTotal} 篇、已讀 ${st.readTotal} 篇</div>
+    <div class="row xmode">
+      <label><input type="radio" name="imMode" value="merge"${mode !== 'replace' ? ' checked' : ''}> 合併(保留目前的,加上匯入的)</label>
+      <label><input type="radio" name="imMode" value="replace"${mode === 'replace' ? ' checked' : ''}> 覆蓋(以匯入的為準)</label>
+    </div>${removed}
+    <div class="row"><button class="ctl pri" id="imGo">✅ 確認匯入</button><button class="ctl" onclick="closeDetail()">取消</button></div>`;
+}
+
+/** 匯入完成。r = importState 回傳值。 */
+export function importDoneHTML(r, mode) {
+  return `<button class="close" onclick="closeDetail()">✕</button><h2>📥 匯入完成</h2>
+  <div class="xfer">
+    <div class="xmsg ok">✅ 已${mode === 'replace' ? '覆蓋' : '合併'}:加入 ${r.addedShelf.length} 本書架、${r.addedRead.length} 篇已讀${r.removedShelf.length ? `,移除 ${r.removedShelf.length} 本書架` : ''}</div>
+    <p>書架與已讀紀錄存在這台裝置的瀏覽器裡;之後兩邊各自標記,想同步再匯出一次即可。</p>
+    <div class="row"><button class="ctl pri" onclick="closeDetail()">看書架</button></div>
+  </div>`;
+}
+
+/** 清除所有紀錄:要輸入「清除」才能按。counts = {fav, todo, read}。 */
+export const CLEAR_WORD = '清除';
+export function clearHTML(counts) {
+  return `<button class="close" onclick="closeDetail()">✕</button><h2>🗑 清除所有紀錄</h2>
+  <div class="xfer">
+    <p>會清掉<b>這台裝置</b>的收藏 <b>${counts.fav}</b> 篇、待閱讀 <b>${counts.todo}</b> 篇、已讀 <b>${counts.read}</b> 篇,<b>無法復原</b>。建議先「📤 匯出」留一份備份。</p>
+    <input type="text" id="clIn" autocomplete="off" placeholder="輸入「${CLEAR_WORD}」兩個字以確認" aria-label="確認文字">
+    <div class="row"><button class="ctl danger" id="clGo" disabled>🗑 清除所有紀錄</button><button class="ctl" onclick="closeDetail()">取消</button><span class="xmsg" id="clMsg"></span></div>
+  </div>`;
+}
+export function clearedHTML() {
+  return `<button class="close" onclick="closeDetail()">✕</button><h2>🗑 已清除</h2>
+  <div class="xfer"><div class="xmsg ok">✅ 這台裝置的收藏 / 待閱讀 / 已讀都清掉了</div><div class="row"><button class="ctl pri" onclick="closeDetail()">關閉</button></div></div>`;
 }
