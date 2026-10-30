@@ -45,3 +45,25 @@ describe('篩選狀態 ⇄ 網址參數', () => {
     expect(parseShareHash('#f=' + encodeURIComponent('{"s":"x","m":5,"a":""}'))).toEqual({ sel: {}, modes: {}, author: null, q: undefined, sort: undefined });
   });
 });
+
+import { articleShareURL, parseArticleParam, stripArticleParam, SITE_BASE } from '../src/url.js';
+
+describe('作品分享網址與 ?p= 參數', () => {
+  it('分享網址 = 站台網址 + p/<No>/', () => {
+    expect(articleShareURL('1211')).toBe('https://yashen0512.github.io/Annyeongz/p/1211/');
+    expect(SITE_BASE.endsWith('/')).toBe(true);
+    expect(articleShareURL(42, 'http://localhost:8000/')).toBe('http://localhost:8000/p/42/');
+  });
+  it('讀 ?p=:沒有、空白 → null;其他參數不影響', () => {
+    expect(parseArticleParam('?p=1211')).toBe('1211');
+    expect(parseArticleParam('?x=1&p=%2010089%20')).toBe('10089');
+    expect(parseArticleParam('')).toBeNull();
+    expect(parseArticleParam('?p=')).toBeNull();
+    expect(parseArticleParam('?q=p')).toBeNull();
+  });
+  it('拿掉 ?p= 之後其他參數與 #f= 都保留', () => {
+    expect(stripArticleParam('https://yashen0512.github.io/Annyeongz/?p=1211')).toBe('/Annyeongz/');
+    expect(stripArticleParam('https://yashen0512.github.io/Annyeongz/?p=1211#f=%7B%7D')).toBe('/Annyeongz/#f=%7B%7D');
+    expect(stripArticleParam('https://x.test/a/?utm=1&p=5&z=2')).toBe('/a/?utm=1&z=2');
+  });
+});

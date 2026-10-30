@@ -17,6 +17,8 @@
 index.html                 由樣板建置出來的首頁(含注入的資料),不要手改 → 改 _build/site_template.html
 data.js                    window.DATA = {...} 全部資料(建置產物,也會注入 index.html)
 stats.html                 📊 統計星圖(靜態頁,不經樣板;用 <script src="data.js"> 讀同一份資料,圖表用 Chart.js)
+p/<No>/index.html, og.png  每篇作品的靜態分享頁與 1200×630 預覽圖(build_pages.py 產物;.gitattributes 標 linguist-generated)
+sitemap.xml feed.xml feed-updated.xml robots.txt   同上(build_pages.py 產物)
 src/                       前端程式(ES modules,無框架)
   main.js                  組裝:狀態、DOM 事件、呼叫各模組、啟動順序
   data.js                  載入與正規化 window.DATA、簡繁折算、資料存取小工具
@@ -36,11 +38,14 @@ styles/                    樣式,依原本的 cascade 順序切成六個檔(ind
 vendor/                    第三方單檔(Chart.js 統計星圖;lz-string 壓縮與 qrcode-generator 產 QR 給書架匯出),傳統 <script> 載入,不走 npm;版本與授權見 vendor/README.md
 tests/                     測試
   *.test.js                Vitest(filter / sort / url / stats / storage 純函式)+ fixtures.js
-  py/                      pytest(build_site / fetch_data 純函式 + 用 30 篇 fixture 跑完整建置)
+  py/                      pytest(build_site / fetch_data / build_pages 純函式 + 用 30 篇 fixture 跑完整建置與產頁)
   fixtures/build_input/    30 篇的建置輸入(主表 / 作者 / 公告 CSV、article_links.json、expected.json),由 make_fixture.py 從 data.js 反推
 _build/                    建置工具(Python,只用標準庫)
   fetch_data.py            從 Notion API 抓主表 / 作者 / 公告 / 每篇連結 → CSV + article_links.json(主流程在 main())
   build_site.py            CSV → data.js + index.html(樣板注入資料與簡繁對照表)+ 複製 src/、styles/、vendor/、stats.html;含編號重複 / 架構自檢(build_data / write_site 可被 import)
+  build_pages.py           data.js → p/<No>/{index.html, og.png} + sitemap.xml + feed.xml / feed-updated.xml + robots.txt;只重產內容 hash 有變的(build_pages 可被 import)
+  fonts/                   OG 圖字型:Noto Sans TC / KR 的 Regular、Bold(Google Fonts,OFL);諺文用 KR 回退、TC 沒有的簡體字用 stmap 轉繁、emoji 略過
+  og_brand.png             OG 圖左上的 🐶❤️🐰(預先畫好,Actions 不用裝 emoji 字型)
   site_template.html       首頁樣板(真正要改的 HTML 在這裡)
   facets_def.py            分面定義、標籤改名 / 合併規則、逐篇人工校正(單一事實來源)
   stmap.txt                簡繁對照表(兩行:繁字串 / 簡字串,逐字對應)
@@ -49,6 +54,7 @@ _build/                    建置工具(Python,只用標準庫)
 sw.js                      PWA service worker(network-first;預先快取 src/、styles/、vendor/ 與 stats.html)
 manifest.webmanifest       PWA 設定
 .github/workflows/         sync.yml(同步 Notion + 建置 + 部署)、static.yml(push main → 部署)、test.yml(PR → Vitest + pytest)
+requirements.txt           建置相依:只有 Pillow(build_pages.py 畫 OG 圖);sync.yml 與站長電腦都要裝
 package.json / pytest.ini / requirements-dev.txt   只為了測試,部署用不到
 ```
 
@@ -64,6 +70,9 @@ Notion 三個資料庫(主表、作者/譯者資料庫、公告)
   │                         → <輸出>/data.js、<輸出>/index.html(site_template.html 注入 /*__DATA__*/ 與簡繁表)
   │                         → 複製 src/、styles/、vendor/ 到 <輸出>(輸出就是倉庫根目錄時不動)
   ▼
+  │  _build/build_pages.py  讀 <輸出>/data.js → <輸出>/p/<No>/index.html + og.png(每篇分享頁與預覽圖,內容 hash 沒變就跳過)
+  │                         → <輸出>/sitemap.xml、feed.xml(最新收錄 50)、feed-updated.xml(最近編輯 50)、robots.txt
+  ▼
 GitHub Pages(static.yml:整個倉庫原樣上傳)
 ```
 
@@ -71,12 +80,15 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
   - GitHub Actions `sync.yml`:只有 `workflow_dispatch`(檔案裡**沒有 cron**),每天台灣時間 **08:31 與 21:01** 的自動執行是由外部
     觸發這個 dispatch;`build_site.py` 會把這兩個時段後 8 分鐘內的建置時間貼齊顯示成 08:31 / 21:01(頁尾「訊號同步」)。
     環境變數 `SITE_OUT=..` → 直接輸出到倉庫根目錄,
-    然後 `git add index.html data.js _build/article_links.json _build/reactions_backup.json` commit 回 `main` 再部署。
-  - 本機 `更新網站.bat`(不在 repo 裡,在站長電腦上)跑同一組 `fetch_data.py` → `build_site.py`,沒設 `SITE_OUT` 時輸出到 `../site`
-    (也就是倉庫旁的 `site/` 資料夾,不進版控);`deploy.py`(同樣不在 repo 裡)負責把本機腳本同步進 `_build/`。
-    `build_site.py` 現在會把 `src/`、`styles/`、`vendor/` 與 `stats.html` 一起複製進輸出資料夾(`STATIC_DIRS` / `STATIC_FILES`),
-    所以本機產出的 `site/` 用 http 伺服器開就能用(含統計星圖),.bat 與 deploy.py 不需要改。
-- **結論:`index.html` 與 `data.js` 是產物,不要直接改。** 要改前端一律改 `_build/site_template.html` 與它引用的 `src/`、`styles/`,再由 `build_site.py` 產出。
+    然後 `git add index.html data.js p sitemap.xml feed.xml feed-updated.xml robots.txt _build/article_links.json _build/reactions_backup.json`
+    commit 回 `main` 再部署。Actions 會先 `pip install -r requirements.txt`(Pillow)。
+  - 本機 `更新網站.bat`(不在 repo 裡,在站長電腦上)跑同一組 `fetch_data.py` → `build_site.py` → `build_pages.py`,沒設 `SITE_OUT` 時輸出到 `../site`
+    (也就是 `_build/` 旁的 `site/` 資料夾,已 gitignore);`deploy.py`(同樣不在 repo 裡)負責把本機腳本同步進 `_build/`,
+    也要把 `site/p/`、`sitemap.xml`、`feed*.xml`、`robots.txt` 一併部署。站長電腦要 `pip install -r requirements.txt` 一次。
+    `build_site.py` 會把 `src/`、`styles/`、`vendor/` 與 `stats.html` 一起複製進輸出資料夾(`STATIC_DIRS` / `STATIC_FILES`),
+    所以本機產出的 `site/` 用 http 伺服器開就能用(含統計星圖)。
+- **結論:`index.html`、`data.js`、`p/`、`sitemap.xml`、`feed*.xml` 都是產物,不要直接改。** 要改前端一律改 `_build/site_template.html` 與它引用的 `src/`、`styles/`,
+  再由 `build_site.py` 產出;要改分享頁 / OG 圖 / sitemap / RSS 改 `_build/build_pages.py`(改了版面記得把 `PAGE_VERSION` / `OG_VERSION` +1,才會全部重產)。
 - Token:`fetch_data.py` 先看 `NOTION_TOKEN` 環境變數(Actions 的 secret)、再看 `_build/notion_token.txt`(本機,不進版控)、
   都沒有就**不帶 Authorization header** 直接送,交給雲端開發環境的網路代理注入。本機與 Actions 行為不變。
 - 沒有 Notion 時,`tests/fixtures/build_input/` 的 30 篇 fixture 可以跑完整個 `build_site.py`(見「測試」)。
@@ -220,7 +232,23 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
   - `sort` 排序(預設 `old` 不寫)
 - 沒有任何條件時就是純網址。範例:`#f=%7B%22s%22%3A%7B%22CP%E9%85%8D%E5%B0%8D%22%3A%7B%22%E5%AE%89%2F%E5%93%A1%22%3A%22on%22%7D%7D%7D`
 - 只在**開站時**讀一次 hash(`applyShareHash`),之後改 hash 不會重新套用;hash 壞掉就當沒有。
-- 複製用 `navigator.clipboard.writeText`,不支援時退回 `prompt()`。
+- 複製用 `navigator.clipboard.writeText`,不支援時退回 `prompt()`(`main.js` 的 `copyText`)。
+
+## 作品分享頁(`_build/build_pages.py` + `src/url.js`)
+
+- 每篇有獨立網址 `https://yashen0512.github.io/Annyeongz/p/<No>/`(`url.js` 的 `articleShareURL`;詳情彈窗的「🔗 分享」按鈕複製這個)。
+  貼到社群會顯示該篇專屬預覽卡:`p/<No>/index.html` 的 `<head>` 有 title「{標題} — {作者} | Annyeongz 平行宇宙」、description
+  (收錄篇名,沒有就前三個標籤;原文已刪前面加「(原文已刪)」)、og:*、twitter:card=summary_large_image,og:image 指向同資料夾的 `og.png`。
+  `<body>` 列出作品名 / 作者 / 標籤給爬蟲看,`<script>` 用相對路徑導回 `../../?p=<No>`(正式站就是 `/Annyeongz/?p=<No>`)。
+- 首頁開站時讀到 `?p=<No>`(`parseArticleParam`)→ `openSharedArticle()` 打開該篇詳情,並 `history.replaceState` 把 p 拿掉(其他參數與 `#f=` 保留);
+  `intro.js` 看到 `?p=` 就不播開場動畫。編號不存在就什麼都不做。
+- **OG 圖**:Pillow 畫 1200×630,深色底 `#15161b`、左上 🐶❤️🐰 Annyeongz 平行宇宙、中間粗體標題(最多兩行,超過截斷加 …)、
+  下方作者(譯文加「譯 譯者」)與前三個標籤小籤(原文已刪多一顆紅籤)、右下 #編號、以編號為種子的星點。字型見 `_build/fonts/`。
+- **只重產有變動的**:HTML 帶 `<meta name="az-hash">`、PNG 帶 tEXt `az-hash`(內容欄位 + `PAGE_VERSION` / `OG_VERSION` 的 sha1),
+  重跑時逐篇比對;1486 篇首跑約 3 分鐘,之後沒變動約 3 秒。資料裡已經沒有的編號會移除舊資料夾(只動帶 az-hash 的)。
+- `sitemap.xml`:首頁 + 所有 `/p/<No>/`,lastmod 用 `edited`。`feed.xml` 依 `ck` 最新收錄 50 篇、`feed-updated.xml` 依 `ek` 最近編輯 50 篇
+  (RSS 2.0,每則含標題、作者、標籤 category、分享連結、日期);`lastBuildDate` 用最新一則的日期而不是建置時間,所以沒變動就不會產生 diff。
+  `site_template.html` 的 `<head>` 有兩個 `<link rel="alternate" type="application/rss+xml">`。
 
 ## 深淺色主題
 
@@ -260,7 +288,8 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
 npm install                       # 只需一次(vitest 是 devDependency)
 npm test                          # vitest run:tests/filter.test.js、sort.test.js、url.test.js、stats.test.js、storage.test.js
 pip install -r requirements-dev.txt   # 只需一次(pytest)
-python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆分與 ID、日期、30 篇 fixture 完整建置比對)、fetch_data(No 三種型別、token 來源)
+python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆分與 ID、日期、30 篇 fixture 完整建置比對)、fetch_data(No 三種型別、token 來源)、
+                                  #          build_pages(描述 / 標題折行 / 字型回退 / sitemap / RSS、30 篇產頁與 hash 跳過重產)
 ```
 
 - `.github/workflows/test.yml` 在 PR 時兩組都自動跑,不需要 Notion token。
@@ -268,7 +297,7 @@ python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆�
   `expected.json` 是這 30 篇在 `data.js` 的原樣,測試斷言「從 CSV 重建 == 原本」。資料格式改了就重產 fixture。
 - `storage.test.js` 把 `vendor/lz-string.min.js` 當傳統 script 執行後掛到 `globalThis.LZString`(與瀏覽器同一份),並用假的 `localStorage`。
 - 純函式模組(filter / sort / url / related / stats)不可 import DOM 或 `window`,這樣才能在 Node 直接測;
-  `build_site.py` / `fetch_data.py` 的 import 不能有副作用(網路、讀 CSV),主流程放 `main()`。
+  `build_site.py` / `fetch_data.py` / `build_pages.py` 的 import 不能有副作用(網路、讀 CSV、載字型),主流程放 `main()`。
 - 改畫面或行為前後,建議用 Playwright 把舊版與新版同時跑一遍比對 DOM 與截圖(這次拆模組就是這樣驗的)。
 
 ## 程式慣例
@@ -276,7 +305,8 @@ python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆�
 - **繁體中文註解**(台灣用語),檔頭先寫這個模組負責什麼。
 - **不用框架、不引入大型相依套件**;前端只有原生 ES module,開發相依只有 Vitest 與 pytest。瀏覽器端沒有 bundler、沒有 transpile。
   需要的第三方小工具以單檔放 `vendor/`(傳統 script 掛全域),`src/` 裡用 `globalThis.X` 取用並處理沒載到的情況。
-- **Python 腳本只用標準庫**(`csv`、`json`、`urllib`…,現況如此,維持),這樣站長電腦與 Actions 都不用裝套件。
+- **Python 腳本只用標準庫**(`csv`、`json`、`urllib`…,現況如此,維持);唯一例外是 `build_pages.py` 畫 OG 圖用的 Pillow(`requirements.txt`),
+  而且只在畫圖的函式裡 import,`--no-images` 或只產頁 / sitemap / RSS 時不需要它。
 - 作者一律用 Notion 作者頁 ID 對應(`author_ids` / `people[id]`),顯示名只是顯示;改名同步之後會填 `aliases`。
 - 純函式與 DOM 分開:`filter.js`、`sort.js`、`url.js`、`related.js` 不碰 DOM;`render.js` 只產生 DOM,狀態與事件接線都在 `main.js`。
 - 詳情彈窗與書卡的 HTML 字串用 inline `onclick` 呼叫 `toggleFav`、`filterByTag`、`navDetail` 等函式,
