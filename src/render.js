@@ -3,7 +3,7 @@
 //
 // 注意:詳情與書卡的 HTML 字串裡用 inline onclick 呼叫下列全域函式(由 main.js 掛到 window):
 //   toggleFav / toggleTodo / toggleRead / setShelfTab / filterByTag / filterName / openByNo /
-//   closeDetail / navDetail / toggleReport / pickReason / sendReport / shelfExport / shelfImport / shelfClear
+//   closeDetail / navDetail / toggleReport / pickReason / sendReport / shelfExport / shelfImport / shelfClear / shareArticle
 //
 // ctx(由 main.js 組好傳入)欄位:
 //   facets, persons(data.js makePersonLookup:以作者頁 ID 查名字 / 平台 / 已刪帳號)、deadAuthors(Set,相容舊資料),
@@ -279,6 +279,7 @@ export function detailHTML(a, ctx, { rel, navIndex, navLen }) {
       <button class="ctl${ctx.favs.has(a.no) ? ' on' : ''}" onclick="toggleFav('${a.no}')">${ctx.favs.has(a.no) ? '❤️ 已收藏' : '🤍 收藏'}${lk ? ' · ' + lk : ''}</button>
       <button class="ctl${ctx.todoSet.has(a.no) ? ' on' : ''}" onclick="toggleTodo('${a.no}')">${ctx.todoSet.has(a.no) ? '🔖 待閱讀中' : '🔖 待閱讀'}</button>
       <button class="ctl${ctx.readSet.has(a.no) ? ' on' : ''}" onclick="toggleRead('${a.no}')">${ctx.readSet.has(a.no) ? '✓ 已讀' : '標為已讀'}</button>
+      <button class="ctl" onclick="shareArticle('${a.no}', this)" title="複製這篇的分享連結(貼到社群會顯示預覽卡)">🔗 分享</button>
     </div>
     ${deadBar(a)}
     ${vw ? `<div class="viewline">🔭 被觀測 ${vw.toLocaleString()} 次</div>` : ''}

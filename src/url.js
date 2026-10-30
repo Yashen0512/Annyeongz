@@ -6,8 +6,13 @@
 //   q    搜尋字(未折算的原始輸入,去頭尾空白)
 //   sort 排序(預設 old 不寫)
 // 沒有任何條件時就是純網址(沒有 #f=)。
+//
+// 另外還有「作品分享網址」:<SITE_BASE>p/<No>/ 是 _build/build_pages.py 產出的靜態分享頁(社群預覽卡用),
+// 它會導回首頁 ?p=<No>;首頁開站時讀到 p 參數就打開該篇詳情,再用 history.replaceState 把參數拿掉。
 
 export const HASH_PREFIX = '#f=';
+export const SITE_BASE = 'https://yashen0512.github.io/Annyeongz/';   // 站台正式網址(分享頁的 og:url 也用這個)
+export const PAGE_PARAM = 'p';
 
 /**
  * 把篩選狀態壓成 hash 片段('#f=...');沒有任何條件回空字串。
@@ -45,4 +50,23 @@ export function parseShareHash(hash) {
     q: o.q,
     sort: o.sort,
   };
+}
+
+/** 一篇作品的分享網址(靜態分享頁):https://yashen0512.github.io/Annyeongz/p/<No>/ */
+export function articleShareURL(no, base = SITE_BASE) {
+  return base + 'p/' + encodeURIComponent(String(no)) + '/';
+}
+
+/** 從 location.search 讀 ?p=<No>;沒有或空白回 null。 */
+export function parseArticleParam(search) {
+  const v = new URLSearchParams(search || '').get(PAGE_PARAM);
+  const no = (v || '').trim();
+  return no || null;
+}
+
+/** 把 ?p= 從網址拿掉(其他參數與 #hash 保留),回傳 history.replaceState 用的相對網址。 */
+export function stripArticleParam(href) {
+  const u = new URL(href);
+  u.searchParams.delete(PAGE_PARAM);
+  return u.pathname + u.search + u.hash;
 }

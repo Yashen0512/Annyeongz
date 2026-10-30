@@ -10,7 +10,7 @@ import { passes, filterArticles, authorWorks, cycleTag, selectTag, removeTag, to
 import { sortArticles, pickRandom } from './sort.js';
 import { KEYS, loadSet, saveSet, loadShelfTab, saveShelfTab, loadTheme, saveTheme,
   exportState, importState, decodeState, previewImport, extractPayload, buildImportURL, clearAllRecords, IMPORT_PARAM } from './storage.js';
-import { buildShareURL, parseShareHash } from './url.js';
+import { buildShareURL, parseShareHash, articleShareURL, parseArticleParam, stripArticleParam } from './url.js';
 import { relatedArticles } from './related.js';
 import { createReactions } from './reactions.js';
 import { postReport, fetchLiveStats } from './api.js';
@@ -155,6 +155,20 @@ function openDetail(a) {
 function closeDetail() { stopScan(); $('modal').style.display = 'none'; }
 $('modal').onclick = (e) => { if (e.target.id === 'modal') closeDetail(); };
 function openByNo(no) { const a = D.articles.find((x) => x.no === no); if (a) { _navList = null; openDetail(a); } }
+// 開站時網址帶 ?p=<No>(從分享頁 p/<No>/ 導回來)→ 打開該篇詳情,並把參數從網址拿掉(其他參數與 #f= 保留)
+function openSharedArticle() {
+  const no = parseArticleParam(location.search); if (!no) return;
+  try { history.replaceState(null, '', stripArticleParam(location.href)); } catch (e) { /* 舊瀏覽器 */ }
+  openByNo(no);
+}
+// 詳情裡的「複製分享連結」:複製該篇的靜態分享頁網址(貼到社群會顯示專屬預覽卡)
+function shareArticle(no, btn) {
+  const old = btn ? btn.textContent : '';
+  copyURL(articleShareURL(no)).then((ok) => {
+    if (!btn) return;
+    btn.textContent = ok ? '✓ 已複製!' : '⚠ 複製失敗'; setTimeout(() => { btn.textContent = old; }, 1600);
+  });
+}
 // 點標籤 → 篩出同標籤的文
 function filterByTag(enc) {
   const v = decodeURIComponent(enc); const fac = tag2facet[v]; if (!fac) return;
@@ -342,6 +356,13 @@ $('hideRead').onchange = () => render(true);
 $('hideDead').onchange = () => render(true);
 q.oninput = () => render(true);
 $('sort').onchange = () => render(true);
+// 複製網址:navigator.clipboard,不支援或失敗時退回 prompt() 讓人手動複製。回傳 Promise<boolean>
+// (書架匯出用的 copyText 走訊息列,這裡的分享按鈕只要改按鈕文字,所以分開一支)
+function copyURL(text) {
+  const fallback = () => { prompt('複製這個網址分享:', text); return true; };
+  if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).then(() => true).catch(fallback);
+  return Promise.resolve(fallback());
+}
 // 可分享的篩選網址:把目前篩選編進網址 #f=,別人打開就是同樣篩選
 function currentShare() { return { sel, modes, author: authorFilter, q: q.value, sort: $('sort').value }; }
 function applyShareHash() {
@@ -354,9 +375,7 @@ function applyShareHash() {
 }
 $('shareBtn').onclick = () => {
   const url = buildShareURL(currentShare(), location.origin + location.pathname), btn = $('shareBtn'), old = '🔗 複製篩選';
-  const done = (ok) => { btn.textContent = ok ? '✓ 已複製!' : '⚠ 複製失敗'; setTimeout(() => btn.textContent = old, 1600); };
-  if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(url).then(() => done(true)).catch(() => { prompt('複製這個網址分享:', url); done(true); }); }
-  else { prompt('複製這個網址分享:', url); done(true); }
+  copyURL(url).then((ok) => { btn.textContent = ok ? '✓ 已複製!' : '⚠ 複製失敗'; setTimeout(() => btn.textContent = old, 1600); });
 };
 // 穿越蟲洞:在目前篩選結果中隨機開一篇(略過 原文已刪/無連結,抽到也讀不了)
 $('rand').onclick = () => {
@@ -399,13 +418,13 @@ if (D.updated) { $('updatedNote').textContent = '🗺️ 星圖更新:' + D.upda
 if (D.synced) { $('syncedNote').innerHTML = '📡 訊號同步:' + D.synced + ' <span title="每天 08:31・21:01 自動更新&#10;안유진 08/31 · 장원영 09/01 🎂" style="cursor:help">🎂</span>'; }
 
 // 詳情 / 書卡 HTML 字串裡的 inline onclick 會呼叫這些函式,所以要掛到 window(ES module 內的函式不是全域)
-Object.assign(window, { toggleFav, toggleTodo, toggleRead, setShelfTab, filterByTag, filterName, openByNo, closeDetail, navDetail, toggleReport, pickReason, sendReport, shelfExport, shelfImport, shelfClear });
+Object.assign(window, { toggleFav, toggleTodo, toggleRead, setShelfTab, filterByTag, filterName, openByNo, shareArticle, closeDetail, navDetail, toggleReport, pickReason, sendReport, shelfExport, shelfImport, shelfClear });
 
 // ---- 啟動 ----
 R.buildPanel($('panel'), D.facets, {
   onTag: (key, val) => { cycleTag(sel, key, val); render(); },
   onMode: (key) => { toggleMode(modes, key); render(); },
 });
-renderAnn(); renderLatest(); renderStatus(); renderHot(); renderStats(); loadLiveStats(); reactions.loadCounts(); updateShelfBtn(); applyShareHash(); render(); updateAllSnav(); applyImportParam();
+renderAnn(); renderLatest(); renderStatus(); renderHot(); renderStats(); loadLiveStats(); reactions.loadCounts(); updateShelfBtn(); applyShareHash(); render(); updateAllSnav(); applyImportParam(); openSharedArticle();
 // PWA:註冊 service worker(可加到主畫面、離線可看)
 if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {})); }

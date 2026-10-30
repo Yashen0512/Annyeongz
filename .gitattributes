@@ -1,0 +1,7 @@
+# 建置產物:PR / diff 檢視時摺疊、不算進語言統計
+p/** linguist-generated=true
+sitemap.xml linguist-generated=true
+feed.xml linguist-generated=true
+feed-updated.xml linguist-generated=true
+index.html linguist-generated=true
+data.js linguist-generated=true

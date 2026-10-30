@@ -4,7 +4,7 @@
 (function(){
   const o=document.getElementById('intro');
   let seen=false; try{seen=!!sessionStorage.getItem('azIntro'); sessionStorage.setItem('azIntro','1');}catch(e){}
-  if(seen||matchMedia('(prefers-reduced-motion: reduce)').matches){o.remove();return;}
+  if(seen||matchMedia('(prefers-reduced-motion: reduce)').matches||/[?&]p=/.test(location.search)){o.remove();return;}   // ?p= 是分享頁導回來的,直接開卡片
   const ttl=o.querySelector('.ttl'), p=o.querySelector('.pair'), cv=o.querySelector('canvas'), T=[];
   function close(){T.forEach(clearTimeout); if(!o.isConnected||o.classList.contains('out'))return; o.classList.add('out'); setTimeout(()=>o.remove(),520);}
   o.onclick=close;

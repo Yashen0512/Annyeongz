@@ -1,0 +1,2 @@
+# 建置相依(sync.yml 與站長電腦都要裝):build_pages.py 畫 OG 圖用。fetch_data.py / build_site.py 只用標準庫。
+Pillow>=10
