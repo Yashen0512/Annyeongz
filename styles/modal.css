@@ -1,6 +1,10 @@
 /* Annyeongz 平行宇宙 — 詳情 / 公告彈窗 */
 /* modal */
-.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50;align-items:center;justify-content:center;padding:20px}
+/* <dialog>:showModal() 原生鎖焦點、Esc 關閉;本身透明撐滿畫面,灰底用 ::backdrop,sheet 置中(外觀同舊版 div.modal) */
+.modal{display:none;position:fixed;inset:0;width:100%;height:100%;max-width:none;max-height:none;margin:0;padding:20px;border:0;
+       background:transparent;color:inherit;z-index:50;align-items:center;justify-content:center}
+.modal[open]{display:flex}
+.modal::backdrop{background:rgba(0,0,0,.4)}
 .sheet{background:var(--card);border-radius:16px;max-width:560px;width:100%;max-height:85vh;overflow:auto;padding:24px 26px;position:relative}
 .sheet h2{margin:0 30px 12px 0;font-size:20px}
 .sheet h2 .no{font-size:12px;color:var(--muted);font-weight:400}
@@ -9,8 +13,8 @@
 .dk{flex:0 0 84px;color:var(--muted);font-size:13px}
 .dv{flex:1}
 .chip{font-size:12px;background:var(--chip);border-radius:6px;padding:1px 8px;margin:0 4px 4px 0;display:inline-block;cursor:pointer}
-.chip:hover{background:var(--accent-soft);color:var(--accent)}
-.plat{display:inline-block;margin:0 8px 8px 0;padding:6px 14px;border:1px solid var(--accent);color:var(--accent);
+.chip:hover{background:var(--accent-soft);color:var(--accent-t)}
+.plat{display:inline-block;margin:0 8px 8px 0;padding:6px 14px;border:1px solid var(--accent);color:var(--accent-t);
       border-radius:999px;font-size:13px;text-decoration:none;background:var(--accent-soft)}
 .plat.pp{padding:2px 9px;font-size:11px;margin:0 4px 0 0}
 .person{margin:4px 0;line-height:2}
@@ -23,15 +27,15 @@
   background:var(--bg);color:var(--ink);font-size:13px;line-height:1.5}
 .xfer textarea{font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all;resize:vertical}
 .xfer input[type=text]{font-size:15px}
-.xfer textarea:focus,.xfer input[type=text]:focus{outline:none;border-color:var(--accent)}
+.xfer textarea:focus,.xfer input[type=text]:focus{border-color:var(--accent)}
 .xfer .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.xfer .ctl.pri{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.xfer .ctl.pri{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:700}
 .xfer .ctl[disabled]{opacity:.45;cursor:default}
 .xmsg{font-size:13px;color:var(--muted);line-height:1.6}
-.xmsg.err{color:var(--exc);font-weight:600}
-.xmsg.ok{color:var(--he);font-weight:700;font-size:15px}
+.xmsg.err{color:var(--exc-t);font-weight:600}
+.xmsg.ok{color:var(--he-t);font-weight:700;font-size:15px}
 .xpre{background:var(--accent-soft);border:1px solid var(--accent);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
-.xpre b{font-size:17px;color:var(--accent)}
+.xpre b{font-size:17px;color:var(--accent-t)}
 .xpre .xwhen{font-size:12px;color:var(--muted);margin-left:6px}
 .xpre .xmode label{display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:13px}
 .xpre .xmode input{margin:0;accent-color:var(--accent)}

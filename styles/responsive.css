@@ -14,14 +14,15 @@ body.noscroll{overflow:hidden}
     position:sticky;top:0;z-index:2;background:var(--card);
     margin:0 -18px 8px;padding:16px 18px;border-bottom:1px solid var(--line);
     font-size:19px;font-weight:800}
-  .pbdone{font-size:16px;padding:9px 22px;background:var(--accent);color:#fff;border:none;border-radius:999px;font-weight:700}
+  .panelbar h2{margin:0;font:inherit}
+  .pbdone{font-size:16px;padding:9px 22px;background:var(--accent);color:var(--on-accent);border:none;border-radius:999px;font-weight:700}
   .panel .facet{padding:14px 0}
   .panel .facet h3{font-size:17px;margin:6px 0}
   .panel .facet h3 .arw{font-size:13px}
   .panel .facet h3 .mode{font-size:13px}
   .panel .opts{gap:9px;margin-top:10px}
   .panel .opt{font-size:16px;padding:9px 16px;border-radius:999px}
-  .panel .opt .c{font-size:13px;margin-left:5px}
+  .panel .opt .c{font-size:13px;margin-left:1px}
   #filterToggle{display:inline-block}
   .grid{grid-template-columns:1fr}
   .topbar{padding:10px 14px;gap:10px}

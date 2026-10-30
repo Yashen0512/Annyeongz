@@ -1,5 +1,5 @@
 // Annyeongz PWA service worker — network-first(更新優先),離線時用快取
-const CACHE = 'annyeongz-v5';
+const CACHE = 'annyeongz-v6';
 const ASSETS = ['./', './index.html', './manifest.webmanifest',
   './banner.png', './banner-mobile.png', './icon-192.png', './icon-512.png',
   './styles/base.css', './styles/panel.css', './styles/main.css', './styles/modal.css', './styles/responsive.css', './styles/intro.css',

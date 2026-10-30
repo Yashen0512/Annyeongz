@@ -5,6 +5,9 @@
 //   shelfOn / shelfTab     書架模式與分頁
 //   page                   主列表目前頁數(每頁 PER 篇)
 //   _mode / _cur / _annIdx 詳情視窗:'art' 文章、'ann' 公告、'tool' 書架匯出 / 匯入 / 清除;_navList = 從哪一排點開(null = 主列表目前篩選+排序)
+//   _opener                打開詳情前的焦點元素(書卡標題鈕 / 輪播小卡 / 書架工具鈕),關閉後把焦點還回去(鍵盤使用者才不會迷路)
+// 無障礙:詳情是 <dialog>(showModal 原生鎖焦點、Esc 關閉);篩選結果數與輪播頁數用 aria-live 宣告;
+//        尊重 prefers-reduced-motion(捲動不用 smooth)。
 import { loadData, sg, buildTag2Facet, sortAnnouncements, makePersonLookup } from './data.js';
 import { passes, filterArticles, authorWorks, cycleTag, selectTag, removeTag, toggleMode, clearSelection, selectionChips } from './filter.js';
 import { sortArticles, pickRandom } from './sort.js';
@@ -24,12 +27,16 @@ const ANNS = sortAnnouncements(D.announcements);
 const deadNos = new Set(D.articles.filter((a) => a.dead).map((a) => a.no));
 
 const $ = (id) => document.getElementById(id);
-const scrollToToolbar = () => document.querySelector('.toolbar').scrollIntoView({ behavior: 'smooth' });
+const reduceMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const scrollBehavior = () => (reduceMotion() ? 'auto' : 'smooth');
+const scrollToToolbar = () => document.querySelector('.toolbar').scrollIntoView({ behavior: scrollBehavior() });
+// 螢幕閱讀器宣告(aria-live 區域;同一句不重複塞,避免重複念)
+function announce(id, text) { const el = $(id); if (el && el.textContent !== text) el.textContent = text; }
 
 // ---- 狀態 ----
 const sel = {}, modes = {};
 let authorFilter = null, _cur = null, shelfOn = false;
-let _mode = 'art', _annIdx = null, _navList = null;
+let _mode = 'art', _annIdx = null, _navList = null, _opener = null;
 const PER = 30; let page = 1;
 
 // 我的書架:收藏 + 待閱讀 + 已讀,存瀏覽器本機
@@ -44,7 +51,23 @@ const reactions = createReactions({ favs, deadNos, onChange: () => { render(true
 const ctx = { facets: D.facets, persons, deadAuthors, favs, readSet, todoSet, likeNum: reactions.likeNum, viewNum: reactions.viewNum };
 
 const q = $('q');
-const modalOpen = () => $('modal').style.display === 'flex';
+// 詳情視窗:<dialog>(新樣板)用 open 屬性;舊的 index.html 還是 div 時退回 display:flex(同步前的過渡期不會壞)
+const isDialog = () => typeof $('modal').showModal === 'function';
+const modalOpen = () => (isDialog() ? $('modal').open : $('modal').style.display === 'flex');
+function showSheet() {
+  const m = $('modal');
+  if (modalOpen()) return;
+  _opener = document.activeElement && document.activeElement !== document.body ? document.activeElement : _opener;
+  if (isDialog()) m.showModal(); else m.style.display = 'flex';
+}
+/** 重新填入詳情內容前後:把焦點留在同一個位置(例如按了收藏後重繪,焦點不掉回 body)。 */
+function keepSheetFocus(fill) {
+  const sheet = $('sheet'), act = document.activeElement;
+  const focusables = () => [...sheet.querySelectorAll('button:not([disabled]),a[href],input,textarea,[tabindex="0"]')];
+  const idx = act && sheet.contains(act) ? focusables().indexOf(act) : -1;
+  fill();
+  if (idx >= 0) { const f = focusables(); (f[idx] || f[f.length - 1] || sheet.querySelector('.close'))?.focus(); }
+}
 
 // ---- 篩選 / 排序 ----
 function filterState() {
@@ -75,7 +98,7 @@ function toggleRead(no) {
 function toggleTodo(no) { todoSet.has(no) ? todoSet.delete(no) : todoSet.add(no); saveSet(KEYS.TODO, todoSet); afterMark(); }
 function setShelfTab(k) { shelfTab = k; saveShelfTab(k); updateShelfBtn(); render(); }
 function updateShelfBtn() {
-  const b = $('shelfBtn'); if (b) { b.textContent = '📚 書架'; b.classList.toggle('on', shelfOn); }
+  const b = $('shelfBtn'); if (b) { b.textContent = '📚 書架'; b.classList.toggle('on', shelfOn); b.setAttribute('aria-pressed', String(shelfOn)); }
   const tb = $('shelfTabs'); if (!tb) return;
   tb.style.display = shelfOn ? 'flex' : 'none';
   tb.innerHTML = R.shelfTabsHTML(SHELF, shelfTab) + R.shelfToolsHTML();
@@ -83,7 +106,10 @@ function updateShelfBtn() {
 
 // ---- 主題切換(深/淺,記憶於 localStorage,預設深色配合品牌)----
 const _root = document.documentElement;
-function applyTheme(t) { _root.setAttribute('data-theme', t); const b = $('theme'); if (b) b.textContent = t === 'dark' ? '☀️' : '🌙'; saveTheme(t); }
+function applyTheme(t) {
+  _root.setAttribute('data-theme', t); saveTheme(t);
+  const b = $('theme'); if (b) { b.textContent = t === 'dark' ? '☀️' : '🌙'; b.setAttribute('aria-label', t === 'dark' ? '切換為白晝(淺色)' : '切換為黑夜(深色)'); }
+}
 applyTheme(loadTheme());
 $('theme').onclick = () => applyTheme(_root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
 
@@ -95,6 +121,7 @@ function render(keepPage) {
   const pages = Math.max(1, Math.ceil(hits.length / PER));
   if (page > pages) page = pages;
   $('count').textContent = `共 ${hits.length} / ${D.total} 篇`;
+  announce('liveCount', `找到 ${hits.length} 篇`);   // 篩選結果數變化 → aria-live 宣告
   { const pb = document.querySelector('.pbdone'); if (pb) pb.textContent = `看 ${hits.length} 篇 ✓`; }
   R.renderAuthorHead($('authorHead'), authorFilter, authorFilter ? authorWorks(D.articles, authorFilter, persons).length : 0, ctx,
     () => { authorFilter = null; render(); scrollToToolbar(); });
@@ -103,7 +130,7 @@ function render(keepPage) {
     $('pager').innerHTML = '';
     R.syncStyles(sel, modes); renderSelBar(); return;
   }
-  R.renderCards(list, hits.slice((page - 1) * PER, page * PER), ctx, (a) => { _navList = null; openDetail(a); });
+  R.renderCards(list, hits.slice((page - 1) * PER, page * PER), ctx, (a, el) => { _navList = null; openDetail(a, el); });
   R.renderPager($('pager'), page, pages, gotoPage);
   R.syncStyles(sel, modes); renderSelBar();
 }
@@ -124,11 +151,11 @@ function renderAnn() {
 function renderLatest() {
   // 最新收錄:依「建立時間(實際新增進資料庫)」由新到舊,不是按編號
   const newest = D.articles.filter((a) => a.ck).sort((a, b) => b.ck - a.ck).slice(0, 8);
-  R.renderStrip($('latest'), newest, { html: R.latestCardHTML, onClick: (a) => { _navList = newest; openDetail(a); } });
+  R.renderStrip($('latest'), newest, { html: R.latestCardHTML, onClick: (a, i, el) => { _navList = newest; openDetail(a, el); } });
 }
 function renderStatus() {
   const arr = D.articles.filter((a) => a.ek).sort((a, b) => b.ek - a.ek).slice(0, 8);
-  R.renderStrip($('statusUpd'), arr, { html: R.statusCardHTML, onClick: (a) => { _navList = arr; openDetail(a); } });
+  R.renderStrip($('statusUpd'), arr, { html: R.statusCardHTML, onClick: (a, i, el) => { _navList = arr; openDetail(a, el); } });
 }
 function renderHot() {
   R.renderHot($('hot'), D.facets, (key, v) => { selectTag(sel, key, v); render(); scrollToToolbar(); });
@@ -139,21 +166,30 @@ function openAnn(i) {
   if (i < 0 || i >= ANNS.length) return;
   _mode = 'ann'; _annIdx = i; _cur = null;
   const sheet = $('sheet');
-  sheet.innerHTML = R.annHTML(ANNS[i], i, ANNS.length);
-  $('modal').style.display = 'flex'; sheet.scrollTop = 0;
+  keepSheetFocus(() => { sheet.innerHTML = R.annHTML(ANNS[i], i, ANNS.length); });
+  showSheet(); sheet.scrollTop = 0;
 }
-function openDetail(a) {
+/** 打開文章詳情;opener = 觸發的元素(書卡標題鈕 / 輪播小卡),關閉後焦點回到它。 */
+function openDetail(a, opener) {
   const changed = (_mode !== 'art' || !_cur || _cur.no !== a.no);   // 換了一篇才捲回頂端(按收藏/已讀重繪時維持位置)
   _mode = 'art'; _annIdx = null; _cur = a;
+  if (opener && !modalOpen()) _opener = opener;
   reactions.markView(a.no);
   const sheet = $('sheet');
   const L = navArticles();
-  sheet.innerHTML = R.detailHTML(a, ctx, { rel: relatedArticles(a, D.articles, 6), navIndex: L.findIndex((x) => x.no === a.no), navLen: L.length });
-  $('modal').style.display = 'flex';
-  if (changed) sheet.scrollTop = 0;
+  keepSheetFocus(() => { sheet.innerHTML = R.detailHTML(a, ctx, { rel: relatedArticles(a, D.articles, 6), navIndex: L.findIndex((x) => x.no === a.no), navLen: L.length }); });
+  showSheet();
+  if (changed) { sheet.scrollTop = 0; if (isDialog()) sheet.querySelector('.close')?.focus(); }   // 換篇時焦點回到最上面的關閉鈕
 }
-function closeDetail() { stopScan(); $('modal').style.display = 'none'; }
-$('modal').onclick = (e) => { if (e.target.id === 'modal') closeDetail(); };
+function closeDetail() { stopScan(); const m = $('modal'); if (isDialog()) { if (m.open) m.close(); } else { m.style.display = 'none'; restoreFocus(); } }
+/** 關閉後把焦點還給打開它的元素;那張卡若已重繪(例如按了收藏),改找同編號的卡。 */
+function restoreFocus() {
+  let el = _opener; _opener = null;
+  if (el && !el.isConnected && _cur) el = document.querySelector(`.card[data-no="${CSS.escape(_cur.no)}"] .card-open`);
+  if (el && el.isConnected) el.focus();
+}
+$('modal').onclick = (e) => { if (e.target.id === 'modal') closeDetail(); };   // 點灰底(dialog 本身)關閉
+$('modal').addEventListener('close', () => { stopScan(); restoreFocus(); });   // Esc / close() 都會經過這裡(Esc 關掉匯入視窗時也要停相機)
 function openByNo(no) { const a = D.articles.find((x) => x.no === no); if (a) { _navList = null; openDetail(a); } }
 // 開站時網址帶 ?p=<No>(從分享頁 p/<No>/ 導回來)→ 打開該篇詳情,並把參數從網址拿掉(其他參數與 #f= 保留)
 function openSharedArticle() {
@@ -187,8 +223,9 @@ function navDetail(d) {
 }
 document.addEventListener('keydown', (e) => {
   if (!modalOpen()) return;
-  if (e.key === 'Escape') closeDetail();
-  else if (e.key === 'ArrowLeft') navDetail(-1);
+  if (e.key === 'Escape') { if (!isDialog()) closeDetail(); return; }   // <dialog> 的 Esc 由瀏覽器處理(cancel → close)
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;      // 輸入框裡的左右鍵是在移游標
+  if (e.key === 'ArrowLeft') navDetail(-1);
   else if (e.key === 'ArrowRight') navDetail(1);
 });
 
@@ -196,8 +233,10 @@ document.addEventListener('keydown', (e) => {
 function openTool(html) {
   stopScan();
   _mode = 'tool'; _cur = null; _annIdx = null;
-  const sheet = $('sheet'); sheet.innerHTML = html;
-  $('modal').style.display = 'flex'; sheet.scrollTop = 0;
+  const sheet = $('sheet');
+  keepSheetFocus(() => { sheet.innerHTML = html; });
+  showSheet(); sheet.scrollTop = 0;
+  if (isDialog() && !sheet.contains(document.activeElement)) sheet.querySelector('.close')?.focus();
 }
 function setMsg(id, text, cls) { const el = $(id); if (el) { el.textContent = text || ''; el.className = 'xmsg' + (cls ? ' ' + cls : ''); } }
 // 複製到剪貼簿;不支援時退回 prompt(與「複製篩選」同一套)
@@ -317,11 +356,16 @@ function applyImportParam() {
 }
 
 // ---- 連結回報 ----
-function toggleReport(id) { const b = $(id); if (b) b.classList.toggle('open'); }
+function toggleReport(id) {
+  const b = $(id); if (!b) return;
+  const open = b.classList.toggle('open');
+  document.querySelector(`[aria-controls="${id}"]`)?.setAttribute('aria-expanded', String(open));
+  if (open) b.querySelector('.ctl')?.focus();
+}
 function pickReason(btn, other) {
   const box = btn.closest('.repbox');
-  box.querySelectorAll('.opts .ctl').forEach((x) => x.classList.remove('on'));
-  btn.classList.add('on'); box.dataset.sel = btn.textContent.trim();   // 目前點選的回報原因
+  box.querySelectorAll('.opts .ctl').forEach((x) => { x.classList.remove('on'); x.setAttribute('aria-pressed', 'false'); });
+  btn.classList.add('on'); btn.setAttribute('aria-pressed', 'true'); box.dataset.sel = btn.textContent.trim();   // 目前點選的回報原因
   const ta = box.querySelector('textarea');
   if (ta) ta.style.display = other ? 'block' : 'none';   // 選「其他」才展開文字框
 }
@@ -384,14 +428,20 @@ $('rand').onclick = () => {
   const a = pickRandom(h);
   if (a) { _navList = null; openDetail(a); R.wormholeToast($('sheet')); }
 };
-$('filterToggle').onclick = () => {
-  const p = $('panel'); const open = p.classList.toggle('open');
+function setPanelOpen(open) {
+  const p = $('panel'); p.classList.toggle('open', open);
   document.body.classList.toggle('noscroll', open && window.innerWidth <= 860);
-};
+  $('filterToggle').setAttribute('aria-expanded', String(open));
+  if (open) p.querySelector('.pbdone, .fh')?.focus(); else $('filterToggle').focus();   // 手機全螢幕面板:焦點進去 / 出來
+}
+$('filterToggle').onclick = () => setPanelOpen(!$('panel').classList.contains('open'));
+document.querySelector('.pbdone').onclick = () => setPanelOpen(false);
+$('panel').addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('panel').classList.contains('open')) setPanelOpen(false); });
 
 // ---- 輪播箭頭:只在「有得捲」時出現(沒溢出全藏、捲到頭藏左、捲到底藏右)----
+function stripScroll(s, dir) { const amt = Math.max(220, s.clientWidth * 0.8); s.scrollBy({ left: dir * amt, behavior: scrollBehavior() }); }
 document.querySelectorAll('.snav').forEach((btn) => {
-  btn.onclick = () => { const s = btn.parentElement.querySelector('.strip'); const amt = Math.max(220, s.clientWidth * 0.8); s.scrollBy({ left: btn.classList.contains('l') ? -amt : amt, behavior: 'smooth' }); };
+  btn.onclick = () => stripScroll(btn.parentElement.querySelector('.strip'), btn.classList.contains('l') ? -1 : 1);
 });
 function updateSnav(row) {
   const s = row.querySelector('.strip'); if (!s) return;
@@ -399,9 +449,33 @@ function updateSnav(row) {
   const can = s.scrollWidth - s.clientWidth > 2;
   if (l) l.classList.toggle('hide', !can || s.scrollLeft <= 1);
   if (r) r.classList.toggle('hide', !can || s.scrollLeft + s.clientWidth >= s.scrollWidth - 1);
+  // 箭頭鈕隱藏時若焦點正在它上面,把焦點移到另一邊的箭頭(否則焦點會掉回 body,鍵盤使用者迷路)
+  const a = document.activeElement;
+  if (a === l && l.classList.contains('hide')) (r && !r.classList.contains('hide') ? r : s.firstElementChild)?.focus();
+  else if (a === r && r.classList.contains('hide')) (l && !l.classList.contains('hide') ? l : s.firstElementChild)?.focus();
 }
 function updateAllSnav() { document.querySelectorAll('.striprow').forEach(updateSnav); }
-document.querySelectorAll('.striprow .strip').forEach((s) => s.addEventListener('scroll', () => updateSnav(s.closest('.striprow'))));
+// 輪播目前頁數(以可視寬度為一頁)→ aria-live 宣告「第 X / Y 頁」;捲動停下來才念
+function announceStripPage(row) {
+  const s = row.querySelector('.strip'), live = row.querySelector('.strip-page'); if (!s || !live) return;
+  const n = Math.max(1, Math.ceil(s.scrollWidth / Math.max(1, s.clientWidth)));
+  const p = Math.min(n, Math.round(s.scrollLeft / Math.max(1, s.clientWidth)) + 1);
+  const t = n > 1 ? `第 ${p} / ${n} 頁` : ''; if (live.textContent !== t) live.textContent = t;
+}
+document.querySelectorAll('.striprow').forEach((row) => {
+  const s = row.querySelector('.strip'); if (!s) return;
+  let tm = null;
+  s.addEventListener('scroll', () => { updateSnav(row); clearTimeout(tm); tm = setTimeout(() => announceStripPage(row), 150); });
+  // 鍵盤:在小卡上按 ← → 移到上一張 / 下一張(自動捲入畫面),Home / End 到頭尾;在箭頭鈕上按 ← → 直接捲動
+  row.addEventListener('keydown', (e) => {
+    const k = e.key; if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(k)) return;
+    const cards = [...s.children]; const i = cards.indexOf(e.target);
+    if (i < 0) { if (k === 'ArrowLeft' || k === 'ArrowRight') { e.preventDefault(); stripScroll(s, k === 'ArrowLeft' ? -1 : 1); } return; }
+    e.preventDefault();
+    const j = k === 'Home' ? 0 : k === 'End' ? cards.length - 1 : Math.min(cards.length - 1, Math.max(0, i + (k === 'ArrowLeft' ? -1 : 1)));
+    cards[j].focus(); cards[j].scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: scrollBehavior() });
+  });
+});
 window.addEventListener('resize', updateAllSnav);
 window.addEventListener('load', updateAllSnav);
 updateAllSnav();
@@ -409,7 +483,7 @@ updateAllSnav();
 // ---- 回到頂部 ----
 const toTop = $('toTop');
 window.addEventListener('scroll', () => { toTop.classList.toggle('show', window.scrollY > 400); });
-toTop.onclick = () => { toTop.blur(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+toTop.onclick = (e) => { if (e.detail) toTop.blur(); window.scrollTo({ top: 0, behavior: scrollBehavior() }); };   // 滑鼠點才 blur(手機不留粉色殘影),鍵盤保留焦點
 
 // ---- 頁尾:統計 / 更新時間 ----
 function renderStats(s, live) { R.renderStats($('statsCard'), s || D.stats, live); }
@@ -426,5 +500,6 @@ R.buildPanel($('panel'), D.facets, {
   onMode: (key) => { toggleMode(modes, key); render(); },
 });
 renderAnn(); renderLatest(); renderStatus(); renderHot(); renderStats(); loadLiveStats(); reactions.loadCounts(); updateShelfBtn(); applyShareHash(); render(); updateAllSnav(); applyImportParam(); openSharedArticle();
+document.querySelectorAll('.striprow').forEach(announceStripPage);
 // PWA:註冊 service worker(可加到主畫面、離線可看)
 if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {})); }
