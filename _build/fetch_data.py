@@ -5,6 +5,22 @@
 import csv, glob, io, json, os, re, time, urllib.request, urllib.error
 from datetime import datetime, timezone, timedelta
 
+# ---- SSL context:優先 truststore(直接信任 Windows 系統憑證庫,防火牆/防毒的攔截憑證也會被接受)
+#      → 沒裝就退回 certifi → 再沒裝就用 Python 預設。絕對不關閉憑證驗證。
+def _ssl_context():
+    import ssl
+    try:
+        import truststore
+        truststore.inject_into_ssl()          # 之後 create_default_context 直接走系統憑證庫
+    except ImportError:
+        try:
+            import certifi
+            return ssl.create_default_context(cafile=certifi.where())
+        except ImportError:
+            pass
+    return ssl.create_default_context()
+SSL_CTX = _ssl_context()
+
 NOTION_VER = '2022-06-28'
 TOKEN = (os.environ.get('NOTION_TOKEN') or io.open('notion_token.txt', encoding='utf-8').read()).strip()
 MAIN_ID = '176a7213548080cda25dd9e1edd5b7a4'      # 主表(從匯出檔名得知)
@@ -19,7 +35,7 @@ def api(method, url, body=None):
             req.add_header('Authorization', 'Bearer ' + TOKEN)
             req.add_header('Notion-Version', NOTION_VER)
             req.add_header('Content-Type', 'application/json')
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, context=SSL_CTX, timeout=60) as resp:
                 return json.loads(resp.read().decode('utf-8'))
         except urllib.error.HTTPError as e:
             if e.code == 429:
@@ -261,7 +277,7 @@ if GC_TOKEN:
         req.add_header('Authorization', 'Bearer ' + GC_TOKEN)
         for attempt in range(5):
             try:
-                with urllib.request.urlopen(req, timeout=45) as r:
+                with urllib.request.urlopen(req, context=SSL_CTX, timeout=45) as r:
                     j = json.loads(r.read().decode())
                     return {s['day']: s.get('daily', 0) for s in j.get('stats', [])}
             except urllib.error.HTTPError as e:
@@ -290,7 +306,7 @@ else:
 try:
     _m = re.search(r'REACT_API="(https://[^"]+)"', io.open('site_template.html', encoding='utf-8').read())
     if _m:
-        with urllib.request.urlopen(urllib.request.Request(_m.group(1), headers={'Cache-Control': 'no-store'}), timeout=30) as _r:
+        with urllib.request.urlopen(urllib.request.Request(_m.group(1), headers={'Cache-Control': 'no-store'}), context=SSL_CTX, timeout=30) as _r:
             _cnt = json.loads(_r.read().decode('utf-8'))
         _sum = lambda d: sum(int(v[0]) + int(v[1]) for v in d.values())
         if isinstance(_cnt, dict) and _cnt:
