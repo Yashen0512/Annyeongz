@@ -4,11 +4,12 @@
 //   authorFilter           作者專頁
 //   shelfOn / shelfTab     書架模式與分頁
 //   page                   主列表目前頁數(每頁 PER 篇)
-//   _mode / _cur / _annIdx 詳情視窗:'art' 文章、'ann' 公告;_navList = 從哪一排點開(null = 主列表目前篩選+排序)
+//   _mode / _cur / _annIdx 詳情視窗:'art' 文章、'ann' 公告、'tool' 書架匯出 / 匯入 / 清除;_navList = 從哪一排點開(null = 主列表目前篩選+排序)
 import { loadData, sg, buildTag2Facet, sortAnnouncements, makePersonLookup } from './data.js';
 import { passes, filterArticles, authorWorks, cycleTag, selectTag, removeTag, toggleMode, clearSelection, selectionChips } from './filter.js';
 import { sortArticles, pickRandom } from './sort.js';
-import { KEYS, loadSet, saveSet, loadShelfTab, saveShelfTab, loadTheme, saveTheme } from './storage.js';
+import { KEYS, loadSet, saveSet, loadShelfTab, saveShelfTab, loadTheme, saveTheme,
+  exportState, importState, decodeState, previewImport, extractPayload, buildImportURL, clearAllRecords, IMPORT_PARAM } from './storage.js';
 import { buildShareURL, parseShareHash } from './url.js';
 import { relatedArticles } from './related.js';
 import { createReactions } from './reactions.js';
@@ -77,7 +78,7 @@ function updateShelfBtn() {
   const b = $('shelfBtn'); if (b) { b.textContent = '📚 書架'; b.classList.toggle('on', shelfOn); }
   const tb = $('shelfTabs'); if (!tb) return;
   tb.style.display = shelfOn ? 'flex' : 'none';
-  tb.innerHTML = R.shelfTabsHTML(SHELF, shelfTab);
+  tb.innerHTML = R.shelfTabsHTML(SHELF, shelfTab) + R.shelfToolsHTML();
 }
 
 // ---- 主題切換(深/淺,記憶於 localStorage,預設深色配合品牌)----
@@ -151,7 +152,7 @@ function openDetail(a) {
   $('modal').style.display = 'flex';
   if (changed) sheet.scrollTop = 0;
 }
-function closeDetail() { $('modal').style.display = 'none'; }
+function closeDetail() { stopScan(); $('modal').style.display = 'none'; }
 $('modal').onclick = (e) => { if (e.target.id === 'modal') closeDetail(); };
 function openByNo(no) { const a = D.articles.find((x) => x.no === no); if (a) { _navList = null; openDetail(a); } }
 // 點標籤 → 篩出同標籤的文
@@ -176,6 +177,130 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowLeft') navDetail(-1);
   else if (e.key === 'ArrowRight') navDetail(1);
 });
+
+// ---- 書架匯出 / 匯入 / 清除所有紀錄(共用詳情的 #modal;_mode = 'tool' 時 ←→ 不會切換文章)----
+function openTool(html) {
+  stopScan();
+  _mode = 'tool'; _cur = null; _annIdx = null;
+  const sheet = $('sheet'); sheet.innerHTML = html;
+  $('modal').style.display = 'flex'; sheet.scrollTop = 0;
+}
+function setMsg(id, text, cls) { const el = $(id); if (el) { el.textContent = text || ''; el.className = 'xmsg' + (cls ? ' ' + cls : ''); } }
+// 複製到剪貼簿;不支援時退回 prompt(與「複製篩選」同一套)
+function copyText(text, msgId, okText) {
+  const done = (ok) => setMsg(msgId, ok ? okText : '⚠ 複製失敗,請直接全選上面的字串複製', ok ? 'ok' : 'err');
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => done(true)).catch(() => { prompt('複製這段文字:', text); done(true); });
+  else { prompt('複製這段文字:', text); done(true); }
+}
+const siteBase = () => location.origin + location.pathname;
+// 匯出:字串 + 複製 / 複製連結 / QR code(QR 內容是匯入連結,用相機掃到就直接開站)
+function shelfExport() {
+  let payload = null, err = '';
+  try { payload = exportState({ favs, read: readSet, todo: todoSet }); } catch (e) { err = e.message; }
+  openTool(R.exportHTML({ payload, err, counts: { shelf: favs.size, read: readSet.size, todo: todoSet.size } }));
+  if (!payload) return;
+  const link = buildImportURL(payload, siteBase());
+  $('xpCopy').onclick = () => copyText(payload, 'xpMsg', '✓ 已複製字串,到另一台裝置的「📥 匯入」貼上');
+  $('xpLink').onclick = () => copyText(link, 'xpMsg', '✓ 已複製連結,在另一台裝置打開就會跳出匯入預覽');
+  const out = $('xpOut'); out.onfocus = () => out.select();
+  const qr = $('xpQr'); if (qr) renderQR(qr, link);
+}
+function renderQR(el, text) {
+  const Q = window.qrcode;   // vendor/qrcode.js
+  if (typeof Q !== 'function') { el.innerHTML = '<div class="xmsg err">QR code 元件未載入,請改用複製</div>'; return; }
+  try { const q = Q(0, 'M'); q.addData(text, 'Byte'); q.make(); el.innerHTML = q.createSvgTag({ cellSize: 4, margin: 2, scalable: true, alt: '匯入連結 QR code' }); }
+  catch (e) { el.innerHTML = '<div class="xmsg err">內容太長,QR code 畫不下,請改用複製</div>'; }
+}
+// 匯入:貼上(或掃 QR)→ 預覽「將加入 X 本書架、Y 篇已讀、Z 篇待閱讀」→ 選合併 / 覆蓋 → 確認才寫入
+let _imPending = null, _imText = '';   // 解析成功、等待確認的匯入內容與原字串
+function shelfImport(prefill) {
+  _imPending = null; _imText = '';
+  const canScan = typeof window.BarcodeDetector === 'function' && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  openTool(R.importHTML({ canScan, prefill }));
+  $('imPreview').onclick = () => previewImportText($('imIn').value);
+  const sc = $('imScan'); if (sc) sc.onclick = () => startScan((code) => { $('imIn').value = code; previewImportText(code); });
+  $('imScanStop').onclick = stopScan;
+  if (prefill) previewImportText(prefill);
+}
+const imMode = () => { const r = document.querySelector('input[name=imMode]:checked'); return r ? r.value : 'merge'; };
+function previewImportText(text) {
+  stopScan();
+  const pre = $('imPre'); if (!pre) return;
+  try { _imPending = decodeState(text); _imText = text; }
+  catch (e) { _imPending = null; _imText = ''; pre.style.display = 'none'; setMsg('imMsg', '⚠️ ' + e.message, 'err'); return; }
+  setMsg('imMsg', '');
+  renderImPreview('merge');
+}
+function renderImPreview(mode) {
+  const pre = $('imPre'); if (!pre || !_imPending) return;
+  const st = previewImport({ favs, read: readSet, todo: todoSet }, _imPending, mode);
+  pre.innerHTML = R.importPreviewHTML(st, mode, _imPending.exportedAt); pre.style.display = '';
+  pre.querySelectorAll('input[name=imMode]').forEach((r) => { r.onchange = () => renderImPreview(imMode()); });
+  $('imGo').onclick = confirmImport;
+}
+function confirmImport() {
+  if (!_imPending) return;
+  const mode = imMode(); let r;
+  try { r = importState(_imText, { favs, read: readSet, todo: todoSet, mode }); }
+  catch (e) { setMsg('imMsg', '⚠️ ' + e.message, 'err'); return; }
+  reactions.markCounted(r.addedShelf);   // 匯入的收藏在原裝置已算過愛心,這裡不再 +1
+  if (new RegExp('[?&]' + IMPORT_PARAM + '=').test(location.search)) history.replaceState(null, '', location.pathname + location.hash);   // 從 ?s= 連結來的:寫入後移除參數
+  _imPending = null; _imText = '';
+  afterMark();
+  openTool(R.importDoneHTML(r, mode));
+}
+// 相機掃 QR(BarcodeDetector;不支援的瀏覽器沒有這顆按鈕)
+let _scan = null;   // {stream, timer}
+function startScan(onCode) {
+  const box = $('imCam'), video = box && box.querySelector('video'); if (!video) return;
+  stopScan(); setMsg('imMsg', '');
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then((stream) => {
+    if (!modalOpen() || !$('imCam')) { stream.getTracks().forEach((t) => t.stop()); return; }   // 等權限時視窗已經關了
+    const det = new window.BarcodeDetector({ formats: ['qr_code'] });
+    _scan = { stream, timer: 0 };
+    video.srcObject = stream; box.style.display = ''; video.play().catch(() => {});
+    const tick = () => {
+      if (!_scan) return;
+      const p = video.readyState >= 2 ? det.detect(video) : Promise.resolve([]);
+      p.then((codes) => {
+        const c = (codes || []).find((x) => x.rawValue);
+        if (c && _scan) { stopScan(); onCode(c.rawValue); return; }
+        if (_scan) _scan.timer = setTimeout(tick, 250);
+      }).catch(() => { if (_scan) _scan.timer = setTimeout(tick, 400); });
+    };
+    tick();
+  }).catch((e) => {
+    const why = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError') ? '沒有相機權限' : (e && e.name === 'NotFoundError' ? '找不到相機' : '無法開啟相機');
+    setMsg('imMsg', '⚠️ ' + why + ',請改用貼上字串', 'err');
+  });
+}
+function stopScan() {
+  if (!_scan) return;
+  clearTimeout(_scan.timer); _scan.stream.getTracks().forEach((t) => t.stop()); _scan = null;
+  const box = $('imCam'); if (box) { box.style.display = 'none'; const v = box.querySelector('video'); if (v) v.srcObject = null; }
+}
+// 清除所有紀錄:要輸入「清除」才能按
+function shelfClear() {
+  openTool(R.clearHTML({ fav: favs.size, todo: todoSet.size, read: readSet.size }));
+  const inp = $('clIn'), go = $('clGo');
+  inp.oninput = () => { go.disabled = inp.value.trim() !== R.CLEAR_WORD; };
+  inp.onkeydown = (e) => { if (e.key === 'Enter' && !go.disabled) go.click(); };
+  go.onclick = () => {
+    if (inp.value.trim() !== R.CLEAR_WORD) return;
+    [...favs].forEach((no) => reactions.onFavChange(no, false));   // 與逐篇取消收藏相同:已計入的公開愛心會扣回
+    clearAllRecords({ favs, read: readSet, todo: todoSet });
+    reactions.forgetAll();
+    shelfTab = 'fav';
+    afterMark();
+    openTool(R.clearedHTML());
+  };
+  setTimeout(() => inp.focus(), 50);
+}
+// 另一台裝置用 ?s=<匯出字串> 打開本站:自動跳出匯入預覽(只預覽,確認後才寫入)
+function applyImportParam() {
+  if (!new RegExp('[?&]' + IMPORT_PARAM + '=').test(location.search)) return;
+  shelfImport(extractPayload(location.href));
+}
 
 // ---- 連結回報 ----
 function toggleReport(id) { const b = $(id); if (b) b.classList.toggle('open'); }
@@ -274,13 +399,13 @@ if (D.updated) { $('updatedNote').textContent = '🗺️ 星圖更新:' + D.upda
 if (D.synced) { $('syncedNote').innerHTML = '📡 訊號同步:' + D.synced + ' <span title="每天 08:31・21:01 自動更新&#10;안유진 08/31 · 장원영 09/01 🎂" style="cursor:help">🎂</span>'; }
 
 // 詳情 / 書卡 HTML 字串裡的 inline onclick 會呼叫這些函式,所以要掛到 window(ES module 內的函式不是全域)
-Object.assign(window, { toggleFav, toggleTodo, toggleRead, setShelfTab, filterByTag, filterName, openByNo, closeDetail, navDetail, toggleReport, pickReason, sendReport });
+Object.assign(window, { toggleFav, toggleTodo, toggleRead, setShelfTab, filterByTag, filterName, openByNo, closeDetail, navDetail, toggleReport, pickReason, sendReport, shelfExport, shelfImport, shelfClear });
 
 // ---- 啟動 ----
 R.buildPanel($('panel'), D.facets, {
   onTag: (key, val) => { cycleTag(sel, key, val); render(); },
   onMode: (key) => { toggleMode(modes, key); render(); },
 });
-renderAnn(); renderLatest(); renderStatus(); renderHot(); renderStats(); loadLiveStats(); reactions.loadCounts(); updateShelfBtn(); applyShareHash(); render(); updateAllSnav();
+renderAnn(); renderLatest(); renderStatus(); renderHot(); renderStats(); loadLiveStats(); reactions.loadCounts(); updateShelfBtn(); applyShareHash(); render(); updateAllSnav(); applyImportParam();
 // PWA:註冊 service worker(可加到主畫面、離線可看)
 if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {})); }

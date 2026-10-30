@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """一鍵更新 ②:把 fetch_data.py 產出的 CSV / article_links.json 套上 facets_def 分面定義,
-   輸出 data.js 與 index.html(樣板注入資料與簡繁對照表),並把 src/、styles/、vendor/ 與 stats.html(統計星圖)一起複製到輸出資料夾。
+   輸出 data.js 與 index.html(樣板注入資料與簡繁對照表),並把 src/、styles/、vendor/(Chart.js、lz-string、qrcode)與 stats.html(統計星圖)一起複製到輸出資料夾。
    只用標準庫。所有步驟都是函式,pytest 可以用 fixture 資料夾直接呼叫 build_data() / write_site()。"""
 import csv, glob, io, json, os, re, shutil
 from collections import Counter, OrderedDict
@@ -357,7 +357,7 @@ def render_index(tpl, DATA, stmap):
     tpl = tpl.replace('__STMAP_T__', stmap[0]).replace('__STMAP_S__', stmap[1])
     return tpl.replace('/*__DATA__*/', data_decl(DATA))
 
-STATIC_DIRS = ('src', 'styles', 'vendor')   # 前端程式、樣式、第三方庫(Chart.js),源頭在倉庫根目錄,建置時一起複製到輸出資料夾
+STATIC_DIRS = ('src', 'styles', 'vendor')   # 前端程式、樣式、第三方單檔(vendor/:Chart.js 統計星圖、lz-string 與 qrcode 書架匯出),源頭在倉庫根目錄,建置時一起複製到輸出資料夾
 STATIC_FILES = ('stats.html',)              # 不經樣板注入的靜態頁(統計星圖讀 data.js),同樣要跟著複製
 
 def copy_static(repo_root, out_dir):
@@ -449,6 +449,10 @@ def self_check(tpl, H, out_dir):
         _warn.append('輸出資料夾缺少 stats.html(首頁頁尾「📊 統計星圖」會 404)')
     if not os.path.isfile(os.path.join(out_dir, 'vendor', 'chart.umd.js')):
         _warn.append('輸出資料夾缺少 vendor/chart.umd.js(統計星圖畫不出圖)')
+    # 7) 書架匯出 / 匯入:壓縮與 QR code 單檔(index.html 用傳統 <script> 載入,缺了匯出按鈕會報錯)
+    for _f, _why in (('lz-string.min.js', '書架匯出 / 匯入會失效'), ('qrcode.js', '匯出 QR code 畫不出來')):
+        if not os.path.isfile(os.path.join(out_dir, 'vendor', _f)):
+            _warn.append('輸出資料夾缺少 vendor/%s(%s)' % (_f, _why))
     return _warn
 
 def main():
