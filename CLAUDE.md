@@ -179,7 +179,8 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
   核心是純函式 `parse(code, final_url, html, url)`,pytest 用 `tests/fixtures/html/` 的樣本直接測。`author_name` 是頁面上解析到的
   作者**目前顯示名**(Postype 取 ld+json author.name;Lofter 取 og:site_name / `<title>` 博客名;AO3 取 byline 的 pseud;
   AFF 取作者連結文字),解析不到就 None,不猜。
-- **2026-10-30 用 `probe.py` 實測(雲端 / GitHub Actions 這類海外 IP)**:Postype 正常 200 + ld+json、已刪 / 不存在都 404,可靠;
+- **2026-10-30 用 `probe.py` 實測(雲端 / GitHub Actions 這類海外 IP)**:Postype 單篇(`/post/`)正常 200 + ld+json、已刪 / 不存在都 404,可靠;
+  Postype **系列頁(`/series/`)文全刪後仍 200**,要看標頭「총 N화」:N = 0 → deleted(`series_empty`)、N > 0 → ok、找不到 → unknown;
   **Lofter 一律 302 → www.lofter.com/front/login(登入牆)、AO3 一律 418 Cloudflare「Request temporarily denied」、
   AFF 一律 403 Cloudflare「Just a moment」** → 這三個平台的 checker 會回 `login_required` / `unknown`(`blocked=True`),
   `check_links.py` 看到某平台前 3 筆全被擋就略過該平台其餘連結,**不會把任何連結標成已刪**。它們的 deleted 規則依已知行為寫成、

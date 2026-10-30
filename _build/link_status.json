@@ -1,30 +1,15 @@
 {
 "__meta__": {
-"updated": "2026-10-30T20:09:25+08:00",
+"updated": "2026-10-30T21:14:15+08:00",
 "date": "2026-10-30",
 "platforms": {
-"aff": {
-"checked": 3,
-"blocked": true,
-"skipped": 601
-},
-"ao3": {
-"checked": 3,
-"blocked": true,
-"skipped": 32
-},
-"lofter": {
-"checked": 3,
-"blocked": true,
-"skipped": 1308
-},
 "postype": {
-"checked": 522,
+"checked": 18,
 "blocked": false,
 "skipped": 0
 }
 },
-"runs": 1
+"runs": 2
 },
 "https://archiveofourown.org/works/61486015/chapters/157181140": {
 "last": "2026-10-30",
@@ -139,10 +124,10 @@
 "https://www.postype.com/@03ppiyak04/series/1197108": {
 "last": "2026-10-30",
 "code": 200,
-"reason": "nickname",
+"reason": "series_empty",
 "first": "2026-10-30",
 "streak": 1,
-"status": "ok",
+"status": "deleted",
 "counted": "2026-10-30",
 "author_name": "🐥",
 "platform": "postype"
@@ -1409,10 +1394,10 @@
 "https://www.postype.com/@golae0831/series/1176824": {
 "last": "2026-10-30",
 "code": 200,
-"reason": "nickname",
+"reason": "series_empty",
 "first": "2026-10-30",
 "streak": 1,
-"status": "ok",
+"status": "deleted",
 "counted": "2026-10-30",
 "author_name": "고래",
 "platform": "postype"
@@ -1420,10 +1405,10 @@
 "https://www.postype.com/@golae0831/series/1176836": {
 "last": "2026-10-30",
 "code": 200,
-"reason": "nickname",
+"reason": "series_empty",
 "first": "2026-10-30",
 "streak": 1,
-"status": "ok",
+"status": "deleted",
 "counted": "2026-10-30",
 "author_name": "고래",
 "platform": "postype"
@@ -2120,7 +2105,7 @@
 "https://www.postype.com/@nuttylife/series/1327783": {
 "last": "2026-10-30",
 "code": 200,
-"reason": "nickname",
+"reason": "series_29",
 "first": "2026-10-30",
 "streak": 1,
 "status": "ok",
@@ -2299,7 +2284,7 @@
 "https://www.postype.com/@parkpro/series/1176394": {
 "last": "2026-10-30",
 "code": 200,
-"reason": "nickname",
+"reason": "series_10",
 "first": "2026-10-30",
 "streak": 1,
 "status": "ok",
@@ -2310,7 +2295,7 @@
 "https://www.postype.com/@parkpro/series/1176398": {
 "last": "2026-10-30",
 "code": 200,
-"reason": "nickname",
+"reason": "series_5",
 "first": "2026-10-30",
 "streak": 1,
 "status": "ok",
@@ -2321,7 +2306,7 @@
 "https://www.postype.com/@parkpro/series/1176401": {
 "last": "2026-10-30",
 "code": 200,
-"reason": "nickname",
+"reason": "series_7",
 "first": "2026-10-30",
 "streak": 1,
 "status": "ok",
@@ -2332,7 +2317,7 @@
 "https://www.postype.com/@parkpro/series/1176402": {
 "last": "2026-10-30",
 "code": 200,
-"reason": "nickname",
+"reason": "series_4",
 "first": "2026-10-30",
 "streak": 1,
 "status": "ok",
@@ -2343,7 +2328,7 @@
 "https://www.postype.com/@parkpro/series/1176712": {
 "last": "2026-10-30",
 "code": 200,
-"reason": "nickname",
+"reason": "series_6",
 "first": "2026-10-30",
 "streak": 1,
 "status": "ok",
@@ -3224,7 +3209,7 @@
 "https://www.postype.com/@untitle009/series/1543488": {
 "last": "2026-10-30",
 "code": 200,
-"reason": "nickname",
+"reason": "series_9",
 "first": "2026-10-30",
 "streak": 1,
 "status": "ok",
@@ -4428,7 +4413,7 @@
 "https://www.postype.com/@yoominzzin/series/642234": {
 "last": "2026-10-30",
 "code": 200,
-"reason": "nickname",
+"reason": "series_4",
 "first": "2026-10-30",
 "streak": 1,
 "status": "ok",
@@ -4859,7 +4844,7 @@
 "https://www.postype.com/@yuwon8318/series/1201275": {
 "last": "2026-10-30",
 "code": 200,
-"reason": "nickname",
+"reason": "series_12",
 "first": "2026-10-30",
 "streak": 1,
 "status": "ok",
@@ -4870,7 +4855,7 @@
 "https://www.postype.com/@yuwon8318/series/1244970": {
 "last": "2026-10-30",
 "code": 200,
-"reason": "nickname",
+"reason": "series_10",
 "first": "2026-10-30",
 "streak": 1,
 "status": "ok",
@@ -4881,7 +4866,7 @@
 "https://www.postype.com/@yuwon8318/series/1280700": {
 "last": "2026-10-30",
 "code": 200,
-"reason": "nickname",
+"reason": "series_11",
 "first": "2026-10-30",
 "streak": 1,
 "status": "ok",
@@ -4892,7 +4877,7 @@
 "https://www.postype.com/@yuwon8318/series/1292548": {
 "last": "2026-10-30",
 "code": 200,
-"reason": "nickname",
+"reason": "series_8",
 "first": "2026-10-30",
 "streak": 1,
 "status": "ok",

@@ -49,6 +49,34 @@ def test_postype_403_is_unknown_blocked():
 def test_postype_200_without_markers_is_unknown():
     assert postype.parse(200, PT, load('postype_404.html'), PT)['status'] == 'unknown'
 
+# 系列頁(/series/):裁自 No.1000(空系列)、No.1009(正常系列)、No.1020(正常單篇)的實際頁面
+SER = 'https://www.postype.com/@03ppiyak04/series/1197108'
+def test_postype_is_series_url():
+    assert postype.is_series_url(SER) and not postype.is_series_url(PT)
+
+def test_postype_empty_series_is_deleted_even_with_200():
+    r = postype.parse(200, SER, load('postype_series_empty.html'), SER)
+    assert r['status'] == 'deleted' and r['reason'] == 'series_empty' and r['author_name'] is None
+
+def test_postype_live_series_is_ok_with_nickname():
+    live = 'https://www.postype.com/@parkpro/series/1176394'
+    r = postype.parse(200, live, load('postype_series_live.html'), live)
+    assert r['status'] == 'ok' and r['reason'] == 'series_10' and r['author_name'] == '박프로'
+
+def test_postype_series_without_count_is_unknown():
+    assert postype.parse(200, SER, load('postype_ok.html'), SER)['reason'] == 'series_no_count'
+    assert postype.parse(404, SER, '', SER)['status'] == 'deleted'
+    assert postype.parse(200, 'https://www.postype.com/@03ppiyak04', '', SER)['reason'] == 'redirect_home'
+
+def test_postype_series_count():
+    assert postype.series_count('<p>총 0화</p>') == 0 and postype.series_count('<p>총 12화</p>') == 12
+    assert postype.series_count('<p>nothing</p>') is None
+
+def test_postype_live_post_fixture_from_no1020():
+    live = 'https://www.postype.com/@mil-ky/post/11607115'
+    r = postype.parse(200, live, load('postype_post_live.html'), live)
+    assert r['status'] == 'ok' and r['author_name'] == '우유' and r['author_url'] == 'https://www.postype.com/profile/@tvyw3c'
+
 # ---- Lofter ----
 LF = 'https://testblog.lofter.com/post/1a2b3c4d_5e6f7a8b9'
 def test_lofter_login_wall_is_login_required_and_blocked():
