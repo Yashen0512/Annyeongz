@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """一鍵更新 ①:從 Notion API 抓主表/作者/公告 + 每篇閱讀連結,
    產出 build_site.py 需要的檔案(CSV + article_links.json)。
+   article_links.json 另帶兩個保留鍵:__edited__(每篇抓連結當下的編輯時間,增量用)、
+   __blocks__(每篇頁面 ID 與每個連結所在的 block ID / rich_text 位置,給 notion_writeback.py 標 ❌ 用)。
    token:NOTION_TOKEN 環境變數 → notion_token.txt → 都沒有就不帶 header(雲端環境由代理注入)。需把三個資料庫都分享給整合。"""
 import csv, glob, io, json, os, re, time, urllib.request, urllib.error
 from datetime import datetime, timezone, timedelta
@@ -111,6 +113,19 @@ def fmt_date(iso):
     d = datetime.fromisoformat(iso[:10])
     return '%d年%d月%d日' % (d.year, d.month, d.day)
 
+def block_links(blk):
+    """一個 block → [[label, url, idx], ...]:label 是整個 block 的文字(含 ❌ 才會被 build_site 判成失效)、
+    idx 是該連結在 rich_text 裡的位置(bookmark / embed / link_preview 沒有 rich_text → -1)。"""
+    t = blk['type']; bd = blk.get(t, {}); out = []
+    if isinstance(bd, dict):
+        rts = bd.get('rich_text', [])
+        label = ''.join(x.get('plain_text', '') for x in rts).strip()
+        for i, x in enumerate(rts):
+            if x.get('href'): out.append([label or x['href'], x['href'], i])
+        if t in ('bookmark', 'embed', 'link_preview') and bd.get('url'):
+            out.append([bd['url'], bd['url'], -1])
+    return out
+
 def atomic_write_csv(path, header, rows):
     tmp = path + '.tmp'
     with io.open(tmp, 'w', encoding='utf-8-sig', newline='') as fh:
@@ -145,8 +160,10 @@ def main():
         name = p_title(p(pg, '作者名稱'))
         if not name: continue
         id2name[pg['id'].replace('-', '')] = name
-        author_rows.append([name] + [p_url(p(pg, col)) for _, col in PLAT] + ['Y' if is_red(pg) else '', pg['id'].replace('-', '')])
-    author_header = ['作者名稱'] + [col for _, col in PLAT] + ['紅標', '頁面ID']   # 頁面ID = Notion 作者頁 ID(穩定鍵,改名也不變)
+        author_rows.append([name] + [p_url(p(pg, col)) for _, col in PLAT]
+                           + ['Y' if is_red(pg) else '', pg['id'].replace('-', ''), p_multi(p(pg, '曾用名'))])
+    # 頁面ID = Notion 作者頁 ID(穩定鍵,改名也不變);曾用名 = notion_writeback.py 同步改名時累積的舊名(multi_select,', ' 分隔)
+    author_header = ['作者名稱'] + [col for _, col in PLAT] + ['紅標', '頁面ID', '曾用名']
     os.makedirs('_authors', exist_ok=True)
     for old in glob.glob('_authors/*_all.csv'): os.remove(old)
     atomic_write_csv('_authors/authors_all.csv', author_header, author_rows)
@@ -205,22 +222,12 @@ def main():
     # ---- 每篇閱讀連結(增量:新 No、或頁面編輯時間變過的 No 重抓)----
     # 快取內含保留鍵 __edited__:{no: 抓連結當下的頁面 last_edited_time}。
     # 頁面被編輯(補連結必然觸發)→ 重抓該篇,解決「舊文補連結永遠抓不到」的盲點。
-    def block_links(blk):
-        t = blk['type']; bd = blk.get(t, {}); out = []
-        if isinstance(bd, dict):
-            rts = bd.get('rich_text', [])
-            label = ''.join(x.get('plain_text', '') for x in rts).strip()
-            for x in rts:
-                if x.get('href'): out.append([label or x['href'], x['href']])
-            if t in ('bookmark', 'embed', 'link_preview') and bd.get('url'):
-                out.append([bd['url'], bd['url']])
-        return out
-
     links = {}
     if os.path.exists('article_links.json'):
         try: links = json.load(io.open('article_links.json', encoding='utf-8'))
         except Exception: links = {}
     _led = links.get('__edited__') if isinstance(links.get('__edited__'), dict) else {}
+    _blk = links.get('__blocks__') if isinstance(links.get('__blocks__'), dict) else {}
     new = refetched = 0
     for pg in pages:
         no = read_no(pg)
@@ -228,18 +235,22 @@ def main():
         title = p_title(p(pg, '文章名稱'))
         ed = pg.get('last_edited_time', '')
         cached = no in links and title in links[no]
-        if cached and _led.get(no) == ed: continue   # 抓過且頁面沒再編輯過,跳過
+        if cached and _led.get(no) == ed and no in _blk: continue   # 抓過、頁面沒再編輯過、也有 block 位置 → 跳過
         ch = api('GET', 'https://api.notion.com/v1/blocks/%s/children?page_size=100' % pg['id'])
-        seen, lst = set(), []
+        seen, lst, pos = set(), [], {}
         for blk in ch.get('results', []):
-            for lab, url in block_links(blk):
-                if url not in seen: seen.add(url); lst.append([lab, url])
+            for lab, url, idx in block_links(blk):
+                if url not in seen:
+                    seen.add(url); lst.append([lab, url])
+                    pos[url] = [blk['id'].replace('-', ''), idx]
         links.setdefault(no, {})[title] = lst
         _led[no] = ed
+        _blk[no] = {'page': pg['id'].replace('-', ''), 'links': pos}
         if cached: refetched += 1
         else: new += 1
         time.sleep(0.34)
     links['__edited__'] = _led
+    links['__blocks__'] = _blk
     # 把「@ 提及站內另一篇」的 Notion 連結 → 站內跳轉 annyeongz:<No>(讀者才不會被導去 Notion)
     id2no = {pg['id'].replace('-', ''): read_no(pg) for pg in pages}
     _NID = re.compile(r'[0-9a-f]{32}')
@@ -251,7 +262,7 @@ def main():
         return url
     _ref = 0
     for _no in links:
-        if _no == '__edited__': continue
+        if _no.startswith('__'): continue   # 保留鍵(__edited__ / __blocks__)
         for _t in links[_no]:
             new_list = []
             for lab, u in links[_no][_t]:
@@ -262,7 +273,7 @@ def main():
 
     io.open('article_links.json', 'w', encoding='utf-8').write(json.dumps(links, ensure_ascii=False))
     print('  連結:新增', new, '篇、重抓(頁面有編輯)', refetched, '篇(總',
-          sum(len(v) for k, v in links.items() if k != '__edited__'), '筆標題);站內互連改寫', _ref, '筆')
+          sum(len(v) for k, v in links.items() if not k.startswith('__')), '筆標題);站內互連改寫', _ref, '筆')
 
     # ---- GoatCounter 瀏覽統計(可選;有 token 才抓)----
     GC_TOKEN = (os.environ.get('GOATCOUNTER_TOKEN') or
