@@ -1,0 +1,14 @@
+{
+  "name": "annyeongz",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Annyeongz 平行宇宙 — 安員同人文索引站(GitHub Pages 靜態站;package.json 只為了跑測試,部署不需要 build)",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "serve": "python3 -m http.server 8000"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.5"
+  }
+}

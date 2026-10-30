@@ -1,0 +1,158 @@
+/* Annyeongz 平行宇宙 — 主內容區:輪播小卡、工具列、書架、條件列、作者頁標頭、書卡、閱讀連結、分頁、頁尾統計 */
+/* main */
+.main{flex:1;min-width:0}
+.sech{font-size:17px;margin:4px 0 12px;display:flex;align-items:center;gap:8px}
+/* latest strip */
+.strip{display:flex;gap:12px;overflow-x:auto;margin-bottom:22px;scroll-behavior:smooth;
+       scrollbar-width:none}
+.strip::-webkit-scrollbar{display:none}
+.striprow{position:relative}
+.snav{position:absolute;top:50%;transform:translateY(-50%);z-index:6;width:38px;height:38px;
+       border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--ink);
+       font-size:22px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;
+       opacity:0;transition:opacity .15s;box-shadow:0 2px 10px rgba(0,0,0,.2)}
+.striprow:hover .snav{opacity:.95}
+.snav.l{left:-8px}.snav.r{right:-8px}
+.snav.hide{display:none}
+.snav:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+#latestSec,#statusSec{margin-bottom:6px}
+#hotSec{margin-bottom:22px}
+#hot{gap:8px;margin-top:4px}
+#hot .opt{padding:5px 12px;font-size:13px}
+.scard{flex:0 0 190px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 13px;cursor:pointer}
+.scard:hover{border-color:var(--accent)}
+.scard .st{font-weight:600;font-size:14px;margin-bottom:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.scard .sm{font-size:11px;color:var(--muted)}
+/* toolbar */
+.toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.ctl{padding:7px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);cursor:pointer;font-size:13px}
+.ctl.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:700}
+.ctl.chk{display:inline-flex;align-items:center;gap:5px}
+.ctl.chk input{cursor:pointer;margin:0}
+/* 我的書架:收藏愛心 + 已讀 */
+.fav-btn{position:absolute;top:8px;right:10px;border:none;background:transparent;cursor:pointer;
+  font-size:20px;line-height:1;color:var(--muted);padding:2px;z-index:2}
+.fav-btn.on{color:var(--accent)}
+/* 公開愛心數 / 查看數(0 不顯示) */
+.fav-btn{display:flex;flex-direction:column;align-items:center}
+.fav-btn .fc{font-size:10px;line-height:1.1;font-weight:600;margin-top:1px;font-variant-numeric:tabular-nums}
+.viewline{font-size:13px;color:var(--muted);margin:-4px 0 12px}
+.wh-toast{margin:0 0 10px;padding:8px 12px;border-radius:10px;background:var(--accent-soft);color:var(--accent);
+  font-size:13px;font-weight:600;text-align:center;transition:opacity .5s}
+.wh-toast.out{opacity:0}
+@media (prefers-reduced-motion:reduce){.wh-toast{transition:none}}
+.readmark{font-size:11px;color:var(--he);font-weight:700;margin-left:4px;white-space:nowrap}
+.todomark{font-size:12px;margin-left:4px}
+/* 書架分頁:已收藏/待閱讀/已讀 */
+.shelf-tabs{gap:8px;flex-wrap:wrap;margin:2px 0 10px}
+.shelf-tabs .sc{font-size:12px;opacity:.75;margin-left:2px;font-variant-numeric:tabular-nums}
+.detail-actions{display:flex;gap:8px;margin:4px 0 12px}
+.detail-actions .ctl{font-size:13px}
+/* 類似的文 */
+.related{display:flex;flex-direction:column;gap:7px}
+.relitem{cursor:pointer;color:var(--ink);font-size:14px;line-height:1.4}
+.relitem:hover{color:var(--accent)}
+.relitem .rno{color:var(--muted);font-size:12px;margin-left:4px}
+.relitem .rshare{color:var(--muted);font-size:12px;margin-left:6px}
+.count{font-size:13px;color:var(--muted);margin-left:auto}
+.hint{font-size:12px;color:var(--muted);margin:2px 0 10px}
+.sel-bar{background:var(--accent-soft);border:1px solid var(--accent);border-radius:10px;padding:8px 10px;margin-bottom:12px;font-size:13px;display:none;flex-wrap:wrap;gap:6px;align-items:center}
+/* 作者專頁標頭 */
+.authorhead{background:var(--accent-soft);border:1px solid var(--accent);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+.ah-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.ah-name{font-size:18px;font-weight:800;color:var(--accent)}
+.ah-cnt{color:var(--muted);font-size:14px}
+.ah-clear{margin-left:auto;border:1px solid var(--accent);background:var(--card);color:var(--accent);border-radius:999px;padding:6px 13px;cursor:pointer;font-size:13px}
+.ah-links{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px}
+.aname{cursor:pointer;border-bottom:1px dashed var(--accent)}
+.aname:hover{color:var(--accent)}
+/* 紅標:原文已刪 / 作者已刪帳號 */
+.badge.dead{background:var(--exc-soft);color:var(--exc);border:1px solid var(--exc);font-weight:700}
+.deadauth{color:var(--exc);font-size:.82em;margin-left:3px}
+.deadnote{color:var(--exc);font-size:12px;margin-top:6px}
+/* 逐連結:有效排前、失效灰掉(仍可點);全部失效頂端出橫幅 */
+.deadbar{display:flex;gap:10px;align-items:flex-start;background:var(--exc-soft);border:1px solid var(--exc);border-radius:12px;padding:10px 14px;margin:0 0 12px;color:var(--exc)}
+.deadbar .ic{font-size:18px;line-height:1.4}
+.deadbar b{display:block;font-size:15px}
+.deadbar span{font-size:13px}
+.links{display:flex;flex-direction:column;gap:10px}
+.lrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.lrow .plat{margin:0}
+.plat.dead{border:1px dashed var(--muted);color:var(--muted);background:transparent}
+.lstat{margin-left:auto;font-size:12px;color:var(--muted);padding:2px 8px;border:1px solid var(--line);border-radius:999px}
+.lnote{flex-basis:100%;font-size:13px;color:var(--muted);margin:-2px 0 0 4px}
+.lrep{margin-left:auto;font-size:13px;color:var(--muted);background:none;border:none;cursor:pointer;text-decoration:underline;padding:4px 6px}
+.lrep:hover{color:var(--accent)}
+.repbox{display:none;flex-basis:100%;margin:2px 0 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.repbox.open{display:block}
+.repbox .q{font-size:13px;margin-bottom:6px}
+.repbox .opts{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.fchip{display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--accent);color:var(--accent);border-radius:999px;padding:2px 10px;font-size:12px;cursor:pointer}
+.fchip:hover{background:var(--accent);color:#fff}
+.fchip.clr{border-color:var(--muted);color:var(--muted)}
+.fchip.clr:hover{background:var(--muted);color:#fff}
+/* book grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.card{position:relative;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer}
+.cst-done{border-left-color:var(--he)} .cst-ongoing{border-left-color:var(--be)} .cst-wip{border-left-color:var(--oe)}
+.cst-hiatus{border-left-color:var(--exc)} .cst-building{border-left-color:var(--muted)} .cst-irregular{border-left-color:var(--purp)}
+.card.dead{opacity:.55;border-left-color:var(--exc)}   /* 原文已刪:淡化褪色 + 紅左邊 */
+.card.dead:hover{opacity:.85}
+.sb-done{background:var(--he-bg);color:var(--he)} .sb-ongoing{background:var(--be-bg);color:var(--be)} .sb-wip{background:var(--oe-bg);color:var(--oe)}
+.sb-hiatus{background:var(--exc-soft);color:var(--exc)} .sb-irregular{background:var(--purp-bg);color:var(--purp)}
+.card:hover{border-color:var(--accent);box-shadow:0 2px 10px rgba(0,0,0,.04)}
+.card .t{font-size:15px;font-weight:600;margin-bottom:6px;padding-right:28px}
+.card .t .no{font-size:11px;color:var(--muted);font-weight:400}
+.badges{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px}
+.badge{font-size:11px;padding:1px 8px;border-radius:6px;background:var(--chip);color:var(--badgec)}
+.badge.he{background:var(--he-bg);color:var(--he)} .badge.be{background:var(--be-bg);color:var(--be)} .badge.oe{background:var(--oe-bg);color:var(--oe)}
+.badge.type{background:var(--type-bg);color:var(--typec)}
+.card .persona{font-size:12px;color:var(--persona);margin-bottom:6px}
+.card .persona.alias{display:flex;gap:4px;min-width:0}
+.card .persona.alias .al-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.card .persona.alias .al-n{flex:none;white-space:nowrap}
+.tg{display:flex;flex-wrap:wrap;gap:4px}
+.tg span{font-size:11px;background:var(--chip);border-radius:6px;padding:1px 7px;color:var(--badgec);cursor:pointer}
+.tg span:hover{background:var(--accent-soft);color:var(--accent)}
+/* 星際廣播:一排小卡(同新星誕生高度);置頂粉框 */
+#annSec{margin-bottom:6px}
+.ann-card .st{font-weight:400}
+.ann-card.pin{border-color:var(--accent);background:var(--accent-soft)}
+.ann-meta{font-size:13px;color:var(--muted);margin:-4px 0 12px}
+.ann-full{font-size:15px;line-height:1.8;white-space:pre-wrap;word-break:break-word}
+/* 詳情/公告視窗底部:上一篇・下一篇(固定在視窗底) */
+.dnav{position:sticky;bottom:-24px;margin:18px -26px -24px;padding:10px 26px;background:var(--card);
+      border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:8px}
+.dnav .ctl[disabled]{opacity:.4;cursor:default}
+.dnav .dpos{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.empty{text-align:center;color:var(--muted);padding:54px 20px;font-size:17px;line-height:2}
+.empty span{font-size:13px}
+#toTop{position:fixed;right:22px;bottom:22px;width:46px;height:46px;border-radius:50%;
+       border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:22px;cursor:pointer;
+       box-shadow:0 3px 12px rgba(0,0,0,.28);display:none;z-index:40;line-height:1}
+#toTop.show{display:flex;align-items:center;justify-content:center}
+/* 頁尾 + 瀏覽人次統計 widget */
+.site-footer{margin:8px auto 0;padding:22px 16px calc(env(safe-area-inset-bottom) + 28px);
+  max-width:1200px;border-top:1px solid var(--line);text-align:center}
+.counter-card{max-width:720px;margin:0 auto}
+.counter-card iframe{width:100%;border:0;display:block}
+.foot-note{margin-top:14px;color:var(--muted);font-size:13px}
+/* 自製瀏覽人次統計卡 */
+.stats-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;text-align:left}
+.stats-title{font-weight:700;color:var(--ink);margin-bottom:14px;display:flex;align-items:center;gap:6px}
+.stats-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:14px}
+.stat .sl{font-size:12px;color:var(--muted);white-space:nowrap}
+.stat .sv{font-size:22px;font-weight:800;color:var(--be);margin-top:2px}   /* 藍字(呼應舊版),隨黑白模式變深淺 */
+@media(max-width:560px){.stats-grid{grid-template-columns:repeat(3,1fr);gap:14px 10px}.stat .sv{font-size:20px}}
+@media(hover:hover){#toTop:hover{background:var(--accent);color:#fff;border-color:var(--accent)}}  /* 只在有滑鼠的裝置套 hover,避免手機點過殘留粉色 */
+.pager{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;align-items:center;margin:20px 0 6px}
+.pg{min-width:34px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);cursor:pointer;font-size:13px;text-align:center}
+.pg:hover{border-color:var(--accent)}
+.pg.cur{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.pg.dis{color:var(--muted);cursor:default;opacity:.5}
+.pg.dots{border:none;cursor:default;background:none}
+.pg-jump{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);margin-left:4px}
+.pg-jump input{width:54px;padding:6px 6px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font-size:13px;text-align:center;-moz-appearance:textfield}
+.pg-jump input::-webkit-outer-spin-button,.pg-jump input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.pg-jump input:focus{outline:none;border-color:var(--accent)}
+@media (max-width:860px){.pg-jump input{font-size:16px}}  /* iOS 輸入框 <16px 會自動放大畫面 */

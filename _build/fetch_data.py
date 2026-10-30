@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """一鍵更新 ①:從 Notion API 抓主表/作者/公告 + 每篇閱讀連結,
    產出 build_site.py 需要的檔案(CSV + article_links.json)。
-   token 從 notion_token.txt 讀。需把三個資料庫都分享給整合。"""
+   token:NOTION_TOKEN 環境變數 → notion_token.txt → 都沒有就不帶 header(雲端環境由代理注入)。需把三個資料庫都分享給整合。"""
 import csv, glob, io, json, os, re, time, urllib.request, urllib.error
 from datetime import datetime, timezone, timedelta
 
@@ -22,7 +22,14 @@ def _ssl_context():
 SSL_CTX = _ssl_context()
 
 NOTION_VER = '2022-06-28'
-TOKEN = (os.environ.get('NOTION_TOKEN') or io.open('notion_token.txt', encoding='utf-8').read()).strip()
+def resolve_token():
+    """NOTION_TOKEN 環境變數(GitHub Actions)→ notion_token.txt(本機)→ 都沒有回空字串:
+    不帶 Authorization header 直接送,交給雲端環境的網路代理注入。"""
+    t = (os.environ.get('NOTION_TOKEN') or '').strip()
+    if not t and os.path.exists('notion_token.txt'):
+        t = io.open('notion_token.txt', encoding='utf-8').read().strip()
+    return t
+TOKEN = resolve_token()
 MAIN_ID = '176a7213548080cda25dd9e1edd5b7a4'      # 主表(從匯出檔名得知)
 TZ = timezone(timedelta(hours=8))                  # 台北時間,對齊 Notion 顯示
 
@@ -32,7 +39,7 @@ def api(method, url, body=None):
     for attempt in range(8):
         try:
             req = urllib.request.Request(url, data=data, method=method)
-            req.add_header('Authorization', 'Bearer ' + TOKEN)
+            if TOKEN: req.add_header('Authorization', 'Bearer ' + TOKEN)   # 沒 token = 讓代理注入
             req.add_header('Notion-Version', NOTION_VER)
             req.add_header('Content-Type', 'application/json')
             with urllib.request.urlopen(req, context=SSL_CTX, timeout=60) as resp:
@@ -111,216 +118,222 @@ def atomic_write_csv(path, header, rows):
         for r in rows: w.writerow(r)
     os.replace(tmp, path)
 
-# ---- 找三個資料庫 ----
-print('搜尋資料庫…')
-dbs = api('POST', 'https://api.notion.com/v1/search',
-          {'filter': {'property': 'object', 'value': 'database'}, 'page_size': 50})['results']
-def find_db(pred):
-    for db in dbs:
-        if pred(db.get('properties', {})): return db['id']
-    return None
-authors_db = find_db(lambda pr: '作者名稱' in pr)
-announce_db = find_db(lambda pr: '內容' in pr and '日期' in pr and '置頂' in pr)
-if not any(db['id'].replace('-', '') == MAIN_ID for db in dbs):
-    raise SystemExit('找不到主表(整合沒讀到 %s)。請確認 Notion 整合已連到主資料庫。' % MAIN_ID)
-if not authors_db:
-    raise SystemExit('找不到「作者/譯者資料庫」。請到該資料庫 ••• → 連結 → 加入同一個整合,再重跑。')
+def main():
+    """抓三個資料庫 + 每篇連結 + 統計 + 愛心備份(需要網路;pytest 只 import 上面的純函式)。"""
+    # ---- 找三個資料庫 ----
+    print('搜尋資料庫…')
+    dbs = api('POST', 'https://api.notion.com/v1/search',
+              {'filter': {'property': 'object', 'value': 'database'}, 'page_size': 50})['results']
+    def find_db(pred):
+        for db in dbs:
+            if pred(db.get('properties', {})): return db['id']
+        return None
+    authors_db = find_db(lambda pr: '作者名稱' in pr)
+    announce_db = find_db(lambda pr: '內容' in pr and '日期' in pr and '置頂' in pr)
+    if not any(db['id'].replace('-', '') == MAIN_ID for db in dbs):
+        raise SystemExit('找不到主表(整合沒讀到 %s)。請確認 Notion 整合已連到主資料庫。' % MAIN_ID)
+    if not authors_db:
+        raise SystemExit('找不到「作者/譯者資料庫」。請到該資料庫 ••• → 連結 → 加入同一個整合,再重跑。')
 
-# ---- 作者庫:id→名字、平台連結 ----
-print('抓作者庫…')
-PLAT = [('AF', '作者平台(AF)'), ('AO3', '作者平台(AO3)'), ('LFT', '作者平台(LFT)'),
-        ('LFT2', '作者平台(LFT2)'), ('PT', '作者平台(PT)'), ('WB', '作者平台(WB)'),
-        ('X', '作者平台(X)'), ('其他', '作者平台(其他)')]
-id2name, author_rows = {}, []
-for pg in query_all(authors_db):
-    name = p_title(p(pg, '作者名稱'))
-    if not name: continue
-    id2name[pg['id'].replace('-', '')] = name
-    author_rows.append([name] + [p_url(p(pg, col)) for _, col in PLAT] + ['Y' if is_red(pg) else ''])
-author_header = ['作者名稱'] + [col for _, col in PLAT] + ['紅標']
-os.makedirs('_authors', exist_ok=True)
-for old in glob.glob('_authors/*_all.csv'): os.remove(old)
-atomic_write_csv('_authors/authors_all.csv', author_header, author_rows)
-print('  作者:', len(author_rows), '位')
+    # ---- 作者庫:id→名字、平台連結 ----
+    print('抓作者庫…')
+    PLAT = [('AF', '作者平台(AF)'), ('AO3', '作者平台(AO3)'), ('LFT', '作者平台(LFT)'),
+            ('LFT2', '作者平台(LFT2)'), ('PT', '作者平台(PT)'), ('WB', '作者平台(WB)'),
+            ('X', '作者平台(X)'), ('其他', '作者平台(其他)')]
+    id2name, author_rows = {}, []
+    for pg in query_all(authors_db):
+        name = p_title(p(pg, '作者名稱'))
+        if not name: continue
+        id2name[pg['id'].replace('-', '')] = name
+        author_rows.append([name] + [p_url(p(pg, col)) for _, col in PLAT] + ['Y' if is_red(pg) else '', pg['id'].replace('-', '')])
+    author_header = ['作者名稱'] + [col for _, col in PLAT] + ['紅標', '頁面ID']   # 頁面ID = Notion 作者頁 ID(穩定鍵,改名也不變)
+    os.makedirs('_authors', exist_ok=True)
+    for old in glob.glob('_authors/*_all.csv'): os.remove(old)
+    atomic_write_csv('_authors/authors_all.csv', author_header, author_rows)
+    print('  作者:', len(author_rows), '位')
 
-# ---- 主表 ----
-print('抓主表…')
-def author_cell(ids):
-    parts = []
-    for aid in ids:
-        nm = id2name.get(aid.replace('-', ''))
-        if nm: parts.append('%s (https://www.notion.so/%s)' % (nm, aid.replace('-', '')))
-    return ', '.join(parts)
+    # ---- 主表 ----
+    print('抓主表…')
+    def author_cell(ids):
+        parts = []
+        for aid in ids:
+            nm = id2name.get(aid.replace('-', ''))
+            if nm: parts.append('%s (https://www.notion.so/%s)' % (nm, aid.replace('-', '')))
+        return ', '.join(parts)
 
-# 各分面欄(直接填在 Notion 分面欄的值,新文用這些;與「文章標籤」合併)
-FACET_COLS = ['CP配對', '氛圍', '情感梗', '背景設定', '類型世界觀', '題材梗', '分級', '形式/性質',
-              '命定站賀文合集', '계간윶녕 : 𝐋𝐎𝐕𝐄 𝐆𝐀𝐌𝐄', '1st鳳梨汁推薦']
-MAIN_HEADER = ['文章名稱', 'No', '上次編輯時間', '人設(安、員)', '作者/譯者資料庫',
-               '建立時間', '文章標籤', '文章狀態', '文章篇幅', '文章類型', '結局'] + FACET_COLS + ['紅標', '收錄篇名']
-main_rows = []
-pages = query_all(MAIN_ID)
-for pg in pages:
-    main_rows.append([
-        p_title(p(pg, '文章名稱')),
-        read_no(pg),
-        fmt_dt(pg.get('last_edited_time', '')),
-        p_rich(p(pg, '人設(安、員)')),
-        author_cell(p_relation(p(pg, '作者/譯者資料庫'))),
-        fmt_dt(pg.get('created_time', '')),
-        p_multi(p(pg, '文章標籤')),
-        p_select(p(pg, '文章狀態')),
-        p_select(p(pg, '文章篇幅')),
-        p_select(p(pg, '文章類型')),
-        p_select(p(pg, '結局')),
-    ] + [p_multi(p(pg, c)) for c in FACET_COLS] + ['Y' if is_red(pg) else '', p_rich(p(pg, '收錄篇名'))])
-for old in glob.glob('*%s_all.csv' % MAIN_ID): os.remove(old)
-atomic_write_csv('Annyeongz_%s_all.csv' % MAIN_ID, MAIN_HEADER, main_rows)
-print('  文章:', len(main_rows), '篇')
+    # 各分面欄(直接填在 Notion 分面欄的值,新文用這些;與「文章標籤」合併)
+    FACET_COLS = ['CP配對', '氛圍', '情感梗', '背景設定', '類型世界觀', '題材梗', '分級', '形式/性質',
+                  '命定站賀文合集', '계간윶녕 : 𝐋𝐎𝐕𝐄 𝐆𝐀𝐌𝐄', '1st鳳梨汁推薦']
+    MAIN_HEADER = ['文章名稱', 'No', '上次編輯時間', '人設(安、員)', '作者/譯者資料庫',
+                   '建立時間', '文章標籤', '文章狀態', '文章篇幅', '文章類型', '結局'] + FACET_COLS + ['紅標', '收錄篇名']
+    main_rows = []
+    pages = query_all(MAIN_ID)
+    for pg in pages:
+        main_rows.append([
+            p_title(p(pg, '文章名稱')),
+            read_no(pg),
+            fmt_dt(pg.get('last_edited_time', '')),
+            p_rich(p(pg, '人設(安、員)')),
+            author_cell(p_relation(p(pg, '作者/譯者資料庫'))),
+            fmt_dt(pg.get('created_time', '')),
+            p_multi(p(pg, '文章標籤')),
+            p_select(p(pg, '文章狀態')),
+            p_select(p(pg, '文章篇幅')),
+            p_select(p(pg, '文章類型')),
+            p_select(p(pg, '結局')),
+        ] + [p_multi(p(pg, c)) for c in FACET_COLS] + ['Y' if is_red(pg) else '', p_rich(p(pg, '收錄篇名'))])
+    for old in glob.glob('*%s_all.csv' % MAIN_ID): os.remove(old)
+    atomic_write_csv('Annyeongz_%s_all.csv' % MAIN_ID, MAIN_HEADER, main_rows)
+    print('  文章:', len(main_rows), '篇')
 
-# ---- 公告(可選) ----
-if announce_db:
-    print('抓公告…')
-    arows = []
-    for pg in query_all(announce_db):
-        content = p_rich(p(pg, '內容')) or p_title(p(pg, '內容'))
-        if not content.strip(): continue
-        arows.append([content, fmt_date(p_date_start(p(pg, '日期'))),
-                      'Yes' if p_checkbox(p(pg, '置頂')) else 'No'])
-    os.makedirs('_announce', exist_ok=True)
-    for old in glob.glob('_announce/*_all.csv'): os.remove(old)
-    atomic_write_csv('_announce/announce_all.csv', ['內容', '日期', '置頂'], arows)
-    print('  公告:', len(arows), '則')
-else:
-    print('  (找不到公告庫,沿用現有公告檔;要自動更新公告請把公告庫也分享給整合)')
+    # ---- 公告(可選) ----
+    if announce_db:
+        print('抓公告…')
+        arows = []
+        for pg in query_all(announce_db):
+            content = p_rich(p(pg, '內容')) or p_title(p(pg, '內容'))
+            if not content.strip(): continue
+            arows.append([content, fmt_date(p_date_start(p(pg, '日期'))),
+                          'Yes' if p_checkbox(p(pg, '置頂')) else 'No'])
+        os.makedirs('_announce', exist_ok=True)
+        for old in glob.glob('_announce/*_all.csv'): os.remove(old)
+        atomic_write_csv('_announce/announce_all.csv', ['內容', '日期', '置頂'], arows)
+        print('  公告:', len(arows), '則')
+    else:
+        print('  (找不到公告庫,沿用現有公告檔;要自動更新公告請把公告庫也分享給整合)')
 
-# ---- 每篇閱讀連結(增量:新 No、或頁面編輯時間變過的 No 重抓)----
-# 快取內含保留鍵 __edited__:{no: 抓連結當下的頁面 last_edited_time}。
-# 頁面被編輯(補連結必然觸發)→ 重抓該篇,解決「舊文補連結永遠抓不到」的盲點。
-def block_links(blk):
-    t = blk['type']; bd = blk.get(t, {}); out = []
-    if isinstance(bd, dict):
-        rts = bd.get('rich_text', [])
-        label = ''.join(x.get('plain_text', '') for x in rts).strip()
-        for x in rts:
-            if x.get('href'): out.append([label or x['href'], x['href']])
-        if t in ('bookmark', 'embed', 'link_preview') and bd.get('url'):
-            out.append([bd['url'], bd['url']])
-    return out
+    # ---- 每篇閱讀連結(增量:新 No、或頁面編輯時間變過的 No 重抓)----
+    # 快取內含保留鍵 __edited__:{no: 抓連結當下的頁面 last_edited_time}。
+    # 頁面被編輯(補連結必然觸發)→ 重抓該篇,解決「舊文補連結永遠抓不到」的盲點。
+    def block_links(blk):
+        t = blk['type']; bd = blk.get(t, {}); out = []
+        if isinstance(bd, dict):
+            rts = bd.get('rich_text', [])
+            label = ''.join(x.get('plain_text', '') for x in rts).strip()
+            for x in rts:
+                if x.get('href'): out.append([label or x['href'], x['href']])
+            if t in ('bookmark', 'embed', 'link_preview') and bd.get('url'):
+                out.append([bd['url'], bd['url']])
+        return out
 
-links = {}
-if os.path.exists('article_links.json'):
-    try: links = json.load(io.open('article_links.json', encoding='utf-8'))
-    except Exception: links = {}
-_led = links.get('__edited__') if isinstance(links.get('__edited__'), dict) else {}
-new = refetched = 0
-for pg in pages:
-    no = read_no(pg)
-    if not no: continue
-    title = p_title(p(pg, '文章名稱'))
-    ed = pg.get('last_edited_time', '')
-    cached = no in links and title in links[no]
-    if cached and _led.get(no) == ed: continue   # 抓過且頁面沒再編輯過,跳過
-    ch = api('GET', 'https://api.notion.com/v1/blocks/%s/children?page_size=100' % pg['id'])
-    seen, lst = set(), []
-    for blk in ch.get('results', []):
-        for lab, url in block_links(blk):
-            if url not in seen: seen.add(url); lst.append([lab, url])
-    links.setdefault(no, {})[title] = lst
-    _led[no] = ed
-    if cached: refetched += 1
-    else: new += 1
-    time.sleep(0.34)
-links['__edited__'] = _led
-# 把「@ 提及站內另一篇」的 Notion 連結 → 站內跳轉 annyeongz:<No>(讀者才不會被導去 Notion)
-id2no = {pg['id'].replace('-', ''): read_no(pg) for pg in pages}
-_NID = re.compile(r'[0-9a-f]{32}')
-def rewrite_link(url):
-    if 'notion.' in url:
-        m = _NID.search(url.replace('-', '').lower())
-        if m and id2no.get(m.group(0)):
-            return 'annyeongz:' + id2no[m.group(0)]
-    return url
-_ref = 0
-for _no in links:
-    if _no == '__edited__': continue
-    for _t in links[_no]:
-        new_list = []
-        for lab, u in links[_no][_t]:
-            u2 = rewrite_link(u)
-            if u2 != u: _ref += 1
-            new_list.append([lab, u2])
-        links[_no][_t] = new_list
+    links = {}
+    if os.path.exists('article_links.json'):
+        try: links = json.load(io.open('article_links.json', encoding='utf-8'))
+        except Exception: links = {}
+    _led = links.get('__edited__') if isinstance(links.get('__edited__'), dict) else {}
+    new = refetched = 0
+    for pg in pages:
+        no = read_no(pg)
+        if not no: continue
+        title = p_title(p(pg, '文章名稱'))
+        ed = pg.get('last_edited_time', '')
+        cached = no in links and title in links[no]
+        if cached and _led.get(no) == ed: continue   # 抓過且頁面沒再編輯過,跳過
+        ch = api('GET', 'https://api.notion.com/v1/blocks/%s/children?page_size=100' % pg['id'])
+        seen, lst = set(), []
+        for blk in ch.get('results', []):
+            for lab, url in block_links(blk):
+                if url not in seen: seen.add(url); lst.append([lab, url])
+        links.setdefault(no, {})[title] = lst
+        _led[no] = ed
+        if cached: refetched += 1
+        else: new += 1
+        time.sleep(0.34)
+    links['__edited__'] = _led
+    # 把「@ 提及站內另一篇」的 Notion 連結 → 站內跳轉 annyeongz:<No>(讀者才不會被導去 Notion)
+    id2no = {pg['id'].replace('-', ''): read_no(pg) for pg in pages}
+    _NID = re.compile(r'[0-9a-f]{32}')
+    def rewrite_link(url):
+        if 'notion.' in url:
+            m = _NID.search(url.replace('-', '').lower())
+            if m and id2no.get(m.group(0)):
+                return 'annyeongz:' + id2no[m.group(0)]
+        return url
+    _ref = 0
+    for _no in links:
+        if _no == '__edited__': continue
+        for _t in links[_no]:
+            new_list = []
+            for lab, u in links[_no][_t]:
+                u2 = rewrite_link(u)
+                if u2 != u: _ref += 1
+                new_list.append([lab, u2])
+            links[_no][_t] = new_list
 
-io.open('article_links.json', 'w', encoding='utf-8').write(json.dumps(links, ensure_ascii=False))
-print('  連結:新增', new, '篇、重抓(頁面有編輯)', refetched, '篇(總',
-      sum(len(v) for k, v in links.items() if k != '__edited__'), '筆標題);站內互連改寫', _ref, '筆')
+    io.open('article_links.json', 'w', encoding='utf-8').write(json.dumps(links, ensure_ascii=False))
+    print('  連結:新增', new, '篇、重抓(頁面有編輯)', refetched, '篇(總',
+          sum(len(v) for k, v in links.items() if k != '__edited__'), '筆標題);站內互連改寫', _ref, '筆')
 
-# ---- GoatCounter 瀏覽統計(可選;有 token 才抓)----
-GC_TOKEN = (os.environ.get('GOATCOUNTER_TOKEN') or
-            (io.open('goatcounter_token.txt', encoding='utf-8').read().strip()
-             if os.path.exists('goatcounter_token.txt') else '')).strip()
-GC_BASE = 'https://yashen0512.goatcounter.com/api/v0'
-GC_BASELINE = 1049   # 舊計數器(Common Ninja)最後總計,當起始基數讓 Total 不歸零
-GC_DATA_START = '2025-01-01'   # 早於 GoatCounter 任何資料;total 從這起算
-if GC_TOKEN:
-    print('抓瀏覽統計…')
-    today = datetime.now(TZ).date()
-    tom = (today + timedelta(days=1)).isoformat()      # end 是獨佔,要用隔天
-    iso = lambda d: d.isoformat()
-    week_start = today - timedelta(days=today.weekday())          # 週一
-    month_start = today.replace(day=1)
-    last_month_start = (month_start - timedelta(days=1)).replace(day=1)
-    year_start = today.replace(month=1, day=1)
-    def gc_days():
-        # 只查一次,取整段每日明細(避免多查詢被限流、避免超寬 range 逾時)
-        req = urllib.request.Request('%s/stats/total?start=%s&end=%s' % (GC_BASE, GC_DATA_START, tom))
-        req.add_header('Authorization', 'Bearer ' + GC_TOKEN)
-        for attempt in range(5):
-            try:
-                with urllib.request.urlopen(req, context=SSL_CTX, timeout=45) as r:
-                    j = json.loads(r.read().decode())
-                    return {s['day']: s.get('daily', 0) for s in j.get('stats', [])}
-            except urllib.error.HTTPError as e:
-                if e.code == 429: time.sleep(3); continue
-                return {}
-            except (urllib.error.URLError, TimeoutError, OSError):
-                time.sleep(2); continue
-        return {}
-    days = gc_days()
-    ssum = lambda a, b: sum(v for d, v in days.items() if a <= d < b)   # 加總 [a, b)
-    stats = {
-        'today': ssum(iso(today), tom),
-        'week': ssum(iso(week_start), tom),
-        'month': ssum(iso(month_start), tom),
-        'lastmonth': ssum(iso(last_month_start), iso(month_start)),  # 上月獨佔到本月1號
-        'year': ssum(iso(year_start), tom) + GC_BASELINE,
-        'total': ssum(GC_DATA_START, tom) + GC_BASELINE,
-        'asof': fmt_dt(datetime.now(TZ).isoformat()),
-    }
-    io.open('stats.json', 'w', encoding='utf-8').write(json.dumps(stats, ensure_ascii=False))
-    print('  統計:', {k: stats[k] for k in ('today', 'week', 'month', 'lastmonth', 'year', 'total')})
-else:
-    print('  (無 goatcounter_token.txt,略過瀏覽統計)')
-# ---- 愛心/查看數備份:把 Val Town 計數存成 reactions_backup.json(隨排程進 GitHub,歷史可回溯)----
-# 新資料若比舊備份暴跌(>50%,可能是 val 被重建/清空)就不覆蓋,避免洗掉好備份。
-try:
-    _m = re.search(r'REACT_API="(https://[^"]+)"', io.open('site_template.html', encoding='utf-8').read())
-    if _m:
-        with urllib.request.urlopen(urllib.request.Request(_m.group(1), headers={'Cache-Control': 'no-store'}), context=SSL_CTX, timeout=30) as _r:
-            _cnt = json.loads(_r.read().decode('utf-8'))
-        _sum = lambda d: sum(int(v[0]) + int(v[1]) for v in d.values())
-        if isinstance(_cnt, dict) and _cnt:
-            _old = {}
-            if os.path.exists('reactions_backup.json'):
-                try: _old = json.loads(io.open('reactions_backup.json', encoding='utf-8').read())
-                except Exception: _old = {}
-            if _old and _sum(_cnt) < _sum(_old) * 0.5:
-                print('  ⚠️ 愛心/查看數比舊備份少超過一半,疑似端點被重置 → 保留舊備份,未覆蓋')
+    # ---- GoatCounter 瀏覽統計(可選;有 token 才抓)----
+    GC_TOKEN = (os.environ.get('GOATCOUNTER_TOKEN') or
+                (io.open('goatcounter_token.txt', encoding='utf-8').read().strip()
+                 if os.path.exists('goatcounter_token.txt') else '')).strip()
+    GC_BASE = 'https://yashen0512.goatcounter.com/api/v0'
+    GC_BASELINE = 1049   # 舊計數器(Common Ninja)最後總計,當起始基數讓 Total 不歸零
+    GC_DATA_START = '2025-01-01'   # 早於 GoatCounter 任何資料;total 從這起算
+    if GC_TOKEN:
+        print('抓瀏覽統計…')
+        today = datetime.now(TZ).date()
+        tom = (today + timedelta(days=1)).isoformat()      # end 是獨佔,要用隔天
+        iso = lambda d: d.isoformat()
+        week_start = today - timedelta(days=today.weekday())          # 週一
+        month_start = today.replace(day=1)
+        last_month_start = (month_start - timedelta(days=1)).replace(day=1)
+        year_start = today.replace(month=1, day=1)
+        def gc_days():
+            # 只查一次,取整段每日明細(避免多查詢被限流、避免超寬 range 逾時)
+            req = urllib.request.Request('%s/stats/total?start=%s&end=%s' % (GC_BASE, GC_DATA_START, tom))
+            req.add_header('Authorization', 'Bearer ' + GC_TOKEN)
+            for attempt in range(5):
+                try:
+                    with urllib.request.urlopen(req, context=SSL_CTX, timeout=45) as r:
+                        j = json.loads(r.read().decode())
+                        return {s['day']: s.get('daily', 0) for s in j.get('stats', [])}
+                except urllib.error.HTTPError as e:
+                    if e.code == 429: time.sleep(3); continue
+                    return {}
+                except (urllib.error.URLError, TimeoutError, OSError):
+                    time.sleep(2); continue
+            return {}
+        days = gc_days()
+        ssum = lambda a, b: sum(v for d, v in days.items() if a <= d < b)   # 加總 [a, b)
+        stats = {
+            'today': ssum(iso(today), tom),
+            'week': ssum(iso(week_start), tom),
+            'month': ssum(iso(month_start), tom),
+            'lastmonth': ssum(iso(last_month_start), iso(month_start)),  # 上月獨佔到本月1號
+            'year': ssum(iso(year_start), tom) + GC_BASELINE,
+            'total': ssum(GC_DATA_START, tom) + GC_BASELINE,
+            'asof': fmt_dt(datetime.now(TZ).isoformat()),
+        }
+        io.open('stats.json', 'w', encoding='utf-8').write(json.dumps(stats, ensure_ascii=False))
+        print('  統計:', {k: stats[k] for k in ('today', 'week', 'month', 'lastmonth', 'year', 'total')})
+    else:
+        print('  (無 goatcounter_token.txt,略過瀏覽統計)')
+    # ---- 愛心/查看數備份:把 Val Town 計數存成 reactions_backup.json(隨排程進 GitHub,歷史可回溯)----
+    # 新資料若比舊備份暴跌(>50%,可能是 val 被重建/清空)就不覆蓋,避免洗掉好備份。
+    try:
+        _m = re.search(r'REACT_API[:=]"(https://[^"]+)"', io.open('site_template.html', encoding='utf-8').read())
+        if _m:
+            with urllib.request.urlopen(urllib.request.Request(_m.group(1), headers={'Cache-Control': 'no-store'}), context=SSL_CTX, timeout=30) as _r:
+                _cnt = json.loads(_r.read().decode('utf-8'))
+            _sum = lambda d: sum(int(v[0]) + int(v[1]) for v in d.values())
+            if isinstance(_cnt, dict) and _cnt:
+                _old = {}
+                if os.path.exists('reactions_backup.json'):
+                    try: _old = json.loads(io.open('reactions_backup.json', encoding='utf-8').read())
+                    except Exception: _old = {}
+                if _old and _sum(_cnt) < _sum(_old) * 0.5:
+                    print('  ⚠️ 愛心/查看數比舊備份少超過一半,疑似端點被重置 → 保留舊備份,未覆蓋')
+                else:
+                    io.open('reactions_backup.json', 'w', encoding='utf-8').write(json.dumps(_cnt, ensure_ascii=False, sort_keys=True))
+                    print('  愛心/查看備份: %d 篇有紀錄(愛心+查看共 %d)' % (len(_cnt), _sum(_cnt)))
             else:
-                io.open('reactions_backup.json', 'w', encoding='utf-8').write(json.dumps(_cnt, ensure_ascii=False, sort_keys=True))
-                print('  愛心/查看備份: %d 篇有紀錄(愛心+查看共 %d)' % (len(_cnt), _sum(_cnt)))
-        else:
-            print('  (愛心端點回傳空資料,略過備份)')
-except Exception as _e:
-    print('  (愛心/查看備份失敗,略過:%s)' % _e)
-print('完成 ✅  接著跑 build_site.py')
+                print('  (愛心端點回傳空資料,略過備份)')
+    except Exception as _e:
+        print('  (愛心/查看備份失敗,略過:%s)' % _e)
+    print('完成 ✅  接著跑 build_site.py')
+
+
+if __name__ == '__main__':
+    main()

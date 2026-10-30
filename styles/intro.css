@@ -1,0 +1,21 @@
+/* Annyeongz 平行宇宙 — 開場動畫(🐶🐰 相遇) */
+/* 開場動畫：🐶🐰 相遇（每次開站只播一次；點一下略過；固定夜空，不跟主題） */
+#intro{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;flex-direction:column;
+  background:radial-gradient(ellipse at center,#221d33 0%,#100f18 60%,#08080d 100%);cursor:pointer;overflow:hidden;
+  transition:opacity .5s ease;animation:introBye 0s 4s forwards}   /* 萬一 JS 沒跑，4 秒後自動消失 */
+@keyframes introBye{to{opacity:0;visibility:hidden;pointer-events:none}}
+#intro.out{opacity:0;pointer-events:none}
+#intro canvas{position:absolute;inset:0;width:100%;height:100%}
+#intro .ttl{position:relative;text-align:center;color:#f3eef7;opacity:0;transform:scale(.92);
+  transition:opacity .55s ease,transform .7s cubic-bezier(.2,.8,.2,1);padding:0 16px}
+#intro .ttl.on{opacity:1;transform:scale(1)}
+#intro .nm{margin-top:8px;font-size:clamp(20px,5.2vw,30px);font-weight:800;letter-spacing:.08em;text-shadow:0 0 18px rgba(229,138,160,.55)}
+#intro .pair{position:relative;display:flex;justify-content:center;align-items:flex-end;gap:6px;font-size:clamp(46px,13vw,76px);height:1.6em}
+#intro .pair .d,#intro .pair .r{transition:transform .75s cubic-bezier(.3,1.3,.5,1)}
+#intro .pair .d{transform:translateX(-46vw)}
+#intro .pair .r{transform:translateX(46vw)}
+#intro .pair.meet .d,#intro .pair.meet .r{transform:none}
+#intro .pair .h{position:absolute;left:50%;top:-.15em;font-size:.55em;transform:translate(-50%,10px) scale(0);opacity:0;
+  transition:transform .45s cubic-bezier(.3,1.6,.5,1),opacity .2s}
+#intro .pair.love .h{transform:translate(-50%,-6px) scale(1);opacity:1}
+@media (prefers-reduced-motion:reduce){#intro{display:none}}
