@@ -44,3 +44,54 @@ def test_block_links_returns_rich_text_index():
     bm = {'type': 'bookmark', 'bookmark': {'url': 'https://b/1', 'caption': []}}
     assert FD.block_links(bm) == [['https://b/1', 'https://b/1', -1]]
     assert FD.block_links({'type': 'divider', 'divider': {}}) == []
+
+# ---- merge_links:增量重抓與清掉舊標題 / 舊編號 ----
+def _page(no, title, pid, edited):
+    return {'id': pid, 'last_edited_time': edited,
+            'properties': {'No': {'type': 'number', 'number': no}, '文章名稱': {'type': 'title', 'title': [{'plain_text': title}]}}}
+def _link_block(bid, text, url):
+    return {'id': bid, 'type': 'paragraph', 'paragraph': {'rich_text': [{'plain_text': text, 'href': url}]}}
+
+def test_merge_links_prunes_stale_title_after_renumber():
+    # 2026-10-31 的情境:「Passionate A&W」那頁原本是 No.786,後來改號成 10047,786 給了新頁「설계실 로맨스」。
+    # 舊版只會把新頁的連結塞進 links['786'],舊標題那組留著,巡檢就把 10047 的番外連結算在 786 頭上。
+    links = {'786': {'Passionate A&W': [['Postype-番外1-原文', 'https://www.postype.com/@g/post/15413585']]},
+             '__edited__': {'786': 'T0'},
+             '__blocks__': {'786': {'page': 'PA', 'links': {'https://www.postype.com/@g/post/15413585': ['B1', 0]}}}}
+    pages = [_page(10047, 'Passionate A&W', 'PA', 'T1'), _page(786, '설계실 로맨스', 'PB', 'T2')]
+    children = {'PA': [_link_block('B1', 'Postype-番外1-原文', 'https://www.postype.com/@g/post/15413585')],
+                'PB': [_link_block('B2', 'Postype-原文', 'https://www.postype.com/@n/post/6308988')]}
+    calls = []
+    def fetch(pid):
+        calls.append(pid); return children[pid]
+    out, new, refetched, pruned = FD.merge_links(links, pages, fetch)
+    assert out['786'] == {'설계실 로맨스': [['Postype-原文', 'https://www.postype.com/@n/post/6308988']]}
+    assert out['10047'] == {'Passionate A&W': [['Postype-番外1-原文', 'https://www.postype.com/@g/post/15413585']]}
+    assert out['__blocks__']['786'] == {'page': 'PB', 'links': {'https://www.postype.com/@n/post/6308988': ['B2', 0]}}
+    assert out['__blocks__']['10047']['page'] == 'PA' and out['__edited__'] == {'786': 'T2', '10047': 'T1'}
+    assert (new, refetched, pruned) == (2, 0, 1) and calls == ['PA', 'PB']
+
+def test_merge_links_skips_cached_refetches_edited_and_drops_removed_pages():
+    links = {'1': {'A': [['PT', 'https://www.postype.com/@a/post/1']]},
+             '2': {'B': [['PT', 'https://www.postype.com/@b/post/2']]},
+             '3': {'C': [['PT', 'https://www.postype.com/@c/post/3']]},
+             '__edited__': {'1': 'T1', '2': 'T2', '3': 'T3'},
+             '__blocks__': {'1': {'page': 'P1', 'links': {}}, '2': {'page': 'P2', 'links': {}}, '3': {'page': 'P3', 'links': {}}}}
+    pages = [_page(1, 'A', 'P1', 'T1'),            # 沒動 → 不抓
+             _page(2, 'B', 'P2', 'T2b'),           # 頁面編輯過 → 重抓(標題沒變)
+             _page(4, 'D', 'P4', 'T4'),            # 新 No
+             _page(5, 'E', 'P5', 'T5'), _page(5, 'E2', 'P5b', 'T5')]   # 重複編號:兩頁都保留
+    children = {'P2': [_link_block('B2', 'PT', 'https://www.postype.com/@b/post/2b')], 'P4': [], 'P5': [], 'P5b': []}
+    out, new, refetched, pruned = FD.merge_links(links, pages, lambda pid: children[pid])
+    assert out['1'] == {'A': [['PT', 'https://www.postype.com/@a/post/1']]}
+    assert out['2'] == {'B': [['PT', 'https://www.postype.com/@b/post/2b']]}
+    assert '3' not in out and '3' not in out['__edited__'] and '3' not in out['__blocks__']   # 主表已經沒有 No.3
+    assert out['4'] == {'D': []} and set(out['5']) == {'E', 'E2'}
+    assert (new, refetched, pruned) == (3, 1, 1)
+
+def test_merge_links_renamed_title_keeps_only_new_title():
+    links = {'9': {'舊標題': [['PT', 'https://www.postype.com/@a/post/9']]}, '__edited__': {'9': 'T0'},
+             '__blocks__': {'9': {'page': 'P9', 'links': {}}}}
+    out, new, refetched, pruned = FD.merge_links(links, [_page(9, '新標題', 'P9', 'T1')],
+                                                 lambda pid: [_link_block('B9', 'PT', 'https://www.postype.com/@a/post/9')])
+    assert out['9'] == {'新標題': [['PT', 'https://www.postype.com/@a/post/9']]} and pruned == 1

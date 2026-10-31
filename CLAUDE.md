@@ -79,7 +79,8 @@ package.json / pytest.ini / requirements-dev.txt   只為了測試,部署用不�
 ```
 Notion 三個資料庫(主表、作者/譯者資料庫、公告)
   │  _build/fetch_data.py   Notion API → Annyeongz_<主表ID>_all.csv、_authors/authors_all.csv、_announce/announce_all.csv、
-  │                         article_links.json(每篇內文的閱讀連結,增量:新 No 或頁面編輯過才重抓)、
+  │                         article_links.json(每篇內文的閱讀連結,增量:新 No、標題改了或頁面編輯過才重抓;抓完只留主表目前的 (No, 標題),
+  │                         舊標題 / 改號後留在舊號底下的連結會清掉,見 `merge_links`)、
   │                         stats.json(有 GOATCOUNTER_TOKEN 才抓)、reactions_backup.json(愛心 / 觀測備份)
   ▼
   │  _build/build_site.py   套 facets_def.py(分面定義、改名合併、逐篇校正)→ DATA
@@ -247,7 +248,8 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
   AFF 一律 403 Cloudflare「Just a moment」** → 這三個平台的 checker 會回 `login_required` / `unknown`(`blocked=True`),
   `check_links.py` 看到某平台前 3 筆全被擋就略過該平台其餘連結,**不會把任何連結標成已刪**。它們的 deleted 規則依已知行為寫成、
   尚未實測,站長在看得到這些平台的網路跑才會生效。
-- **`check_links.py`**(不寫 Notion):來源 = `article_links.json` 的每篇連結 + 作者庫 CSV 的平台網址(沒有 CSV 時退回 `../data.json`,`expand_data` 還原);
+- **`check_links.py`**(不寫 Notion):來源 = `article_links.json` 的每篇連結(同一 No 底下有多組標題時只看目前標題那組,與 `build_site` 挑連結的規則一致)
+  + 作者庫 CSV 的平台網址(沒有 CSV 時退回 `../data.json`,`expand_data` 還原);
   四個平台各一條執行緒交錯,同平台間隔 1.5~3 秒隨機;逾時 / 5xx / 429 重試 2 次,仍失敗 = `unknown`(不算已刪)。
   狀態機(`advance`):只有**連續兩天**都 `deleted` 才算真的死(`dead`),同一天重跑不重複計,`unknown` 不改任何計數;
   已死的每 30 天複查一次(`is_due`),複查看到 `ok` 就復活。狀態存 `_build/link_status.json`(以網址為鍵:
@@ -257,8 +259,10 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
 - **`notion_writeback.py`**:預設 dry-run 只印清單,`--go` 才寫。
   - 死連結:用 `article_links.json` 的 `__blocks__`(`{No: {page: 頁面ID, links: {網址: [blockID, rich_text 位置]}}}`,
     `fetch_data.py` 記錄)找到該連結的 block,在連結文字**前**插入一段純文字「❌」;復活就把連結段落與緊鄰前後純文字段裡的 ❌
-    都清掉(相容站長以前手動加在連結後面的寫法)。`build_site.py` 既有的 dead 判定(❌ 過半)自動接手。block 對不上就重掃頁面
-    子 block 找 href,連頁面 ID 都沒有就用 No 查主表。
+    都清掉(相容站長以前手動加在連結後面的寫法)。`build_site.py` 既有的 dead 判定(❌ 過半)自動接手。
+    **只信 `__blocks__` 記錄的 block**(父頁面要是記錄的頁面、block 裡要有這個網址),對不上就跳過並附到 Issue 內文
+    「需人工確認」段(`append_manual_section` 接在 `check_report.md` 後面),**不會**拿網址去別的頁面搜尋後亂寫
+    (2026-10-31 `article_links.json` 曾把 No.10047 改號前的連結留在 No.786 底下)。
   - 作者改名:同一作者(Notion 作者頁 ID)在同一平台有**兩篇以上**單一作者作品解析到同一個新名字、該名字不是目前名稱 / 括號內別名 /
     曾用名、該名字 / 帳號沒出現在別的作者名下(合集帳號)、**且作者庫該平台網址的帳號與頁面作者帳號相符** → 把作者庫「作者名稱」
     改成新名字,並把舊名加進「曾用名」multi_select(不存在就用 database update API 建立;不刪、不重複;半形逗號換全形)。
@@ -415,7 +419,7 @@ npm test                          # vitest run:tests/filter.test.js、sort.test.
 pip install -r requirements-dev.txt   # 只需一次(pytest + Pillow)
 python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆分與 ID、日期、精簡格式 round-trip、sw 版本號、30 篇 fixture 完整建置比對)、fetch_data(No 三種型別、token 來源)、
                                   #          build_pages(描述 / 標題折行 / 字型回退 / sitemap / RSS、30 篇產頁與 hash 跳過重產)
-                                  #          checkers(各平台 HTML 樣本)、check_links(連續兩天狀態機、到期、改名判斷、平台被擋短路、重試)、notion_writeback(❌ 加 / 移除、PATCH 格式、曾用名合併)、build_site 曾用名、fetch_data block 位置
+                                  #          checkers(各平台 HTML 樣本)、check_links(連續兩天狀態機、到期、改名判斷、平台被擋短路、重試)、notion_writeback(❌ 加 / 移除、PATCH 格式、曾用名合併)、build_site 曾用名、fetch_data block 位置與 merge_links 清舊標題、notion_writeback 只信記錄的 block、collect_targets 略過舊標題
 ```
 
 - `.github/workflows/test.yml` 在 PR 時兩組都自動跑,不需要 Notion token。

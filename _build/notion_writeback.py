@@ -5,8 +5,8 @@
    死連結:更新該作品頁面內文裡那個連結 block 的 rich_text,在連結文字**前**插入一段「❌」純文字;
            復活就移除 ❌(連結段落本身、以及緊鄰前後純文字段裡的 ❌ 都清掉,相容站長以前手動加在後面的寫法)。
            這樣 build_site.py 既有的 dead 判定(❌ 過半)自動接手,不用改判定邏輯。
-           block 位置優先用 article_links.json 的 __blocks__(fetch_data.py 記錄),對不上就重新抓頁面子 block 找 href,
-           連頁面 ID 都沒有時用 No 查主表。
+           block 位置**只用** article_links.json 的 __blocks__(fetch_data.py 記錄),而且 block 的父頁面、網址都要對得上;
+           對不上就跳過、附到 Issue 內文「需人工確認」段,絕不拿網址去別的頁面搜尋後亂寫(article_links.json 曾經把別篇的連結留在錯的 No 底下)。
    作者改名:作者庫該頁「作者名稱」title 改成新名字;「曾用名」multi_select(不存在就用 database update API 建立)
            加入舊名字(不刪、不重複;Notion 選項名不能有半形逗號 → 換成全形)。只處理 check_links 列在 renames 的
            (作者庫平台網址核對過的),rename_candidates 不動。寫之前再讀一次作者頁,title 跟報告的舊名不同就跳過。
@@ -131,24 +131,6 @@ def api(method, path, body=None):
 def get_block(block_id):
     return api('GET', 'blocks/%s' % block_id)
 
-def page_children(page_id):
-    out, cur = [], None
-    while True:
-        res = api('GET', 'blocks/%s/children?page_size=100%s' % (page_id, '&start_cursor=' + cur if cur else ''))
-        out += res.get('results', [])
-        if not res.get('has_more'):
-            return out
-        cur = res['next_cursor']
-
-def find_page_by_no(no):
-    try:
-        n = int(no)
-    except ValueError:
-        return None
-    res = api('POST', 'databases/%s/query' % FD.MAIN_ID, {'filter': {'property': 'No', 'number': {'equals': n}}, 'page_size': 2})
-    r = res.get('results', [])
-    return r[0]['id'] if len(r) == 1 else None
-
 def rich_text_of(block):
     t = block['type']; bd = block.get(t, {})
     if t in CAPTION_TYPES:
@@ -156,36 +138,38 @@ def rich_text_of(block):
     return 'rich_text', bd.get('rich_text', [])
 
 def locate(item):
-    """報告裡的一筆連結 → (block, field, rich_text, idx);找不到回 None。"""
-    url = item['url']
-    blk = None
-    if item.get('block'):
-        try:
-            blk = get_block(item['block'][0])
-        except Exception as e:
-            print('   (block %s 讀不到:%s,改掃頁面)' % (item['block'][0], e))
-            blk = None
-    if blk and not blk.get('archived'):
-        field, rts = rich_text_of(blk)
-        idx = find_link_index(rts, url, item['block'][1] if len(item['block']) > 1 else None)
-        if idx >= 0 or (blk['type'] in CAPTION_TYPES and blk[blk['type']].get('url') == url):
-            return blk, field, rts, idx
-    page_id = item.get('page') or find_page_by_no(item['no'])
-    if not page_id:
-        return None
-    for b in page_children(page_id):
-        field, rts = rich_text_of(b)
-        idx = find_link_index(rts, url)
-        if idx >= 0 or (b['type'] in CAPTION_TYPES and b[b['type']].get('url') == url):
-            return b, field, rts, idx
-    return None
+    """報告裡的一筆連結 → ((block, field, rich_text, idx), '') ;對不上就回 (None, 原因)。
+    **只信 article_links.json 記錄的 block 位置**(fetch_data.py 抓該篇頁面時記下的 __blocks__),而且 block 的父頁面要等於
+    記錄的頁面 ID、block 裡要真的有這個網址。不拿網址去整頁重掃、也不用 No 查主表:article_links.json 曾把別篇的連結留在
+    錯的 No 底下(2026-10-31 的 No.786 / No.10047),那種情況去別的頁面找只會把 ❌ 寫到不相干的地方。
+    對不上就跳過,由 main() 附到 Issue「需人工確認」。"""
+    url, pos = item['url'], item.get('block')
+    if not pos:
+        return None, '沒有 block 位置(article_links.json 的 __blocks__ 沒記到這條連結)'
+    try:
+        blk = get_block(pos[0])
+    except Exception as e:
+        return None, 'block %s 讀不到:%s' % (pos[0], e)
+    if blk.get('archived') or blk.get('in_trash'):
+        return None, 'block %s 已封存' % pos[0]
+    parent = ((blk.get('parent') or {}).get('page_id') or '').replace('-', '')
+    if item.get('page') and parent and parent != item['page']:
+        return None, 'block %s 不在記錄的頁面 %s 底下(在 %s)' % (pos[0], item['page'], parent)
+    field, rts = rich_text_of(blk)
+    idx = find_link_index(rts, url, pos[1] if len(pos) > 1 else None)
+    if idx >= 0 or (blk['type'] in CAPTION_TYPES and blk[blk['type']].get('url') == url):
+        return (blk, field, rts, idx), ''
+    return None, 'block %s 裡沒有這個網址' % pos[0]
 
-def apply_link(item, action, go):
-    """action: 'mark' | 'unmark'。回傳 'done' | 'skip' | 'fail'。"""
-    found = locate(item)
+def apply_link(item, action, go, manual=None):
+    """action: 'mark' | 'unmark'。回傳 'done' | 'skip' | 'fail'。
+    找不到 block 就跳過、附進 manual(main() 寫進 Issue「需人工確認」),絕不改去別的頁面找。"""
+    found, why = locate(item)
     tag = 'No.%s《%s》%s' % (item['no'], item['title'], item['label'].replace(DEAD_MARK, '').strip())
     if not found:
-        print('   ⚠️ 找不到連結 block:%s %s' % (tag, item['url']))
+        print('   ⚠️ 找不到連結 block,跳過(需人工確認):%s %s — %s' % (tag, item['url'], why))
+        if manual is not None:
+            manual.append(dict(item, action=action, why=why))
         return 'fail'
     blk, field, rts, idx = found
     if idx < 0:   # bookmark / embed 沒有 rich_text:把 ❌ 放進 caption 開頭
@@ -211,6 +195,22 @@ def apply_link(item, action, go):
     except Exception as e:
         print('   ⚠️ 寫入失敗:%s %s' % (tag, e))
         return 'fail'
+
+def manual_markdown(items):
+    """Issue 內文的「需人工確認」段:寫回時找不到 block 而跳過的連結(給站長手動標 ❌ / 移除 ❌)。"""
+    L = ['', '### 需人工確認(找不到連結 block,未寫回 Notion;請手動%s)' % ' / '.join(
+        sorted({'標 ❌' if x['action'] == 'mark' else '移除 ❌' for x in items}, reverse=True))]
+    for x in items:
+        L.append('- %s No.%s《%s》%s — %s;%s' % ('標 ❌' if x['action'] == 'mark' else '移除 ❌', x['no'], x['title'],
+                                               x['label'].replace(DEAD_MARK, '').strip(), x['url'], x['why']))
+    return '\n'.join(L) + '\n'
+
+def append_manual_section(md_path, items):
+    """把跳過的連結附到 check_links.py 產的 Issue 內文(check_report.md)末尾;檔案不存在就建立。"""
+    if not items:
+        return
+    old = io.open(md_path, encoding='utf-8').read() if os.path.exists(md_path) else ''
+    io.open(md_path, 'w', encoding='utf-8').write(old.rstrip('\n') + '\n' + manual_markdown(items))
 
 def find_authors_db():
     dbs = api('POST', 'search', {'filter': {'property': 'object', 'value': 'database'}, 'page_size': 50})['results']
@@ -274,15 +274,19 @@ def main(argv=None):
     if not (dead or revived or renames):
         print('沒有要寫回的變更。')
         return {'done': 0, 'skip': 0, 'fail': 0}
-    tally = {'done': 0, 'skip': 0, 'fail': 0}
+    tally, manual = {'done': 0, 'skip': 0, 'fail': 0}, []
     if dead:
         print('— 標 ❌(新死 %d 筆)' % len(dead))
         for x in dead:
-            tally[apply_link(x, 'mark', args.go)] += 1
+            tally[apply_link(x, 'mark', args.go, manual)] += 1
     if revived:
         print('— 移除 ❌(復活 %d 筆)' % len(revived))
         for x in revived:
-            tally[apply_link(x, 'unmark', args.go)] += 1
+            tally[apply_link(x, 'unmark', args.go, manual)] += 1
+    if manual and args.go:
+        md_path = os.path.join(os.path.dirname(args.report) or '.', 'check_report.md')
+        append_manual_section(md_path, manual)
+        print('   ↳ %d 筆找不到 block,已附到 %s「需人工確認」' % (len(manual), md_path))
     if renames:
         print('— 作者改名(%d 位)' % len(renames))
         db = find_authors_db()
