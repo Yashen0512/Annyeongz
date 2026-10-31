@@ -75,6 +75,9 @@
   <!-- #panelTools:手機工具列壓縮時,穿越蟲洞 / 書架 / 隱藏 / 複製 / 重設那組(#tbExtra)搬到這裡;其餘時候是空的 -->
   <aside class="panel" id="panel" aria-label="分類篩選"><div class="panelbar"><h2>🔧 分類篩選</h2><button type="button" class="ctl pbdone">完成</button></div><div id="panelTools"></div><h2 class="paneltitle">分類篩選</h2></aside>
   <main class="main" id="main" tabindex="-1">
+    <!-- 最後更新(相對時間,資料用 data.json 的 synced;main.js renderLastUpdated 填、每分鐘重算;title 是精確時間)。
+         放在 main 最上面而不是頂欄裡:視覺上就在頂欄 / 搜尋框正下方,sticky 頂欄不會因此變高,也在 landmark 裡(axe region)。頁尾仍有精確的「星圖更新 / 訊號同步」 -->
+    <div class="lastup" id="lastUp"></div>
     <!-- 輪播:role=region + aria-roledescription=輪播;‹ › 可 Tab 聚焦、小卡上 ← → 切換;.strip-page 以 aria-live 宣告目前頁數 -->
     <section id="annSec" style="display:none">
       <h2 class="sech" id="annH">📻 星際廣播</h2>

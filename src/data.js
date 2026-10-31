@@ -143,5 +143,31 @@ export function sortAnnouncements(anns) {
 
 // 閱讀連結:[名稱, 網址] 或 [名稱, 網址, 1](第三格 1 = 已失效,build_site.py 由 Notion 的 ❌ 轉出)。
 // 站內互連(annyeongz:<編號>,前傳/續寫)只是跳到別篇,不算這篇的有效/失效連結。
+/** 建置時間字串『2026/10/31 9:01 PM』(台北時間,build_site.fmt_synced 的格式)→ Date;解析不了回 null。
+ *  不用 new Date(字串):Safari 不吃這種格式。固定當台北時間(UTC+8)算,讀者在哪個時區看到的「N 小時前」都一樣。 */
+export function parseSynced(s) {
+  const m = /^(\d{4})\/(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{2})\s*(AM|PM)?$/i.exec(String(s || '').trim());
+  if (!m) return null;
+  let h = +m[4]; const ap = (m[6] || '').toUpperCase();
+  if (ap === 'PM' && h < 12) h += 12;
+  if (ap === 'AM' && h === 12) h = 0;
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], h - 8, +m[5]));
+}
+/** 相對時間(繁中):剛剛 / N 分鐘前 / N 小時前 / 昨天 / 前天 / N 天前。Intl.RelativeTimeFormat('zh-Hant') 排字,沒有 Intl 時用手寫字串。
+ *  now 可傳入(測試用);未來的時間(讀者時鐘不準)當成剛剛。 */
+export function relativeTime(date, now = Date.now()) {
+  const t = date instanceof Date ? date.getTime() : (date == null ? NaN : +date);
+  if (!Number.isFinite(t)) return '';
+  const min = Math.floor(Math.max(0, now - t) / 60000);
+  let rtf = null;
+  try { rtf = new Intl.RelativeTimeFormat('zh-Hant', { numeric: 'auto' }); } catch (e) { /* 沒有 Intl:退回手寫 */ }
+  const fmt = (v, unit, plain) => (rtf ? rtf.format(-v, unit) : plain);
+  if (min < 1) return '剛剛';
+  if (min < 60) return fmt(min, 'minute', `${min} 分鐘前`);
+  const h = Math.floor(min / 60);
+  if (h < 24) return fmt(h, 'hour', `${h} 小時前`);
+  const d = Math.floor(h / 24);
+  return fmt(d, 'day', d === 1 ? '昨天' : d === 2 ? '前天' : `${d} 天前`);
+}
 export const isExt = (l) => !l[1].startsWith('annyeongz:');
 export function liveCount(a) { return (a.links || []).filter((l) => isExt(l) && !l[2]).length; }

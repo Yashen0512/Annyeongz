@@ -9,7 +9,7 @@
 // 無障礙:詳情是 <dialog>(showModal 原生鎖焦點、Esc 關閉);篩選結果數與輪播頁數用 aria-live 宣告;
 //        尊重 prefers-reduced-motion(捲動不用 smooth)。
 // 這支由 src/boot.js 在抓到 data.json 之後動態 import,所以執行時 window.DATA 一定已經有了。
-import { loadData, sg, buildTag2Facet, sortAnnouncements, makePersonLookup } from './data.js';
+import { loadData, sg, buildTag2Facet, sortAnnouncements, makePersonLookup, parseSynced, relativeTime } from './data.js';
 import { passes, filterArticles, authorWorks, cycleTag, selectTag, removeTag, toggleMode, clearSelection, selectionChips } from './filter.js';
 import { sortArticles, pickRandom } from './sort.js';
 import { KEYS, loadSet, saveSet, loadShelfTab, saveShelfTab, loadTheme, saveTheme, loadListState, saveListState,
@@ -693,6 +693,15 @@ function renderStats(s, live) { R.renderStats($('statsCard'), s || D.stats, live
 function loadLiveStats() { fetchLiveStats().then((j) => { if (j) renderStats(j, true); }); }
 if (D.updated) { $('updatedNote').textContent = '🗺️ 星圖更新:' + D.updated; }
 if (D.synced) { $('syncedNote').innerHTML = '📡 訊號同步:' + D.synced + ' <span title="每天 08:31・21:01 自動更新&#10;안유진 08/31 · 장원영 09/01 🎂" style="cursor:help">🎂</span>'; }
+// 頂欄下方「📡 最後更新:X」:X 是 synced 的相對時間(剛剛 / N 分鐘前 / N 小時前 / 昨天 / N 天前),title 放精確時間;分頁開著就每分鐘重算
+function renderLastUpdated() {
+  const el = $('lastUp'), dt = parseSynced(D.synced);
+  if (!el) return;
+  if (!dt) { el.textContent = ''; return; }
+  el.innerHTML = `📡 最後更新：<span class="lu-t" title="訊號同步 ${D.synced}（台北時間）">${relativeTime(dt)}</span>`;
+}
+renderLastUpdated();
+setInterval(renderLastUpdated, 60000);
 
 // 詳情 / 書卡 HTML 字串裡的 inline onclick 會呼叫這些函式,所以要掛到 window(ES module 內的函式不是全域)
 Object.assign(window, { toggleFav, toggleTodo, toggleRead, setShelfTab, filterByTag, filterName, openByNo, shareArticle, closeDetail, navDetail, toggleReport, pickReason, sendReport, shelfExport, shelfImport, shelfClear });

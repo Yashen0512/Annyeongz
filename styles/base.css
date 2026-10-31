@@ -34,6 +34,11 @@
   --end-oe:#5fbfb6; --end-oe-bg:#22363a; --end-oe-t:#6fcbc2;
 }
 *{box-sizing:border-box}
+/* 橫向溢出的最後一道防線:整頁只准直向捲。iOS Safari 只要任一元素比畫面寬,整頁就能左右滑、書卡右邊的愛心會被推出螢幕。
+   寫在 html 而不是 body:html 的 overflow 會交給 viewport、html 本身仍視為 visible,sticky 頂欄 / 工具列的捲動容器還是 viewport,不會失效
+   (寫在 body 且 html 也設了 overflow 的話,body 會變成捲動容器,sticky 就壞了)。根本修正在各元素:main.css 的 .grid / .card / .toolbar、responsive.css 的壓縮列與 #sort。 */
+html{overflow-x:hidden}
+img,video,canvas{max-width:100%}   /* 圖 / 影片 / 畫布不會比容器寬 */
 /* 無障礙:鍵盤聚焦一律看得見(不用 outline:none);滑鼠點擊不顯示外框。
    iOS Safari 會把程式觸發的 focus(關閉彈窗後焦點還給書卡鈕、面板開關)當成鍵盤焦點而畫出外框,
    所以 boot.js 監聽 pointerdown / touchstart / keydown 在 body 標記 data-input,外框只在 keyboard 時顯示;
@@ -72,4 +77,9 @@ a.theme{text-decoration:none;display:inline-flex;align-items:center}   /* 📊 �
 .search{flex:1;max-width:420px;min-width:160px;padding:9px 14px;border:1px solid var(--line);
         border-radius:999px;font-size:14px;background:var(--bg);color:var(--ink)}
 .search::placeholder{color:var(--muted)}
-.wrap{display:flex;gap:20px;align-items:flex-start;max-width:none;margin:0 auto;padding:18px 28px}
+.wrap{display:flex;gap:20px;align-items:flex-start;max-width:none;min-width:0;margin:0 auto;padding:18px 28px}
+/* 頂欄 / 搜尋框下方的「📡 最後更新:X」小字(main 的第一行;main.js 填相對時間;空的時候不佔高) */
+.lastup{margin:-4px 0 10px;font-size:12px;color:var(--muted);line-height:1.5}
+.lastup:empty{display:none}
+.lastup .lu-t{cursor:help;border-bottom:1px dotted var(--muted)}   /* hover / 長按看精確時間(title) */
+@media(max-width:560px){.lastup{font-size:13px}}
