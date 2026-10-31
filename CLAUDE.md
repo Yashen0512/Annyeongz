@@ -27,7 +27,7 @@ src/                       前端程式(ES modules,無框架)
   boot.js                  入口:fetch data.json → window.DATA → 動態 import main.js;並啟動 pwa.js
   pwa.js                   service worker 註冊、「有新收錄 / 新版本」提示條、「安裝到桌面」鈕
   main.js                  組裝:狀態、DOM 事件、呼叫各模組、啟動順序(分批渲染、輪播延後初始化)
-  data.js                  expandData(精簡 → 完整)、正規化 window.DATA、簡繁折算、資料存取小工具
+  data.js                  expandData(精簡 → 完整)、正規化 window.DATA、簡繁折算、資料存取小工具、synced 解析與相對時間(parseSynced / relativeTime)
   filter.js                篩選(純函式,不碰 DOM)
   sort.js                  排序(純函式,六種)
   storage.js               localStorage / sessionStorage 的 key 與讀寫(集中管理);書架 / 已讀的匯出匯入(exportState / importState)
@@ -43,7 +43,7 @@ styles/                    樣式,依原本的 cascade 順序切成六個檔(ind
   base.css panel.css main.css modal.css responsive.css intro.css stats.css
 vendor/                    第三方單檔(Chart.js 統計星圖;lz-string 壓縮與 qrcode-generator 產 QR 給書架匯出),傳統 <script> 載入、不走 npm;首頁的 lz-string / qrcode 由 main.js ensureVendor() 在按匯出 / 匯入時才載;版本與授權見 vendor/README.md
 tests/                     測試
-  *.test.js                Vitest(filter / sort / url / data(expandData)/ stats / storage 純函式)+ fixtures.js
+  *.test.js                Vitest(filter / sort / url / data(expandData、parseSynced / relativeTime)/ stats / storage 純函式)+ fixtures.js
   py/                      pytest(build_site / fetch_data / build_pages 純函式 + 用 30 篇 fixture 跑完整建置與產頁、精簡格式 round-trip、sw 版本號;
                            checkers HTML 樣本;check_links 狀態機與改名判斷;notion_writeback 的 rich_text 純函式)
   fixtures/build_input/    30 篇的建置輸入(主表 / 作者 / 公告 CSV、article_links.json、expected.json),由 make_fixture.py 從 data.json 反推
@@ -226,6 +226,18 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
 - **橫幅**:`<picture>`,≤560px 載 `assets/banner-mobile.webp`(2:1),其餘載 `assets/banner-1200.webp` / `assets/banner.webp`(6:1,依寬度),
   PNG 當退路;`<img>` 有 width/height 與 CSS aspect-ratio,圖沒到也不跳版。
 - **主題不閃爍**:`<head>` 有一段 inline script 先從 `localStorage.azTheme` 設 `data-theme`(key 與 `storage.js` 同步,改要一起改)。
+- **手機不准橫向捲動**(2026-10-31 iPhone 整頁可左右滑、書卡右上愛心被推出螢幕):`base.css` `html{overflow-x:hidden}` 是最後一道防線
+  (寫在 html 不寫 body:html 的 overflow 交給 viewport、html 本身仍是 visible,sticky 頂欄 / 工具列才不會失效),根本修正在各元素:
+  `.grid` 欄寬用 `minmax(0,1fr)` / `minmax(min(280px,100%),1fr)` 而不是 `1fr`(= `minmax(auto,…)`,任一張卡的 min-content 會把所有書卡撐寬)、
+  `.card{min-width:0}`、標題 / 人設 / 標籤 `overflow-wrap:anywhere` + `white-space:normal`;`.toolbar` 與每顆工具鈕 `min-width:0;max-width:100%`
+  (放不下就換行、再放不下在鈕內折行);手機壓縮列只有 `#sort` 會縮(`flex:1 1 0;min-width:0;width:0` 三個都要給,WebKit 的 `<select>` 才肯縮);
+  **`#sort` 在 ≤860px 一律 16px**(iOS Safari 對 <16px 的 select 點開會自動放大畫面且常不縮回,整頁就能左右滑;與 `.jumpbar input` 16px 同理);
+  `img,video,canvas{max-width:100%}`、`.stats-grid` 也用 `minmax(0,1fr)`。驗收腳本的做法:Playwright 375 / 390 / 414 逐狀態(全部書卡、壓縮列、書架、面板、詳情、頁尾)
+  斷言 `document.documentElement.scrollWidth <= clientWidth`,且每張卡的 `.fav-btn` 右緣在卡片內、在畫面內。
+- **「📡 最後更新:X」**(`main` 的第一行 `#lastUp`,`base.css` `.lastup`):X 是 `synced` 的相對時間(剛剛 / N 分鐘前 / N 小時前 / 昨天 / 前天 / N 天前,
+  `Intl.RelativeTimeFormat('zh-Hant')`),`title` 是精確時間;`src/data.js` 的 `parseSynced`(『2026/10/31 9:01 PM』當台北時間 UTC+8 解析,不用 `new Date(字串)`,Safari 不吃)
+  與 `relativeTime`(純函式,`tests/data.test.js` 有測),`main.js` `renderLastUpdated` 每分鐘重算。放在 `main` 裡而不是頂欄:sticky 頂欄不變高、也在 landmark 內(axe region)。
+  頁尾「星圖更新 / 訊號同步」的精確時間戳照舊。
 - **PWA**(`sw_template.js` → `sw.js`、`src/pwa.js`、`manifest.webmanifest`):
   - 靜態資源(index.html、CSS、JS、圖示、WebP 橫幅、manifest)**cache-first**,快取名 `az-static-<VERSION>`;新版啟用時清掉舊版。
     新版 sw.js 安裝完成在等待時,頁面顯示「🚀 網站有新版本,點此重新整理」,點了送 `{type:'skipWaiting'}`,`controllerchange` 後自動重新整理。

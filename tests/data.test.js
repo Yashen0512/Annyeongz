@@ -37,3 +37,25 @@ describe('expandData:精簡 data.json → 完整資料', () => {
     expect(D.articles.every((x) => typeof x._s === 'string')).toBe(true);
   });
 });
+
+// 頂欄下方「📡 最後更新:X」:synced 字串解析與相對時間(純函式)
+import { parseSynced, relativeTime } from '../src/data.js';
+describe('parseSynced / relativeTime:最後更新的相對時間', () => {
+  it('『2026/10/31 9:01 PM』當台北時間解析成 UTC 13:01;AM / PM / 12 點都對;壞字串回 null', () => {
+    expect(parseSynced('2026/10/31 9:01 PM').toISOString()).toBe('2026-10-31T13:01:00.000Z');
+    expect(parseSynced('2026/10/31 12:05 AM').toISOString()).toBe('2026-10-30T16:05:00.000Z');
+    expect(parseSynced('2026/10/31 12:30 PM').toISOString()).toBe('2026-10-31T04:30:00.000Z');
+    expect(parseSynced('2026/1/2 8:31 AM').toISOString()).toBe('2026-01-02T00:31:00.000Z');
+    expect(parseSynced('')).toBe(null); expect(parseSynced(null)).toBe(null); expect(parseSynced('昨天')).toBe(null);
+  });
+  it('剛剛 / N 分鐘前 / N 小時前 / 昨天 / 前天 / N 天前(zh-Hant),未來時間當剛剛', () => {
+    const t0 = Date.UTC(2026, 9, 31, 13, 1), at = (ms) => relativeTime(new Date(t0), t0 + ms);
+    const M = 60000, H = 60 * M, D = 24 * H;
+    expect(at(0)).toBe('剛剛'); expect(at(59 * 1000)).toBe('剛剛'); expect(at(-5 * M)).toBe('剛剛');
+    expect(at(1 * M)).toMatch(/^1 ?分鐘前$/); expect(at(45 * M)).toMatch(/^45 ?分鐘前$/);
+    expect(at(1 * H)).toMatch(/^1 ?小時前$/); expect(at(23 * H + 59 * M)).toMatch(/^23 ?小時前$/);
+    expect(at(1 * D)).toBe('昨天'); expect(at(2 * D + 3 * H)).toBe('前天');
+    expect(at(3 * D)).toMatch(/^3 ?天前$/); expect(at(40 * D)).toMatch(/^40 ?天前$/);
+    expect(relativeTime(null)).toBe('');
+  });
+});

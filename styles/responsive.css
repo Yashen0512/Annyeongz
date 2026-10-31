@@ -24,8 +24,11 @@ body.noscroll{overflow:hidden}
   .panel .opt{font-size:16px;padding:9px 16px;border-radius:999px}
   .panel .opt .c{font-size:13px;margin-left:1px}
   #filterToggle{display:inline-block}
+  /* 排序下拉 16px:iOS Safari 對 <16px 的表單控制項(select 也算)會在點開時自動放大畫面,放大後常常不縮回去,整頁就能左右滑、書卡右邊被切掉。
+     跟下面 .jumpbar input{font-size:16px} 同一個原因;用 id 蓋過 .ctl(15px)與 .toolbar.mini .ctl(14px)。 */
+  #sort{font-size:16px}
   #statsTb{display:none}                  /* 手機維持現狀:統計星圖入口用頂欄的 #statsLink,工具列那顆不顯示 */
-  .grid{grid-template-columns:1fr}
+  .grid{grid-template-columns:minmax(0,1fr)}   /* 不是 1fr:見 main.css .grid 的說明 */
   .topbar{padding:10px 14px;gap:10px}
   .brand{font-size:15px}
   .search{order:3;flex-basis:100%;max-width:none;font-size:16px;padding:12px 16px}
@@ -55,11 +58,11 @@ body.noscroll{overflow:hidden}
   .scard .sm{font-size:12px}
   .toolbar .count{margin-left:0;flex-basis:100%;font-size:14px}
   /* 手機 sticky 壓縮版(main.js 捲過工具列時加 .mini):只留 🔧 篩選、排序、跳到 #、↑ 一排;其他那組(.tbx)搬進篩選面板頂部 */
-  .toolbar.mini{flex-wrap:nowrap;gap:8px;padding:8px 0}
+  .toolbar.mini{flex-wrap:nowrap;gap:8px;padding:8px 0;max-width:100%}
   .toolbar.mini .sech,.toolbar.mini .count,.toolbar.mini .tbx,.toolbar.mini .jumpbar label,.toolbar.mini .jumpbar button,.toolbar.mini .jmsg{display:none}   /* 「前往」也藏:輸入完離開欄位就跳(main.js) */
   .toolbar.mini .ctl{padding:8px 10px;font-size:14px}
   .toolbar.mini #filterToggle{flex:none;white-space:nowrap}
-  .toolbar.mini #sort{flex:1 1 auto;min-width:0}
+  .toolbar.mini #sort{flex:1 1 0;min-width:0;width:0}   /* 不換行的一排裡只有排序會縮:basis 0 + min-width 0 + width 0 三個都給,WebKit 的 <select> 才肯縮到比選項文字窄(只給 min-width:0 不夠) */
   .toolbar.mini .jumpbar{flex:none;gap:4px}
   .toolbar.mini .jumpbar input{width:64px;padding:8px 8px}
   .toolbar.mini #toTopBar{display:inline-flex;align-items:center;gap:4px;flex:none;white-space:nowrap}
