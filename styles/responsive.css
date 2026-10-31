@@ -24,6 +24,7 @@ body.noscroll{overflow:hidden}
   .panel .opt{font-size:16px;padding:9px 16px;border-radius:999px}
   .panel .opt .c{font-size:13px;margin-left:1px}
   #filterToggle{display:inline-block}
+  #statsTb{display:none}                  /* 手機維持現狀:統計星圖入口用頂欄的 #statsLink,工具列那顆不顯示 */
   .grid{grid-template-columns:1fr}
   .topbar{padding:10px 14px;gap:10px}
   .brand{font-size:15px}

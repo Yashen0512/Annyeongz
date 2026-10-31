@@ -31,6 +31,17 @@
 .toolbar.stuck{background:var(--card);box-shadow:0 1px 0 var(--line)}   /* 分隔線用 box-shadow,貼住時高度不變、版面不跳 */
 .toolbar .tbx{display:contents}   /* 穿越蟲洞 / 書架 / 兩個隱藏 / 複製 / 重設:一組,手機壓縮時整組搬進篩選面板頂部 */
 .toolbar .jumpbar{margin:0}
+.toolbar a.ctl{text-decoration:none;display:inline-flex;align-items:center;line-height:normal}   /* 📊 統計星圖是連結,高度 / 外觀對齊旁邊的 <button class="ctl"> */
+/* 桌機(>860px)固定兩排,不讓「跳到 #」「共 N 篇」隨機跟工具鈕擠在同一排:
+   第一排 = 標題、排序 …(推到右邊)跳到 #、共 N 篇;第二排 = #tbExtra 那組(穿越蟲洞 / 書架 / 隱藏 / 複製 / 重設 / 統計星圖)靠左。
+   斷行用 ::after 當一個 flex-basis:100% 的空項目,order 排在兩組中間;DOM 順序不動(手機壓縮時 main.js 還是照 DOM 搬 #tbExtra)。 */
+@media(min-width:861px){
+  .toolbar{row-gap:6px}   /* 斷行項目自己佔一行(高 0),上下各一個 row-gap → 兩排實際相距 12px */
+  .toolbar::after{content:"";flex-basis:100%;height:0;order:1}
+  .toolbar .tbx>*{order:2}
+  .toolbar .jumpbar{margin-left:auto}
+  .toolbar .count{margin-left:0;white-space:nowrap}
+}
 #toTopBar{display:none}           /* 手機壓縮列才有的 ↑(顯示目前最上方那張卡的編號) */
 #tbSpace{height:0}                /* 手機壓縮時補回工具列少掉的高度,下面的版面不跳 */
 .ctl{padding:7px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);cursor:pointer;font-size:13px}
@@ -51,12 +62,14 @@
 @media (prefers-reduced-motion:reduce){.wh-toast{transition:none}}
 .readmark{font-size:11px;color:var(--he-t);font-weight:700;margin-left:4px;white-space:nowrap}
 .todomark{font-size:12px;margin-left:4px}
-/* 書架分頁:已收藏/待閱讀/已讀 */
-.shelf-tabs{gap:8px;flex-wrap:wrap;margin:2px 0 10px}
+/* 書架分頁:已收藏/待閱讀/已讀 + 匯出 / 匯入 / 清除所有紀錄:同一個 flex 容器、一律靠左、間距都是 8px;
+   放不下就整齊換行(.shelf-tools 用 display:contents,六顆都是 #shelfTabs 的直接 flex 項目,換行時從左邊接著排)。
+   line-height 寫死:不同 emoji 的字型回退會讓 line-height:normal 的按鈕差 1px 高,六顆才會等高。 */
+.shelf-tabs{gap:8px;flex-wrap:wrap;align-items:center;margin:2px 0 10px}
+.shelf-tabs .ctl{line-height:1.3}
 .shelf-tabs .sc{font-size:12px;opacity:.75;margin-left:2px;font-variant-numeric:tabular-nums}
-/* 書架工具列:匯出 / 匯入 / 清除所有紀錄(跟分頁同一列,靠右;窄螢幕自動換行) */
-.shelf-tools{display:inline-flex;gap:8px;flex-wrap:wrap;margin-left:auto}
-.ctl.danger{color:var(--exc-t)}
+.shelf-tools{display:contents}
+.ctl.danger{color:var(--exc-t)}   /* 清除所有紀錄:只有紅字警示,大小 / padding 跟匯出 / 匯入一樣 */
 .ctl.danger:not([disabled]):hover{background:var(--exc-soft);border-color:var(--exc)}
 .detail-actions{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 12px}
 .detail-actions .ctl{font-size:13px}

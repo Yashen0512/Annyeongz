@@ -214,7 +214,10 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
   所以焦點還原 / `scrollIntoView` 捲到卡片時一樣不被擋;`scrollToToolbar` 改捲哨兵(sticky 的工具列 `scrollIntoView` 不會動)。返回定位(`restoreList`)還原的是絕對 `scrollY`,版面沒變就不需要偏移。
   **回頂鈕顯示目前最上方那張卡的編號**(`↑ #1305`,桌機右下角 `#toTop` 與手機壓縮列 `#toTopBar` 同步):書卡在畫出來時交給 IntersectionObserver(`observeCard`,
   root 上緣縮「頂欄 + 工具列」高度),視窗裡的卡放 `_visCards`,取 top 最小的;不是每次 scroll 都算。bars 高度變了(壓縮 / 頂欄換行)才 `buildCardObs()` 重建。
-  頂欄主題鈕旁的 📊(`#statsLink`,aria-label「統計星圖」)連到 `stats.html`,頁尾連結保留。
+  **統計星圖入口**:桌機(>860px)在工具列 `#tbExtra` 那組最後一顆「📊 統計星圖」(`#statsTb`,`<a class="ctl">`,樣式同其他工具鈕),
+  頂欄主題鈕旁的 📊(`#statsLink`,aria-label「統計星圖」)桌機藏起來不重複;手機維持頂欄那顆、工具列那顆藏起來(`responsive.css`)。頁尾連結保留。
+  **桌機工具列固定兩排**(`main.css` `@media(min-width:861px)`,用 `.toolbar::after` 當 `flex-basis:100%` 的斷行項目 + `order`,DOM 順序不動):
+  第一排 標題 / 排序,右邊是 跳到 # 與 共 N 篇(`.jumpbar{margin-left:auto}`);第二排 `#tbExtra` 那組工具鈕靠左。1280~1440 都不會亂換行。
 - **輸入方式偵測與焦點外框**(`boot.js` 檔頭、`base.css` `:focus-visible`):`pointerdown` / `touchstart` → `body[data-input="pointer"]`,
   Tab / 方向鍵 / Home / End → `"keyboard"`;外框只在 keyboard 時顯示。原因是 iOS Safari 會把程式觸發的 focus(關閉彈窗後把焦點還給書卡鈕、面板開關)
   當成鍵盤焦點畫粉框。`tabindex="-1"` 的容器(`main`、面板)一律不畫外框,`restoreFocus` 也不會把焦點還給這種容器(目標一定是書卡 / 小卡 / 工具鈕本身)。
@@ -327,6 +330,7 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
 - 書架完全存本機,免登入,每台裝置各自一份。
 - **帶到另一台裝置(匯出 / 匯入,`storage.js` 檔尾)**:書架區「📤 匯出」「📥 匯入」「🗑 清除所有紀錄」三個按鈕(`render.js` 的
   `shelfToolsHTML`,視窗與詳情共用 `#modal`,`main.js` 的 `_mode = 'tool'`)。
+  三顆與「已收藏 / 待閱讀 / 已讀」同在 `#shelfTabs` 一個 flex 容器裡靠左排、間距 8px(`.shelf-tools{display:contents}`),放不下就換行;「清除所有紀錄」只有紅字(`.ctl.danger`),大小同其他。
   - 格式 `{ v: 1, shelf: [收藏編號], read: [已讀編號], todo: [待閱讀編號], exportedAt: ISO }`,用 `vendor/lz-string.min.js` 的
     `compressToEncodedURIComponent` 壓成只含 `A-Z a-z 0-9 + - $` 的字串。`todo` 是後加的**可選欄位**(版本仍是 1):
     舊字串沒有這欄照樣能匯入,且不動這台的待閱讀;要再加欄位也比照辦理,不要升版本。
