@@ -28,6 +28,13 @@ def test_split_links_marks_dead_by_x():
     out = B.split_links([['Postype-原文 ❌', 'https://p'], ['LFT', 'https://l'], ['❌', 'https://only']])
     assert out == [['Postype-原文', 'https://p', 1], ['LFT', 'https://l'], ['https://only', 'https://only', 1]]
 
+def test_split_links_dedupes_same_url_and_keeps_dead_state():
+    # 同一篇底下網址相同只留一條(第一條的位置);任一條有 ❌ 就算失效
+    out = B.split_links([['PT', 'https://p'], ['PT ❌', 'https://p'], ['LFT ❌', 'https://l'], ['LFT', 'https://l'], ['X', 'https://x']])
+    assert out == [['PT', 'https://p', 1], ['LFT', 'https://l', 1], ['X', 'https://x']]
+    assert B.split_links([['A', 'https://a'], ['A', 'https://a']]) == [['A', 'https://a']]
+    assert B.split_links([['A', 'https://a', 1], ['A', 'https://a']]) == [['A', 'https://a', 1]]   # 已經是三格的也接受
+
 def test_dead_conflict():
     assert B.dead_conflict(True, [['PT', 'https://a']]) is True
     assert B.dead_conflict(True, [['PT', 'https://a', 1]]) is False
