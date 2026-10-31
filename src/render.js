@@ -399,7 +399,8 @@ export function renderStats(el, s, live) {
 
 // ---- 書架匯出 / 匯入 / 清除(與詳情共用 #modal / .sheet;事件在 main.js 接)----
 
-/** 書架工具列:接在書架分頁後面的三個按鈕(inline onclick → main.js 掛到 window 的 shelfExport / shelfImport / shelfClear)。 */
+/** 書架工具列:接在書架分頁後面的三個按鈕(inline onclick → main.js 掛到 window 的 shelfExport / shelfImport / shelfClear)。
+ *  .shelf-tools 是 display:contents(main.css),三顆跟分頁鈕同在 #shelfTabs 這個 flex 容器裡靠左排、放不下就換行。 */
 export function shelfToolsHTML() {
   return `<span class="shelf-tools">`
     + `<button type="button" class="ctl" onclick="shelfExport()" title="把書架與已讀帶到另一台裝置" aria-label="匯出，把書架與已讀帶到另一台裝置">📤 匯出</button>`

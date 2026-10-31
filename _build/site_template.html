@@ -65,6 +65,7 @@
   <input id="q" class="search" type="search" placeholder="🔍 搜尋標題 / 番外篇名 / 作者 / 譯者 / 人設(簡繁皆可)" aria-label="搜尋標題 / 番外篇名 / 作者 / 譯者 / 人設(簡繁皆可)">
   <button type="button" id="installBtn" class="theme install" hidden title="安裝到桌面" aria-label="安裝到桌面">⬇️ 安裝</button>
   <button type="button" id="theme" class="theme" title="切換白晝 / 黑夜" aria-label="切換白晝 / 黑夜">🌙</button>
+  <!-- 📊 統計星圖:手機在頂欄(這顆);桌機(>860px)改放工具列的 #statsTb,這顆藏起來(base.css),不重複 -->
   <a class="theme" id="statsLink" href="stats.html" title="統計星圖" aria-label="統計星圖">📊</a>
 </header>
 
@@ -93,6 +94,7 @@
     </section>
     <section>
       <!-- 工具列 sticky 貼在頂欄下方(main.js 用 IntersectionObserver 盯 #tbSentinel 決定 .stuck;手機捲過去再加 .mini 壓縮成一排)。
+           桌機固定兩排(main.css 用 order + ::after 斷行):第一排 標題 / 排序 … 跳到 # / 共 N 篇靠右,第二排 #tbExtra 那組工具鈕靠左。
            #tbExtra 那組在手機壓縮時搬進篩選面板的 #panelTools;#tbSpace 補回少掉的高度,下面的版面不跳 -->
       <div id="tbSentinel" aria-hidden="true"></div>
       <div class="toolbar" id="toolbar">
@@ -112,6 +114,8 @@
           <label class="ctl chk"><input type="checkbox" id="hideDead">隱藏原文已刪</label>
           <button type="button" class="ctl" id="shareBtn" title="複製目前篩選的網址,分享給別人" aria-label="複製篩選，把目前篩選的網址複製到剪貼簿">🔗 複製篩選</button>
           <button type="button" class="ctl" id="reset" aria-label="重設篩選，清除所有條件">重設篩選</button>
+          <!-- 桌機的統計星圖入口(手機藏起來、用頂欄的 #statsLink):跟其他工具鈕同樣式,放在這組最後,離內容近 -->
+          <a class="ctl" id="statsTb" href="stats.html">📊 統計星圖</a>
         </div>
         <!-- 跳到 #編號:在目前篩選結果裡找到該篇,自動載入到那張卡、捲過去並短暫高亮 -->
         <form class="jumpbar" id="jumpForm" autocomplete="off">

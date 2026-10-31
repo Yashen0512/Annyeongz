@@ -67,7 +67,8 @@ body{margin:0;font-family:"Microsoft JhengHei","PingFang TC",system-ui,sans-seri
 .theme{padding:7px 11px;border:1px solid var(--line);border-radius:999px;background:var(--bg);color:var(--ink);cursor:pointer;font-size:15px;line-height:1}
 .theme.install{font-size:13px;padding:8px 12px;border-color:var(--accent);color:var(--accent-t)}   /* 安裝到桌面:只在瀏覽器觸發 beforeinstallprompt 時顯示 */
 .theme.install[hidden]{display:none}
-a.theme{text-decoration:none;display:inline-flex;align-items:center}   /* 📊 統計星圖(連結,外觀同主題鈕) */
+a.theme{text-decoration:none;display:inline-flex;align-items:center}   /* 📊 統計星圖(連結,外觀同主題鈕;手機用) */
+@media(min-width:861px){#statsLink{display:none}}   /* 桌機:工具列已有「📊 統計星圖」(#statsTb,main.css),頂欄這顆藏起來不重複 */
 .search{flex:1;max-width:420px;min-width:160px;padding:9px 14px;border:1px solid var(--line);
         border-radius:999px;font-size:14px;background:var(--bg);color:var(--ink)}
 .search::placeholder{color:var(--muted)}
