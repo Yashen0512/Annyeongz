@@ -95,7 +95,7 @@
     <section>
       <!-- 工具列 sticky 貼在頂欄下方(main.js 用 IntersectionObserver 盯 #tbSentinel 決定 .stuck;手機捲過去再加 .mini 壓縮成一排)。
            桌機固定兩排(main.css 用 order + ::after 斷行):第一排 標題 / 排序 … 跳到 # / 共 N 篇靠右,第二排 #tbExtra 那組工具鈕靠左。
-           #tbExtra 那組在手機壓縮時搬進篩選面板的 #panelTools;#tbSpace 補回少掉的高度,下面的版面不跳 -->
+           #tbExtra 那組在手機壓縮時搬進篩選面板的 #panelTools;#tbSpace 補回少掉的高度,下面的版面不跳(書架展開時不補,分頁緊接工具列) -->
       <div id="tbSentinel" aria-hidden="true"></div>
       <div class="toolbar" id="toolbar">
         <h2 class="sech" style="margin:0">🌌 平行宇宙 🪐</h2>

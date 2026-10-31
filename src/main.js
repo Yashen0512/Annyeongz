@@ -130,6 +130,7 @@ function updateShelfBtn() {
   const tb = $('shelfTabs'); if (!tb) return;
   tb.style.display = shelfOn ? 'flex' : 'none';
   tb.innerHTML = R.shelfTabsHTML(SHELF, shelfTab) + R.shelfToolsHTML();
+  updateSpace();   // 手機壓縮列:書架展開時不補 #tbSpace,分頁緊接工具列;收起再補回
 }
 
 // ---- 主題切換(深/淺,記憶於 localStorage,預設深色配合品牌)----
@@ -634,9 +635,12 @@ function updateToTop() {
 // ---- sticky 工具列:貼在頂欄下方(top = --topbar-h,量實際高度寫進 CSS 變數);捲過工具列(.stuck)底色同頂欄 + 細分隔線。
 //      手機(≤860px)捲過去改壓縮版(.mini):只留 🔧 篩選、排序、跳到 #、↑,其他那組(#tbExtra)搬進篩選面板頂部(#panelTools),
 //      #tbSpace 補回少掉的高度,下面的版面不跳;捲回最上面再搬回來。偵測用 IntersectionObserver 盯工具列前面的哨兵 #tbSentinel。
+//      例外:書架展開時(shelfOn)不補 #tbSpace(updateSpace),書架分頁 #shelfTabs 才會緊接在壓縮列下面、中間不留一大片空白;
+//      代價是書架開著捲過工具列那一下,下面的版面會往上收 / 往下推一次(壓縮前後的高度差),收起書架就恢復補高。桌機 _mini 永遠是 false,不受影響。
 const toolbar = $('toolbar'), tbSentinel = $('tbSentinel'), tbExtra = $('tbExtra'), tbSpace = $('tbSpace'), panelTools = $('panelTools');
 const isMobile = () => window.innerWidth <= 860;
-let _stuck = false, _mini = false, _tbObs = null;
+let _stuck = false, _mini = false, _miniGap = 0, _tbObs = null;   // _miniGap:壓縮時工具列少掉的高度(整排 − 壓縮列)
+function updateSpace() { if (tbSpace) tbSpace.style.height = (_mini && !shelfOn ? _miniGap : 0) + 'px'; }
 function barsHeight() { return topbarEl.offsetHeight + (toolbar ? toolbar.offsetHeight : 0); }   // 跳到 #編號的偏移:頂欄 + 工具列(貼住時就在頂欄下方)
 const setVar = (name, px) => document.documentElement.style.setProperty(name, Math.round(px) + 'px');
 function measureBars() {
@@ -650,12 +654,12 @@ function setMini(on) {
   if (on) {
     const full = toolbar.offsetHeight;
     toolbar.classList.add('mini'); panelTools.appendChild(tbExtra);
-    tbSpace.style.height = Math.max(0, full - toolbar.offsetHeight) + 'px';
+    _miniGap = Math.max(0, full - toolbar.offsetHeight);
   } else {
     toolbar.classList.remove('mini'); toolbar.insertBefore(tbExtra, $('jumpForm'));
-    tbSpace.style.height = '0px';
+    _miniGap = 0;
   }
-  measureBars();
+  updateSpace(); measureBars();
 }
 function setStuck(on) {
   if (!toolbar || on === _stuck) return;

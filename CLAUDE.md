@@ -208,7 +208,7 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
   `position:sticky; top:var(--topbar-h)` 貼在頂欄下方,`--topbar-h` / `--toolbar-h` 由 `measureBars()` 量實際高度寫進 `:root`(頂欄換行時 ResizeObserver 重量)。
   捲過工具列與否用 IntersectionObserver 盯工具列前面的哨兵 `#tbSentinel`(root 上緣縮頂欄高度、下緣放大 100000px,哨兵從視窗下方直接跳到頂欄上方也會觸發),
   貼住時加 `.stuck`(底色同頂欄、`box-shadow` 當分隔線,高度不變所以不跳版)。**手機(≤860px)貼住時再加 `.mini` 壓縮成一排**:只留 🔧 篩選、排序、跳到 #、`#toTopBar` ↑,
-  其他那組(`#tbExtra`:穿越蟲洞 / 書架 / 兩個隱藏 / 複製 / 重設)整個 DOM 搬進篩選面板頂部的 `#panelTools`(事件綁在元素上,搬了照常),`#tbSpace` 補回少掉的高度;
+  其他那組(`#tbExtra`:穿越蟲洞 / 書架 / 兩個隱藏 / 複製 / 重設)整個 DOM 搬進篩選面板頂部的 `#panelTools`(事件綁在元素上,搬了照常),`#tbSpace` 補回少掉的高度(`updateSpace`;**書架展開時不補**,書架分頁才會緊接壓縮列、不留空白,切換書架時重算);
   捲回最上面搬回來。壓縮列沒有「前往」鈕(iOS 數字鍵盤沒有 Enter),輸入完離開欄位(`change`)就跳。
   **「跳到 #」的捲動偏移**:`highlightCard` 以「頂欄 + 工具列」(`barsHeight()`)以下的空間置中,高卡頂端不會被擋;`.card` 與 `#tbSentinel` 的 `scroll-margin-top` 也避開這兩條,
   所以焦點還原 / `scrollIntoView` 捲到卡片時一樣不被擋;`scrollToToolbar` 改捲哨兵(sticky 的工具列 `scrollIntoView` 不會動)。返回定位(`restoreList`)還原的是絕對 `scrollY`,版面沒變就不需要偏移。
