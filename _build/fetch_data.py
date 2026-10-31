@@ -3,7 +3,8 @@
    產出 build_site.py 需要的檔案(CSV + article_links.json)。
    article_links.json 另帶兩個保留鍵:__edited__(每篇抓連結當下的編輯時間,增量用)、
    __blocks__(每篇頁面 ID 與每個連結所在的 block ID / rich_text 位置,給 notion_writeback.py 標 ❌ 用)。
-   連結只保留主表目前的 (No, 標題),舊標題 / 改號後留在舊號下的連結會清掉(merge_links)。
+   連結只保留主表目前的 (No, 標題),舊標題 / 改號後留在舊號下的連結會清掉(merge_links);
+   抓完再過一次 normalize_links:@ 提及主表另一篇 → annyeongz:<No>、提及作者庫等其他 Notion 頁面的「連結」丟掉、同網址只留一條。
    token:NOTION_TOKEN 環境變數 → notion_token.txt → 都沒有就不帶 header(雲端環境由代理注入)。需把三個資料庫都分享給整合。"""
 import csv, glob, io, json, os, re, time, urllib.request, urllib.error
 from datetime import datetime, timezone, timedelta
@@ -175,6 +176,54 @@ def merge_links(links, pages, fetch_children, sleep=lambda s: None):
     links['__blocks__'] = _blk
     return links, new, refetched, pruned
 
+_NOTION_HOST = re.compile(r'^https?://([a-z0-9-]+\.)*notion\.(so|com)(/|$)', re.I)
+_NID = re.compile(r'[0-9a-f]{32}')
+
+def is_notion_url(url):
+    """Notion 自家網址(notion.so / notion.com / app.notion.com…)。notion.site 是作者公開發表的頁面,不算。"""
+    return bool(_NOTION_HOST.match(url or ''))
+
+def rewrite_internal(url, id2no):
+    """「@ 提及主表另一篇」的 Notion 連結 → 站內跳轉 annyeongz:<No>(讀者才不會被導去 Notion);其他原樣。"""
+    if 'notion.' in url:
+        m = _NID.search(url.replace('-', '').lower())
+        if m and id2no.get(m.group(0)):
+            return 'annyeongz:' + id2no[m.group(0)]
+    return url
+
+def normalize_links(links, id2no, dead_mark='❌'):
+    """每次抓完都對**全部**連結(含沒重抓的快取)做一次整理(純函式;回傳 (links, 改寫站內互連數, 丟掉數, 去重數)):
+    1. 提及主表另一篇 → annyeongz:<No>(rewrite_internal)。
+    2. 仍是 Notion 自家網址的丟掉:段落裡 @ 提及作者庫頁面(「作者:@박프로」)也帶 href,block_links 會把它當成一條連結、
+       標籤又是整段文字,網站就把同一條閱讀連結顯示兩次(2026-10-31 的 No.909)。那不是讀者能開的閱讀連結。
+    3. 同一 (No, 標題) 底下網址相同的只留一條:保留第一條的位置,名稱取**有 ❌ 的那條**(失效狀態不能因去重而消失)。
+    丟掉 / 去重的網址也從 __blocks__ 清掉,notion_writeback 才不會對著不存在的連結寫。"""
+    _blk = links.get('__blocks__') if isinstance(links.get('__blocks__'), dict) else {}
+    rewritten = dropped = deduped = 0
+    for no in links:
+        if no.startswith('__'): continue   # 保留鍵(__edited__ / __blocks__)
+        if not isinstance(links[no], dict): continue
+        pos = _blk.get(no, {}).get('links', {}) if isinstance(_blk.get(no), dict) else {}
+        kept_urls = set()
+        for t in links[no]:
+            out, idx = [], {}
+            for lab, u in links[no][t]:
+                u2 = rewrite_internal(u, id2no)
+                if u2 != u: rewritten += 1
+                if is_notion_url(u2):
+                    dropped += 1; continue
+                if u2 in idx:
+                    deduped += 1
+                    if dead_mark in lab and dead_mark not in out[idx[u2]][0]: out[idx[u2]][0] = lab
+                    continue
+                idx[u2] = len(out); out.append([lab, u2])
+            links[no][t] = out
+            kept_urls.update(u for _, u in out)
+        if pos:
+            for u in list(pos):
+                if u not in kept_urls and rewrite_internal(u, id2no) not in kept_urls: del pos[u]
+    return links, rewritten, dropped, deduped
+
 def atomic_write_csv(path, header, rows):
     tmp = path + '.tmp'
     with io.open(tmp, 'w', encoding='utf-8-sig', newline='') as fh:
@@ -275,29 +324,14 @@ def main():
         except Exception: links = {}
     fetch_children = lambda pid: api('GET', 'https://api.notion.com/v1/blocks/%s/children?page_size=100' % pid).get('results', [])
     links, new, refetched, pruned = merge_links(links, pages, fetch_children, time.sleep)
-    # 把「@ 提及站內另一篇」的 Notion 連結 → 站內跳轉 annyeongz:<No>(讀者才不會被導去 Notion)
+    # 站內互連改寫、丟掉提及作者庫等 Notion 頁面的假連結、同網址去重(對全部連結做,含沒重抓的快取;邏輯在 normalize_links)
     id2no = {pg['id'].replace('-', ''): read_no(pg) for pg in pages}
-    _NID = re.compile(r'[0-9a-f]{32}')
-    def rewrite_link(url):
-        if 'notion.' in url:
-            m = _NID.search(url.replace('-', '').lower())
-            if m and id2no.get(m.group(0)):
-                return 'annyeongz:' + id2no[m.group(0)]
-        return url
-    _ref = 0
-    for _no in links:
-        if _no.startswith('__'): continue   # 保留鍵(__edited__ / __blocks__)
-        for _t in links[_no]:
-            new_list = []
-            for lab, u in links[_no][_t]:
-                u2 = rewrite_link(u)
-                if u2 != u: _ref += 1
-                new_list.append([lab, u2])
-            links[_no][_t] = new_list
+    links, _ref, _drop, _dup = normalize_links(links, id2no)
 
     io.open('article_links.json', 'w', encoding='utf-8').write(json.dumps(links, ensure_ascii=False))
     print('  連結:新增', new, '篇、重抓(頁面有編輯)', refetched, '篇、清掉舊標題 / 舊編號', pruned, '筆(總',
-          sum(len(v) for k, v in links.items() if not k.startswith('__')), '筆標題);站內互連改寫', _ref, '筆')
+          sum(len(v) for k, v in links.items() if not k.startswith('__')), '筆標題);站內互連改寫', _ref,
+          '筆、丟掉 Notion 頁面提及', _drop, '筆、同網址去重', _dup, '筆')
 
     # ---- GoatCounter 瀏覽統計(可選;有 token 才抓)----
     GC_TOKEN = (os.environ.get('GOATCOUNTER_TOKEN') or

@@ -22,14 +22,18 @@ SINGLE = [('文章類型', 'TYPE'), ('文章篇幅', 'LENGTH'), ('結局', 'END'
 # ---------- 純函式(pytest 直接測這些) ----------
 
 def split_links(links):
-    """[[名稱, 網址], ...] → 名稱含 ❌ 的改成 [名稱(去掉❌), 網址, 1];有效的維持兩格(資料檔不變大)。"""
-    out = []
+    """[[名稱, 網址], ...] → 名稱含 ❌ 的改成 [名稱(去掉❌), 網址, 1];有效的維持兩格(資料檔不變大)。
+    同一篇底下網址相同的只留一條(第一條的位置),任一條有 ❌ 就算失效(fetch_data.normalize_links 已先去重,這裡是最後一道保險)。"""
+    out, idx = [], {}
     for l in links or []:
         lab, url = l[0], l[1]
-        if DEAD_MARK in lab:
-            out.append([lab.replace(DEAD_MARK, '').strip() or url, url, 1])
-        else:
-            out.append([lab, url])
+        dead = DEAD_MARK in lab or len(l) > 2 and bool(l[2])
+        lab = lab.replace(DEAD_MARK, '').strip() or url
+        if url in idx:
+            if dead and len(out[idx[url]]) < 3: out[idx[url]] = [out[idx[url]][0], url, 1]
+            continue
+        idx[url] = len(out)
+        out.append([lab, url, 1] if dead else [lab, url])
     return out
 
 def is_internal(link):

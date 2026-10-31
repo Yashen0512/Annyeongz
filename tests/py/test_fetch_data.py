@@ -95,3 +95,55 @@ def test_merge_links_renamed_title_keeps_only_new_title():
     out, new, refetched, pruned = FD.merge_links(links, [_page(9, '新標題', 'P9', 'T1')],
                                                  lambda pid: [_link_block('B9', 'PT', 'https://www.postype.com/@a/post/9')])
     assert out['9'] == {'新標題': [['PT', 'https://www.postype.com/@a/post/9']]} and pruned == 1
+
+# ---- normalize_links:站內互連改寫、丟掉提及作者庫的假連結、同網址去重 ----
+def test_normalize_links_drops_author_page_mentions():
+    # 2026-10-31 的 No.909:段落「Postype-正文-原文 作者:@박프로」裡作者名是 @ 提及作者庫頁面,也帶 href,
+    # block_links 把它記成第二條同名「連結」,網站就把每條閱讀連結顯示兩次。
+    links = {'909': {'개강에 생일': [
+                 ['Postype-正文-原文 作者:박프로', 'https://www.postype.com/@parkpro/post/16549828'],
+                 ['Postype-正文-原文 作者:박프로', 'https://app.notion.com/p/179a721354808011b6c9d43af704a75a'],
+                 ['❌Postype-番外-原文 作者:무', 'https://www.postype.com/@nothing-left09/post/15207213'],
+                 ['❌Postype-番外-原文 作者:무', 'https://www.notion.so/17aa72135480809383c9de1555cc3d48']]},
+             '__edited__': {'909': 'T'},
+             '__blocks__': {'909': {'page': 'P909', 'links': {
+                 'https://www.postype.com/@parkpro/post/16549828': ['B1', 0],
+                 'https://app.notion.com/p/179a721354808011b6c9d43af704a75a': ['B1', 2],
+                 'https://www.postype.com/@nothing-left09/post/15207213': ['B2', 1],
+                 'https://www.notion.so/17aa72135480809383c9de1555cc3d48': ['B2', 3]}}}}
+    out, rewritten, dropped, deduped = FD.normalize_links(links, {'P909': '909'})
+    assert out['909'] == {'개강에 생일': [
+        ['Postype-正文-原文 作者:박프로', 'https://www.postype.com/@parkpro/post/16549828'],
+        ['❌Postype-番外-原文 作者:무', 'https://www.postype.com/@nothing-left09/post/15207213']]}
+    assert set(out['__blocks__']['909']['links']) == {'https://www.postype.com/@parkpro/post/16549828',
+                                                        'https://www.postype.com/@nothing-left09/post/15207213'}
+    assert out['__edited__'] == {'909': 'T'} and (rewritten, dropped, deduped) == (0, 2, 0)
+
+def test_normalize_links_rewrites_article_mentions_but_keeps_notion_site():
+    pid = 'a' * 32
+    links = {'1': {'A': [['前傳', 'https://www.notion.so/%s?pvs=4' % pid],
+                         ['Notion 公開頁', 'https://someone.notion.site/fic-123'],
+                         ['PT', 'https://www.postype.com/@a/post/1']]},
+             '__blocks__': {'1': {'page': 'P1', 'links': {'https://www.notion.so/%s?pvs=4' % pid: ['B1', 0]}}}}
+    out, rewritten, dropped, deduped = FD.normalize_links(links, {pid: '77'})
+    assert out['1']['A'] == [['前傳', 'annyeongz:77'], ['Notion 公開頁', 'https://someone.notion.site/fic-123'],
+                             ['PT', 'https://www.postype.com/@a/post/1']]
+    assert out['__blocks__']['1']['links'] == {'https://www.notion.so/%s?pvs=4' % pid: ['B1', 0]}   # 改寫過的仍留 block 位置
+    assert (rewritten, dropped, deduped) == (1, 0, 0)
+
+def test_normalize_links_dedupes_same_url_keeping_dead_mark():
+    links = {'5': {'E': [['PT', 'https://www.postype.com/@a/post/5'], ['PT ❌', 'https://www.postype.com/@a/post/5'],
+                         ['LFT ❌', 'https://x.lofter.com/post/1'], ['LFT', 'https://x.lofter.com/post/1']]}}
+    out, rewritten, dropped, deduped = FD.normalize_links(links, {})
+    # 同網址只留一條(第一條的位置),名稱取有 ❌ 的那條
+    assert out['5']['E'] == [['PT ❌', 'https://www.postype.com/@a/post/5'], ['LFT ❌', 'https://x.lofter.com/post/1']]
+    assert (rewritten, dropped, deduped) == (0, 0, 2)
+    assert '__blocks__' not in out   # 沒有 __blocks__ 也不會壞
+
+def test_is_notion_url():
+    assert FD.is_notion_url('https://app.notion.com/p/179a721354808011b6c9d43af704a75a')
+    assert FD.is_notion_url('https://www.notion.so/abc')
+    assert FD.is_notion_url('https://notion.so/abc')
+    assert not FD.is_notion_url('https://someone.notion.site/page')
+    assert not FD.is_notion_url('https://www.postype.com/@a/post/1')
+    assert not FD.is_notion_url('annyeongz:12')
