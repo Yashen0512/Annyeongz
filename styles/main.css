@@ -43,7 +43,7 @@
   .toolbar .count{margin-left:0;white-space:nowrap}
 }
 #toTopBar{display:none}           /* 手機壓縮列才有的 ↑(顯示目前最上方那張卡的編號) */
-#tbSpace{height:0}                /* 手機壓縮時補回工具列少掉的高度,下面的版面不跳 */
+#tbSpace{height:0}                /* 手機壓縮時補回工具列少掉的高度,下面的版面不跳;書架展開時 main.js 設回 0,書架分頁緊接壓縮列 */
 .ctl{padding:7px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);cursor:pointer;font-size:13px}
 .ctl.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-t);font-weight:700}
 .ctl.chk{display:inline-flex;align-items:center;gap:5px}
