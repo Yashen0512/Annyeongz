@@ -19,8 +19,14 @@ function personInfo(ctx, name, id) {
 }
 
 export const endCls = (e) => ({ HE: 'he', BE: 'be', OE: 'oe' }[e] || '');
-export const STMAP = { '完結': 'done', '完結+番外': 'done', '連載中': 'ongoing', '未完': 'wip', '斷更': 'hiatus', '建置中': 'building', '不定期更新': 'irregular' };
+// 文章狀態八種 → 四個家族(配色與符號都按家族,不是八種顏色):完結系 done(綠 ✓)、進行系 ongoing(藍 ●)、未完 wip(金 ⏸)、斷更 hiatus(灰 ✕)
+export const STMAP = { '完結': 'done', '完結+番外': 'done', '完結+後記': 'done', '連載中': 'ongoing', '不定期更新': 'ongoing', '建置中': 'ongoing', '未完': 'wip', '斷更': 'hiatus' };
 export const STKEY = (s) => STMAP[s] || '';
+export const STSYM = { done: '✓', ongoing: '●', wip: '⏸', hiatus: '✕' };
+/** 狀態文字前的家族符號(裝飾,對輔助科技隱藏;狀態名稱本身已經說明一切)。 */
+export const stSym = (s) => { const k = STKEY(s); return k ? `<span class="si" aria-hidden="true">${STSYM[k]}</span>` : ''; };
+// 面板「文章狀態」(?) 的定義(站長提供)
+export const STATUS_HELP = [['連載中', '持續更新中'], ['完結', '已完成'], ['未完', '原本連載但長期未更新'], ['斷更', '作者寫到一半後刪文']];
 
 export const SHELF_META = { fav: ['❤️', '已收藏'], todo: ['🔖', '待閱讀'], read: ['✓', '已讀'] };
 
@@ -32,13 +38,14 @@ export function navBar(i, n, unit) {
     + `<button class="ctl"${i < n - 1 ? ' onclick="navDetail(1)"' : ' disabled'}>下一${unit} ›</button></div>`;
 }
 
+/** 書卡 / 詳情的 chip 列:文章狀態第一顆(家族色 + 符號),再來 原文已刪、文章類型、篇幅、結局。 */
 export function badges(a) {
   const b = [];
+  if (sg(a, '文章狀態')) b.push(`<span class="badge sb-${STKEY(sg(a, '文章狀態'))}">${stSym(sg(a, '文章狀態'))}${sg(a, '文章狀態')}</span>`);
   if (a.dead) b.push('<span class="badge dead">原文已刪</span>');
   if (sg(a, '文章類型')) b.push(`<span class="badge type">${sg(a, '文章類型')}</span>`);
   if (sg(a, '文章篇幅')) b.push(`<span class="badge">${sg(a, '文章篇幅')}</span>`);
   if (sg(a, '結局')) b.push(`<span class="badge ${endCls(sg(a, '結局'))}">${sg(a, '結局')}</span>`);
-  if (sg(a, '文章狀態')) b.push(`<span class="badge sb-${STKEY(sg(a, '文章狀態'))}">${sg(a, '文章狀態')}</span>`);
   return b.join('');
 }
 
@@ -167,26 +174,38 @@ export function buildPanel(panelEl, facets, { onTag, onMode }) {
     const h = document.createElement('h3');
     const showMode = f.type === 'multi';
     const oid = 'fopts' + fi;
+    const isStatus = f.key === '文章狀態';   // 標籤依家族上色 + 符號;標題旁有 (?) 說明
+    const hid = 'fhelp' + fi;
     h.innerHTML = `<button type="button" class="fh" aria-expanded="true" aria-controls="${oid}">${f.key}</button><span class="rt">`
+      + (isStatus ? `<button type="button" class="fhelp" aria-expanded="false" aria-controls="${hid}" aria-label="文章狀態的定義">?</button>` : ``)
       + (showMode ? `<button type="button" class="mode" role="switch" aria-checked="false" aria-label="${f.key}：全部符合" data-k="${f.key}">任一</button>` : ``)
       + `<span class="arw" aria-hidden="true">▾</span></span>`;
     const opts = document.createElement('div'); opts.className = 'opts'; opts.id = oid;
     const fh = h.querySelector('.fh');
     h.onclick = (e) => {
-      if (e.target.classList.contains('mode')) return;
+      if (e.target.classList.contains('mode') || e.target.classList.contains('fhelp')) return;
       const hide = opts.style.display !== 'none';
       opts.style.display = hide ? 'none' : 'flex';
       h.querySelector('.arw').textContent = hide ? '▸' : '▾';
       fh.setAttribute('aria-expanded', String(!hide));
     };
     if (showMode) { const mt = h.querySelector('.mode'); mt.onclick = (e) => { e.stopPropagation(); onMode(f.key); }; }
+    let note = null;
+    if (isStatus) {
+      note = document.createElement('div'); note.className = 'fnote'; note.id = hid; note.hidden = true;
+      note.innerHTML = STATUS_HELP.map(([k, d]) => `<div><b>${stSym(k)}${k}</b>＝${d}</div>`).join('');
+      const hb = h.querySelector('.fhelp');
+      hb.onclick = (e) => { e.stopPropagation(); note.hidden = !note.hidden; hb.setAttribute('aria-expanded', String(!note.hidden)); };   // 點一下顯示、再點關閉(手機沒有 hover)
+    }
     f.options.forEach(([val, cnt]) => {
-      const o = document.createElement('button'); o.type = 'button'; o.className = 'opt';
-      o.innerHTML = `${val} <span class="c" aria-hidden="true">${cnt}</span>`;   // 空白:可見文字「OOC 208」才包含在 aria-label 裡(axe label-content-name-mismatch)
+      const o = document.createElement('button'); o.type = 'button';
+      const extra = isStatus && STKEY(val) ? 'st-' + STKEY(val) : '';
+      o.className = 'opt' + (extra ? ' ' + extra : '');
+      o.innerHTML = `${isStatus ? stSym(val) : ''}${val} <span class="c" aria-hidden="true">${cnt}</span>`;   // 空白:可見文字「OOC 208」才包含在 aria-label 裡(axe label-content-name-mismatch)
       o.onclick = () => onTag(f.key, val);
-      o._val = val; o._key = f.key; o._cnt = cnt; opts.appendChild(o);
+      o._val = val; o._key = f.key; o._cnt = cnt; o._extra = extra; opts.appendChild(o);
     });
-    box.appendChild(h); box.appendChild(opts); panelEl.appendChild(box);
+    box.appendChild(h); if (note) box.appendChild(note); box.appendChild(opts); panelEl.appendChild(box);
   });
 }
 
@@ -202,7 +221,7 @@ export function syncStyles(sel, modes) {
   // 只在真的不同時才寫 className / textContent / aria,避免幾百個標籤每次重繪都觸發樣式失效
   document.querySelectorAll('.opt').forEach((o) => {
     if (o._key === undefined) return;   // 熱門星系的標籤沒有三態
-    const s = (sel[o._key] || {})[o._val]; const cls = 'opt' + (s === 'on' ? ' on' : s === 'exc' ? ' exc' : '');
+    const s = (sel[o._key] || {})[o._val]; const cls = 'opt' + (o._extra ? ' ' + o._extra : '') + (s === 'on' ? ' on' : s === 'exc' ? ' exc' : '');   // _extra = 文章狀態的家族色 class,要保留
     if (o.className !== cls) { o.className = cls; optAria(o, s); }
     else if (!o.hasAttribute('aria-pressed')) optAria(o, s);
   });

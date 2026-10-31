@@ -197,6 +197,26 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
   `sig` 是會影響清單內容的全部狀態(標籤三態、任一全部、作者、搜尋字、排序、書架分頁、兩個勾選框)的 JSON;
   開站 `render()` 之後 `restoreList()`:簽章對得上就 `ensure(shown)` 再捲回 `y`,所以從詳情、分享頁(`p/<No>/` → `?p=`)或瀏覽器「上一頁」回來
   不會重置回第一批。`boot.js` 把 `history.scrollRestoration` 設成 `manual`,避免瀏覽器自己的還原跟分批渲染打架。
+- **彈窗開著時鎖住背景捲動**(`main.js` `lockScroll` / `unlockScroll`,樣式 `modal.css` 的 `body.az-lock`):iOS Safari 只靠 `overflow:hidden`
+  擋不住觸控捲動,所以 `showSheet()` 記下 `scrollY`、把 body 設成 `position:fixed; top:-scrollY; width:100%`(桌機另補回捲軸寬度不跳版),
+  關閉時還原並 `scrollTo` 回原位置;詳情 / 公告 / 三個書架工具視窗都走同一條路。`closeDetail()` **同步**解鎖後才 `close()`
+  (dialog 的 `close` 事件是非同步的,點標籤 / 作者後的 `scrollToToolbar` 才不會被還原捲動蓋掉),Esc / 點灰底由 `close` 事件補解鎖。
+  鎖住期間 `window.scrollY` 是 0,`saveList` 改存 `_lockY`、`restoreList` 的延後捲動在鎖住時改寫進鎖(`setLockedY`),
+  所以 `?p=` 開站即開詳情、關閉後列表位置與已載入張數照舊。`.modal` 與 `.sheet` 都有 `overscroll-behavior:contain`,內容在彈窗內捲、不外溢。
+- **sticky 工具列**(`main.js` 「sticky 工具列」區、`styles/main.css` `.toolbar`、`responsive.css` `.toolbar.mini`):「平行宇宙」工具列
+  `position:sticky; top:var(--topbar-h)` 貼在頂欄下方,`--topbar-h` / `--toolbar-h` 由 `measureBars()` 量實際高度寫進 `:root`(頂欄換行時 ResizeObserver 重量)。
+  捲過工具列與否用 IntersectionObserver 盯工具列前面的哨兵 `#tbSentinel`(root 上緣縮頂欄高度、下緣放大 100000px,哨兵從視窗下方直接跳到頂欄上方也會觸發),
+  貼住時加 `.stuck`(底色同頂欄、`box-shadow` 當分隔線,高度不變所以不跳版)。**手機(≤860px)貼住時再加 `.mini` 壓縮成一排**:只留 🔧 篩選、排序、跳到 #、`#toTopBar` ↑,
+  其他那組(`#tbExtra`:穿越蟲洞 / 書架 / 兩個隱藏 / 複製 / 重設)整個 DOM 搬進篩選面板頂部的 `#panelTools`(事件綁在元素上,搬了照常),`#tbSpace` 補回少掉的高度;
+  捲回最上面搬回來。壓縮列沒有「前往」鈕(iOS 數字鍵盤沒有 Enter),輸入完離開欄位(`change`)就跳。
+  **「跳到 #」的捲動偏移**:`highlightCard` 以「頂欄 + 工具列」(`barsHeight()`)以下的空間置中,高卡頂端不會被擋;`.card` 與 `#tbSentinel` 的 `scroll-margin-top` 也避開這兩條,
+  所以焦點還原 / `scrollIntoView` 捲到卡片時一樣不被擋;`scrollToToolbar` 改捲哨兵(sticky 的工具列 `scrollIntoView` 不會動)。返回定位(`restoreList`)還原的是絕對 `scrollY`,版面沒變就不需要偏移。
+  **回頂鈕顯示目前最上方那張卡的編號**(`↑ #1305`,桌機右下角 `#toTop` 與手機壓縮列 `#toTopBar` 同步):書卡在畫出來時交給 IntersectionObserver(`observeCard`,
+  root 上緣縮「頂欄 + 工具列」高度),視窗裡的卡放 `_visCards`,取 top 最小的;不是每次 scroll 都算。bars 高度變了(壓縮 / 頂欄換行)才 `buildCardObs()` 重建。
+  頂欄主題鈕旁的 📊(`#statsLink`,aria-label「統計星圖」)連到 `stats.html`,頁尾連結保留。
+- **輸入方式偵測與焦點外框**(`boot.js` 檔頭、`base.css` `:focus-visible`):`pointerdown` / `touchstart` → `body[data-input="pointer"]`,
+  Tab / 方向鍵 / Home / End → `"keyboard"`;外框只在 keyboard 時顯示。原因是 iOS Safari 會把程式觸發的 focus(關閉彈窗後把焦點還給書卡鈕、面板開關)
+  當成鍵盤焦點畫粉框。`tabindex="-1"` 的容器(`main`、面板)一律不畫外框,`restoreFocus` 也不會把焦點還給這種容器(目標一定是書卡 / 小卡 / 工具鈕本身)。
 - **延後初始化**:星際廣播 / 新星誕生 / 軌道更新 / 熱門星系四區在區塊接近視窗時才建 DOM(`render.js` `whenVisible`);
   分類面板、統計卡、愛心計數在 `requestIdleCallback` 裡做。詳情 / 公告彈窗的內容打開時才產生、關閉時清空。
 - **橫幅**:`<picture>`,≤560px 載 `assets/banner-mobile.webp`(2:1),其餘載 `assets/banner-1200.webp` / `assets/banner.webp`(6:1,依寬度),
@@ -343,6 +363,17 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
   (RSS 2.0,每則含標題、作者、標籤 category、分享連結、日期);`lastBuildDate` 用最新一則的日期而不是建置時間,所以沒變動就不會產生 diff。
   `site_template.html` 的 `<head>` 有兩個 `<link rel="alternate" type="application/rss+xml">`。
 
+## 文章狀態與結局的配色(`render.js` `STMAP` / `STSYM`、`styles/base.css` `--st-*` / `--end-*`)
+
+- 狀態八種按**四個家族**配色與符號,不是八種顏色:完結系(完結、完結+番外、完結+後記)= `done` 綠 ✓;進行系(連載中、不定期更新、建置中)= `ongoing` 藍 ●;
+  未完 = `wip` 金 ⏸;斷更 = `hiatus` 灰 ✕(不用紅,避免跟「原文已刪」的紅 chip 撞色)。家族鍵給書卡左色條 `.cst-*`、狀態 chip `.badge.sb-*`、
+  面板「文章狀態」標籤 `.opt.st-*`(`syncStyles` 會保留 `o._extra` 這個 class)三處共用,色票 `--st-<家族>` / `-bg` / `-t`(文字色對比 ≥ 4.5:1,深淺色都驗過)。
+  符號是文字字元放在狀態名前(`stSym()`,`aria-hidden`,狀態名本身已說明一切)。狀態 chip 是書卡 / 詳情 chip 列的**第一顆**,再來 原文已刪、文章類型、篇幅、結局。
+- `--he` / `--be` / `--oe` 這三組名字仍是「綠 / 藍 / 金」通用色票(`--st-done` 等直接指向它們;統計星圖的圖表顏色、已讀 ✓ 也讀它們),**結局 chip 改用 `--end-*`**:
+  HE 玫瑰紅、BE 紫(= `--purp`)、OE 青,避開狀態四家族。
+- 面板「文章狀態」標題旁的 `(?)`(`.fhelp`,`aria-expanded`)點一下展開 `.fnote` 定義、再點收起(手機沒有 hover);定義文字在 `render.js` `STATUS_HELP`。
+- 新增狀態值時:`facets_def.py` 加標籤後,到 `STMAP` 歸進某個家族,沒歸的狀態 chip 會退回灰底無符號。
+
 ## 深淺色主題
 
 - `<html data-theme="dark|light">`,CSS 變數定義在 `styles/base.css`:`:root{}` 是淺色,`[data-theme="dark"]{}` 覆蓋成深色。
@@ -417,4 +448,6 @@ python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆�
   從詳情 / 分享頁 / 上一頁返回也不會重置(見「列表狀態記憶」);
   分面標籤三態循環是 包含 → 排除 → 取消;穿越蟲洞略過原文已刪與無連結的文。
 - 標籤名稱、分面順序、改名合併規則都在 `_build/facets_def.py`,前端不要寫死標籤清單(`related.js` 的 `REL_FACETS` 與
-  `render.js` 的狀態色對照 `STMAP` 是僅有的例外)。
+  `render.js` 的狀態家族對照 `STMAP` / `STATUS_HELP` 是僅有的例外)。
+- 樣板(`_build/site_template.html`)改了之後,本機用 `build_site.write_site(expand_data(data.json), '_build', <暫存資料夾>, repo_root='.')` 重產,
+  只把 `index.html` 複製回倉庫一起進 PR(`sw.js` 版本號每次建置都不同、交給下次 sync),否則 push 到 main 後靜態部署會用舊 `index.html` 配新 `src/`。

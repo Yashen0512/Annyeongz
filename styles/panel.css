@@ -19,5 +19,20 @@
 .opts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .opt{font-size:13px;padding:3px 9px;border:1px solid var(--line);border-radius:999px;background:var(--chip);cursor:pointer;white-space:nowrap;user-select:none}
 .opt .c{color:var(--muted);font-size:11px;margin-left:0}   /* 篇數前面是一個空白字元(無障礙名稱需要),所以不再加 margin */
+/* 「文章狀態」區的標籤依家族上色(與書卡 chip 同色票);選了(包含 / 排除)就照其他分面的粉底 / 紅刪除線 */
+.opt.st-done{background:var(--st-done-bg);border-color:var(--st-done);color:var(--st-done-t)}
+.opt.st-ongoing{background:var(--st-on-bg);border-color:var(--st-on);color:var(--st-on-t)}
+.opt.st-wip{background:var(--st-wip-bg);border-color:var(--st-wip);color:var(--st-wip-t)}
+.opt.st-hiatus{background:var(--st-hiatus-bg);border-color:var(--st-hiatus);color:var(--st-hiatus-t)}
+.opt[class*="st-"] .c{color:inherit}   /* 篇數跟著家族字色(灰字在有色底上對比不到 4.5:1) */
 .opt.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-t)}
 .opt.exc{background:var(--exc-soft);border-color:var(--exc);color:var(--exc-t);text-decoration:line-through}
+/* 「文章狀態」標題旁的 (?):點一下展開定義、再點收起(手機沒有 hover,所以用點的) */
+.fhelp{width:24px;height:24px;border-radius:50%;border:1px solid var(--line);background:var(--bg);color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;line-height:1;padding:0;font-family:inherit}
+.fhelp[aria-expanded="true"],.fhelp:hover{border-color:var(--accent);color:var(--accent-t);background:var(--accent-soft)}
+.fnote{font-size:12px;color:var(--muted);line-height:1.7;margin:4px 0 2px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.fnote[hidden]{display:none}
+.fnote b{color:var(--ink);font-weight:700}
+/* 手機壓縮工具列時搬進來的那組控制項(穿越蟲洞 / 書架 / 隱藏 / 複製 / 重設);桌機與展開時是空的 */
+.panel .tbx{display:flex;flex-wrap:wrap;gap:8px;padding:10px 0 12px;border-bottom:1px solid var(--line)}
+#panelTools:empty{display:none}

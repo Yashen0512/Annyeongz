@@ -65,12 +65,14 @@
   <input id="q" class="search" type="search" placeholder="🔍 搜尋標題 / 番外篇名 / 作者 / 譯者 / 人設(簡繁皆可)" aria-label="搜尋標題 / 番外篇名 / 作者 / 譯者 / 人設(簡繁皆可)">
   <button type="button" id="installBtn" class="theme install" hidden title="安裝到桌面" aria-label="安裝到桌面">⬇️ 安裝</button>
   <button type="button" id="theme" class="theme" title="切換白晝 / 黑夜" aria-label="切換白晝 / 黑夜">🌙</button>
+  <a class="theme" id="statsLink" href="stats.html" title="統計星圖" aria-label="統計星圖">📊</a>
 </header>
 
 <div class="loading-note" id="loadingNote" aria-live="polite">🛰️ 星圖載入中…</div>
 <div class="wrap">
   <!-- 面板標題用 h2(手機顯示 panelbar 的、桌機顯示 paneltitle 的),分面才是 h3,標題層級才不會從 h1 跳到 h3 -->
-  <aside class="panel" id="panel" aria-label="分類篩選"><div class="panelbar"><h2>🔧 分類篩選</h2><button type="button" class="ctl pbdone">完成</button></div><h2 class="paneltitle">分類篩選</h2></aside>
+  <!-- #panelTools:手機工具列壓縮時,穿越蟲洞 / 書架 / 隱藏 / 複製 / 重設那組(#tbExtra)搬到這裡;其餘時候是空的 -->
+  <aside class="panel" id="panel" aria-label="分類篩選"><div class="panelbar"><h2>🔧 分類篩選</h2><button type="button" class="ctl pbdone">完成</button></div><div id="panelTools"></div><h2 class="paneltitle">分類篩選</h2></aside>
   <main class="main" id="main" tabindex="-1">
     <!-- 輪播:role=region + aria-roledescription=輪播;‹ › 可 Tab 聚焦、小卡上 ← → 切換;.strip-page 以 aria-live 宣告目前頁數 -->
     <section id="annSec" style="display:none">
@@ -90,7 +92,10 @@
       <div class="opts" id="hot"></div>
     </section>
     <section>
-      <div class="toolbar">
+      <!-- 工具列 sticky 貼在頂欄下方(main.js 用 IntersectionObserver 盯 #tbSentinel 決定 .stuck;手機捲過去再加 .mini 壓縮成一排)。
+           #tbExtra 那組在手機壓縮時搬進篩選面板的 #panelTools;#tbSpace 補回少掉的高度,下面的版面不跳 -->
+      <div id="tbSentinel" aria-hidden="true"></div>
+      <div class="toolbar" id="toolbar">
         <h2 class="sech" style="margin:0">🌌 平行宇宙 🪐</h2>
         <button type="button" class="ctl" id="filterToggle" aria-expanded="false" aria-controls="panel">🔧 篩選</button>
         <select id="sort" class="ctl" aria-label="排序方式">
@@ -100,25 +105,29 @@
           <option value="likes">❤️ 愛心最多</option>
           <option value="views">🔭 最多人觀測</option>
         </select>
-        <button type="button" class="ctl" id="rand" aria-label="穿越蟲洞，隨機開一篇">🌀 穿越蟲洞</button>
-        <button type="button" class="ctl" id="shelfBtn" aria-pressed="false" aria-label="書架，只看我收藏 / 待閱讀 / 已讀的文">📚 書架</button>
-        <label class="ctl chk"><input type="checkbox" id="hideRead">隱藏已讀</label>
-        <label class="ctl chk"><input type="checkbox" id="hideDead">隱藏原文已刪</label>
-        <button type="button" class="ctl" id="shareBtn" title="複製目前篩選的網址,分享給別人" aria-label="複製篩選，把目前篩選的網址複製到剪貼簿">🔗 複製篩選</button>
-        <button type="button" class="ctl" id="reset" aria-label="重設篩選，清除所有條件">重設篩選</button>
+        <div class="tbx" id="tbExtra">
+          <button type="button" class="ctl" id="rand" aria-label="穿越蟲洞，隨機開一篇">🌀 穿越蟲洞</button>
+          <button type="button" class="ctl" id="shelfBtn" aria-pressed="false" aria-label="書架，只看我收藏 / 待閱讀 / 已讀的文">📚 書架</button>
+          <label class="ctl chk"><input type="checkbox" id="hideRead">隱藏已讀</label>
+          <label class="ctl chk"><input type="checkbox" id="hideDead">隱藏原文已刪</label>
+          <button type="button" class="ctl" id="shareBtn" title="複製目前篩選的網址,分享給別人" aria-label="複製篩選，把目前篩選的網址複製到剪貼簿">🔗 複製篩選</button>
+          <button type="button" class="ctl" id="reset" aria-label="重設篩選，清除所有條件">重設篩選</button>
+        </div>
+        <!-- 跳到 #編號:在目前篩選結果裡找到該篇,自動載入到那張卡、捲過去並短暫高亮 -->
+        <form class="jumpbar" id="jumpForm" autocomplete="off">
+          <label for="jumpNo">跳到 #</label><input id="jumpNo" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="編號" aria-label="跳到編號">
+          <button type="submit" class="ctl">前往</button>
+          <span class="jmsg" id="jumpMsg" role="status" aria-live="polite"></span>
+        </form>
+        <button type="button" class="ctl" id="toTopBar" aria-label="回到頂部">↑</button>
         <span class="count" id="count"></span>
         <span class="sr-only" id="liveCount" aria-live="polite" aria-atomic="true"></span>
       </div>
+      <div id="tbSpace" aria-hidden="true"></div>
       <div class="shelf-tabs" id="shelfTabs" style="display:none"></div>
       <div class="hint">同區點多個＝任一(OR)、跨區＝同時(AND)、再點一下＝排除(紅刪除線);區標題可切「任一/全部」。點書卡看詳情。</div>
       <div class="authorhead" id="authorHead" style="display:none"></div>
       <div class="sel-bar" id="selbar"></div>
-      <!-- 跳到 #編號:在目前篩選結果裡找到該篇,自動載入到那張卡、捲過去並短暫高亮 -->
-      <form class="jumpbar" id="jumpForm" autocomplete="off">
-        <label for="jumpNo">跳到 #</label><input id="jumpNo" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="編號" aria-label="跳到編號">
-        <button type="submit" class="ctl">前往</button>
-        <span class="jmsg" id="jumpMsg" role="status" aria-live="polite"></span>
-      </form>
       <div id="list" class="grid"></div>
       <!-- 分批渲染的哨兵:捲到附近自動補下一批;按鈕是沒有 IntersectionObserver 時的退路 -->
       <div id="more" class="more" hidden><span class="more-txt" aria-live="polite"></span><button type="button" class="ctl">再載入 40 篇 ↓</button></div>
