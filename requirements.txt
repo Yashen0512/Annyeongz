@@ -1,2 +1,3 @@
-# 建置相依(sync.yml 與站長電腦都要裝):build_pages.py 畫 OG 圖用。fetch_data.py / build_site.py 只用標準庫。
+# Build deps (installed by sync.yml and on the site owner's PC): Pillow draws the OG images in build_pages.py.
+# fetch_data.py / build_site.py use the standard library only. Keep this file ASCII-only (pip reads it in the locale encoding).
 Pillow>=10

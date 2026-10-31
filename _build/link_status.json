@@ -1,17 +1,17 @@
 {
 "__meta__": {
-"updated": "2026-10-31T13:54:42+08:00",
+"updated": "2026-10-31T15:00:54+08:00",
 "date": "2026-10-31",
 "platforms": {
-"ao3": {
-"checked": 3,
-"blocked": true,
-"skipped": 32
-},
 "aff": {
 "checked": 3,
 "blocked": true,
 "skipped": 601
+},
+"ao3": {
+"checked": 3,
+"blocked": true,
+"skipped": 32
 },
 "lofter": {
 "checked": 3,
@@ -24,7 +24,7 @@
 "skipped": 0
 }
 },
-"runs": 4
+"runs": 5
 },
 "https://archiveofourown.org/works/61486015/chapters/157181140": {
 "last": "2026-10-31",
