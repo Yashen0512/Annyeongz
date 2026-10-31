@@ -1,6 +1,6 @@
 {
 "__meta__": {
-"updated": "2026-10-31T07:19:52+08:00",
+"updated": "2026-10-31T13:54:42+08:00",
 "date": "2026-10-31",
 "platforms": {
 "ao3": {
@@ -16,15 +16,15 @@
 "lofter": {
 "checked": 3,
 "blocked": true,
-"skipped": 1308
+"skipped": 1306
 },
 "postype": {
-"checked": 523,
+"checked": 464,
 "blocked": false,
 "skipped": 0
 }
 },
-"runs": 3
+"runs": 4
 },
 "https://archiveofourown.org/works/61486015/chapters/157181140": {
 "last": "2026-10-31",
