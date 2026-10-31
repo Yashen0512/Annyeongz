@@ -3,6 +3,7 @@
    產出 build_site.py 需要的檔案(CSV + article_links.json)。
    article_links.json 另帶兩個保留鍵:__edited__(每篇抓連結當下的編輯時間,增量用)、
    __blocks__(每篇頁面 ID 與每個連結所在的 block ID / rich_text 位置,給 notion_writeback.py 標 ❌ 用)。
+   連結只保留主表目前的 (No, 標題),舊標題 / 改號後留在舊號下的連結會清掉(merge_links)。
    token:NOTION_TOKEN 環境變數 → notion_token.txt → 都沒有就不帶 header(雲端環境由代理注入)。需把三個資料庫都分享給整合。"""
 import csv, glob, io, json, os, re, time, urllib.request, urllib.error
 from datetime import datetime, timezone, timedelta
@@ -126,6 +127,54 @@ def block_links(blk):
             out.append([bd['url'], bd['url'], -1])
     return out
 
+def merge_links(links, pages, fetch_children, sleep=lambda s: None):
+    """增量更新每篇閱讀連結(純邏輯;抓頁面子 block 由 fetch_children(page_id) → [block, ...] 提供,pytest 用假的)。
+    links 形狀:{No: {標題: [[label, url], ...]}, '__edited__': {No: 抓連結當下的 last_edited_time}, '__blocks__': {No: {page, links}}}
+    - 新 No、標題改了、頁面編輯時間變了、或沒有 block 位置 → 重抓該篇(頁面被編輯 → 補連結必然觸發,解決「舊文補連結永遠抓不到」)。
+    - 抓完**只保留主表目前有的 (No, 標題)**:標題改過的舊標題、編號被改到別的號碼之後留在舊號底下的連結、主表已經沒有的頁面,
+      連同 __edited__ / __blocks__ 一起清掉。不清的話巡檢會把別篇的連結算在這個 No 頭上(2026-10-31 的 No.786 / No.10047:
+      「Passionate A&W」那頁從 786 改號成 10047、786 給了新頁,舊連結卻留在 786 底下)。同一個 No 對到多個頁面(重複編號)全部保留,交給 build_site 警告。
+    回傳 (links, 新增篇數, 重抓篇數, 清掉的標題數)。"""
+    _led = links.get('__edited__') if isinstance(links.get('__edited__'), dict) else {}
+    _blk = links.get('__blocks__') if isinstance(links.get('__blocks__'), dict) else {}
+    new = refetched = 0
+    current = {}                     # {No: {標題, ...}}:主表目前真的有的頁面
+    for pg in pages:
+        no = read_no(pg)
+        if not no: continue
+        title = p_title(p(pg, '文章名稱'))
+        current.setdefault(no, set()).add(title)
+        ed = pg.get('last_edited_time', '')
+        cached = isinstance(links.get(no), dict) and title in links[no]
+        if cached and _led.get(no) == ed and no in _blk: continue   # 抓過、頁面沒再編輯過、也有 block 位置 → 跳過
+        seen, lst, pos = set(), [], {}
+        for blk in fetch_children(pg['id']):
+            for lab, url, idx in block_links(blk):
+                if url not in seen:
+                    seen.add(url); lst.append([lab, url])
+                    pos[url] = [blk['id'].replace('-', ''), idx]
+        if not isinstance(links.get(no), dict): links[no] = {}
+        links[no][title] = lst
+        _led[no] = ed
+        _blk[no] = {'page': pg['id'].replace('-', ''), 'links': pos}
+        if cached: refetched += 1
+        else: new += 1
+        sleep(0.34)
+    pruned = 0
+    for no in list(links):
+        if no.startswith('__'): continue
+        keep = current.get(no, set())
+        if not keep or not isinstance(links[no], dict):   # 主表已經沒有這個 No(頁面刪了或改號)
+            pruned += len(links[no]) if isinstance(links[no], dict) else 1
+            del links[no]; _led.pop(no, None); _blk.pop(no, None)
+            continue
+        for t in list(links[no]):
+            if t not in keep:                              # 舊標題(改名 / 改號前那頁的)
+                del links[no][t]; pruned += 1
+    links['__edited__'] = _led
+    links['__blocks__'] = _blk
+    return links, new, refetched, pruned
+
 def atomic_write_csv(path, header, rows):
     tmp = path + '.tmp'
     with io.open(tmp, 'w', encoding='utf-8-sig', newline='') as fh:
@@ -219,38 +268,13 @@ def main():
     else:
         print('  (找不到公告庫,沿用現有公告檔;要自動更新公告請把公告庫也分享給整合)')
 
-    # ---- 每篇閱讀連結(增量:新 No、或頁面編輯時間變過的 No 重抓)----
-    # 快取內含保留鍵 __edited__:{no: 抓連結當下的頁面 last_edited_time}。
-    # 頁面被編輯(補連結必然觸發)→ 重抓該篇,解決「舊文補連結永遠抓不到」的盲點。
+    # ---- 每篇閱讀連結(增量:新 No、標題改了、或頁面編輯時間變過的 No 重抓;邏輯在 merge_links)----
     links = {}
     if os.path.exists('article_links.json'):
         try: links = json.load(io.open('article_links.json', encoding='utf-8'))
         except Exception: links = {}
-    _led = links.get('__edited__') if isinstance(links.get('__edited__'), dict) else {}
-    _blk = links.get('__blocks__') if isinstance(links.get('__blocks__'), dict) else {}
-    new = refetched = 0
-    for pg in pages:
-        no = read_no(pg)
-        if not no: continue
-        title = p_title(p(pg, '文章名稱'))
-        ed = pg.get('last_edited_time', '')
-        cached = no in links and title in links[no]
-        if cached and _led.get(no) == ed and no in _blk: continue   # 抓過、頁面沒再編輯過、也有 block 位置 → 跳過
-        ch = api('GET', 'https://api.notion.com/v1/blocks/%s/children?page_size=100' % pg['id'])
-        seen, lst, pos = set(), [], {}
-        for blk in ch.get('results', []):
-            for lab, url, idx in block_links(blk):
-                if url not in seen:
-                    seen.add(url); lst.append([lab, url])
-                    pos[url] = [blk['id'].replace('-', ''), idx]
-        links.setdefault(no, {})[title] = lst
-        _led[no] = ed
-        _blk[no] = {'page': pg['id'].replace('-', ''), 'links': pos}
-        if cached: refetched += 1
-        else: new += 1
-        time.sleep(0.34)
-    links['__edited__'] = _led
-    links['__blocks__'] = _blk
+    fetch_children = lambda pid: api('GET', 'https://api.notion.com/v1/blocks/%s/children?page_size=100' % pid).get('results', [])
+    links, new, refetched, pruned = merge_links(links, pages, fetch_children, time.sleep)
     # 把「@ 提及站內另一篇」的 Notion 連結 → 站內跳轉 annyeongz:<No>(讀者才不會被導去 Notion)
     id2no = {pg['id'].replace('-', ''): read_no(pg) for pg in pages}
     _NID = re.compile(r'[0-9a-f]{32}')
@@ -272,7 +296,7 @@ def main():
             links[_no][_t] = new_list
 
     io.open('article_links.json', 'w', encoding='utf-8').write(json.dumps(links, ensure_ascii=False))
-    print('  連結:新增', new, '篇、重抓(頁面有編輯)', refetched, '篇(總',
+    print('  連結:新增', new, '篇、重抓(頁面有編輯)', refetched, '篇、清掉舊標題 / 舊編號', pruned, '筆(總',
           sum(len(v) for k, v in links.items() if not k.startswith('__')), '筆標題);站內互連改寫', _ref, '筆')
 
     # ---- GoatCounter 瀏覽統計(可選;有 token 才抓)----

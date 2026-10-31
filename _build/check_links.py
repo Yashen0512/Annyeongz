@@ -233,7 +233,12 @@ def collect_targets(links_json, articles, people, platforms, only_nos=None):
             continue
         if only_nos and no not in only_nos:
             continue
+        a = articles.get(no) if isinstance(articles, dict) else None
         for title, lst in by_title.items():
+            # article_links.json 若殘留舊標題(改名 / 改號前那頁的連結),只看目前標題那組,跟 build_site 選連結的規則一致;
+            # fetch_data.merge_links 已會清掉,這裡再守一道,免得把別篇的連結算在這個 No 頭上
+            if a and len(by_title) > 1 and title != (a.get('name') or ''):
+                continue
             for item in lst or []:
                 lab, url = item[0], item[1]
                 plat = checkers.platform_of(url)

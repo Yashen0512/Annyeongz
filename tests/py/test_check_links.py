@@ -159,3 +159,14 @@ def test_report_markdown_sections():
     assert 'No.1《T》PT — https://p/1' in md and '改名:A → B(Postype)' in md and '略過 9 筆' in md
     rep['renames'] = []
     assert '## 改名\n(無)' in CL.report_markdown(rep) and '## 復活\n(無)' in CL.report_markdown(rep)
+
+def test_collect_targets_ignores_stale_title_under_a_no():
+    # article_links.json 殘留改號前那頁的標題時,只看目前標題那組(與 build_site 挑連結的規則一致)
+    links = {'786': {'Passionate A&W': [['Postype-番外1-原文', 'https://www.postype.com/@g/post/15413585']],
+                     '설계실 로맨스': [['Postype-原文', 'https://www.postype.com/@n/post/6308988']]},
+             '__edited__': {}, '__blocks__': {}}
+    arts = {'786': {'no': '786', 'name': '설계실 로맨스'}}
+    assert [t['url'] for t in CL.collect_targets(links, arts, {}, ['postype'])] == ['https://www.postype.com/@n/post/6308988']
+    assert len(CL.collect_targets(links, {}, {}, ['postype'])) == 2            # 沒有文章資料時照舊全查
+    one = {'786': {'舊標題': [['PT', 'https://www.postype.com/@n/post/6308988']]}, '__edited__': {}, '__blocks__': {}}
+    assert len(CL.collect_targets(one, arts, {}, ['postype'])) == 1          # 只有一組標題就沿用(build_site 也是)

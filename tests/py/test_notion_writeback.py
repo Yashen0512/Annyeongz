@@ -56,3 +56,37 @@ def test_merged_aliases():
     assert W.merged_aliases(['舊名'], '舊名') == ['舊名']
     assert W.merged_aliases(['甲'], 'ㅍ.,ㅍ') == ['甲', 'ㅍ.，ㅍ']   # 半形逗號不能當選項名
     assert W.merged_aliases(['甲'], '  ') == ['甲']
+
+# ---- locate / apply_link:只信 __blocks__ 記錄的 block,對不上就跳過並列入「需人工確認」 ----
+def _blk(bid, page, rts, typ='paragraph'):
+    return {'id': bid, 'type': typ, 'parent': {'type': 'page_id', 'page_id': page}, typ: {'rich_text': rts}}
+
+def test_locate_trusts_only_recorded_block(monkeypatch):
+    blocks = {'B1': _blk('B1', 'PA', [plain('原文:'), link()])}
+    monkeypatch.setattr(W, 'get_block', lambda bid: blocks[bid])
+    item = {'url': URL, 'no': '1', 'title': 'T', 'label': 'Postype-原文', 'block': ['B1', 1], 'page': 'PA'}
+    found, why = W.locate(item)
+    assert found[0] is blocks['B1'] and found[1] == 'rich_text' and found[3] == 1 and why == ''
+    assert W.locate(dict(item, block=['B1', 0]))[0] is not None            # hint 不對就在同一個 block 裡掃
+    assert W.locate({'url': URL, 'no': '1', 'page': 'PA'})[0] is None        # 沒有 block 位置 → 不去頁面找
+    assert W.locate(dict(item, page='PB'))[0] is None                        # block 在別的頁面底下
+    assert W.locate(dict(item, url='https://other'))[0] is None              # block 裡沒有這個網址
+    blocks['B1']['archived'] = True
+    assert W.locate(item)[0] is None
+    assert not hasattr(W, 'page_children') and not hasattr(W, 'find_page_by_no')   # 整頁重掃 / 用 No 查主表的退路已移除
+
+def test_apply_link_skips_and_collects_manual_when_block_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(W, 'get_block', lambda bid: (_ for _ in ()).throw(RuntimeError('404')))
+    patched = []
+    monkeypatch.setattr(W, 'api', lambda *a, **k: patched.append(a))
+    item = {'url': URL, 'no': '786', 'title': 'Passionate A&W', 'label': 'Postype-番外1-原文', 'block': ['B9', 1], 'page': 'PA'}
+    manual = []
+    assert W.apply_link(item, 'mark', True, manual) == 'fail'
+    assert patched == [] and len(manual) == 1 and manual[0]['action'] == 'mark' and 'B9' in manual[0]['why']
+    md = tmp_path / 'check_report.md'
+    md.write_text('## 已刪\n- x\n', encoding='utf-8')
+    W.append_manual_section(str(md), manual)
+    text = md.read_text(encoding='utf-8')
+    assert text.startswith('## 已刪\n- x\n\n### 需人工確認') and 'No.786《Passionate A&W》Postype-番外1-原文 — ' + URL in text
+    W.append_manual_section(str(md), [])                                     # 沒有東西就不動
+    assert md.read_text(encoding='utf-8') == text
