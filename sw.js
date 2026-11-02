@@ -1,4 +1,4 @@
-// Annyeongz PWA service worker(樣板:build_site.py 會把 20261101-2101 換成本次建置的 synced 時間戳,輸出成 sw.js;
+// Annyeongz PWA service worker(樣板:build_site.py 會把 20261102-0831 換成本次建置的 synced 時間戳,輸出成 sw.js;
 // 不要手改 sw.js、也不要手寫版本號)。
 //
 // 快取策略:
@@ -6,7 +6,7 @@
 //   資料檔 data.json(其他 .json 如 reactions_backup 亦同)  stale-while-revalidate:先回快取讓頁面秒開,背景抓新版寫回快取;
 //                                                           內容有變就 postMessage {type:'data-updated'} 給所有分頁,頁面顯示「有新收錄」提示條。
 //   跨網域請求(Postype / Lofter / AO3 / AFF 等閱讀連結、Val Town 計數、GoatCounter) 一律不攔、不快取。
-const VERSION = '20261101-2101';
+const VERSION = '20261102-0831';
 const STATIC_CACHE = 'az-static-' + VERSION;
 const DATA_CACHE = 'az-data';           // 資料快取不分版(靠 stale-while-revalidate 自己換新)
 const DATA_FILE = 'data.json';
