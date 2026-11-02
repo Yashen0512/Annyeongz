@@ -40,7 +40,7 @@ body.noscroll{overflow:hidden}
   .banner .bimg{position:static;height:auto;aspect-ratio:2/1;object-fit:contain}
   .search{font-size:16px;padding:13px 18px}   /* 搜尋列加大 */
   #toTop{width:56px;height:56px;font-size:27px;right:16px;bottom:16px}  /* 置頂鍵加大 */
-  .close{width:48px;height:48px;font-size:30px;line-height:1;top:14px;right:14px}     /* 圓縮小一點、✕ 放大(使用者 2026/7/30 要求) */
+  .close{font-size:30px;line-height:1;top:14px}     /* 圓縮小一點、✕ 放大(使用者 2026/7/30 要求);寬與右距走 .sheet 的 --close-w / --close-r(標題的留白一起算) */
   .wrap{padding:12px}
   .brand{font-size:14px;letter-spacing:0}
   .sech{font-size:20px}                        /* 區塊標題加大 */
@@ -68,7 +68,7 @@ body.noscroll{overflow:hidden}
   .toolbar.mini #toTopBar{display:inline-flex;align-items:center;gap:4px;flex:none;white-space:nowrap}
   body.tb-mini #toTop{display:none}   /* 壓縮列有 ↑ 了,右下角那顆收起來 */
   .snav{display:none}            /* 手機用滑的,不顯示箭頭 */
-  .sheet{padding:20px 16px;max-height:90vh}
+  .sheet{--sheet-px:16px;--close-w:48px;--close-r:14px;padding:20px var(--sheet-px);max-height:90vh}   /* 關閉鈕 48px:標題 padding-right 自動變成 14+48+10-16 = 56px */
   .dnav{bottom:-20px;margin:16px -16px -20px;padding:10px 16px}
   .sheet h2{font-size:19px}
   .drow{flex-direction:column;gap:2px;font-size:15px}    /* 詳情:標籤在上、值在下 */

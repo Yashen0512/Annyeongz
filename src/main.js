@@ -111,19 +111,38 @@ function currentHits() { return sortHits(filterArticles(D.articles, filterState(
 function navArticles() { return _navList || currentHits(); }
 
 // ---- 書架 ----
-function afterMark() { render(true); updateShelfBtn(); if (modalOpen() && _cur) openDetail(_cur); }
+// 收藏 / 已讀 / 待閱讀改了之後:只就地更新「那一篇」的畫面(主列表那張卡的收藏鈕與標題記號、詳情動作列的三顆鈕、書架分頁的數字),
+// 不呼叫 render()。以前走 render(true) 會把整個清單 innerHTML 清掉重畫,手機上畫面會跳離原位、捲動位置與已載入張數都亂掉
+// (2026-11-02 實機 bug)。收藏不是篩選條件,所以就算「隱藏已讀」或愛心排序正在作用,也不在這裡把該卡抽離或重排;
+// 下一次 render()(改篩選 / 排序 / 書架切換)才會套用新狀態。
+function afterMark(no) {
+  const a = D.articles.find((x) => x.no === no);
+  if (a) {
+    R.syncCard($('list').querySelector(`.card[data-no="${CSS.escape(no)}"]`), a, ctx);
+    if (modalOpen() && _mode === 'art' && _cur && _cur.no === no) R.syncDetailActions($('sheet'), a, ctx);
+  }
+  updateShelfCounts();
+}
 function toggleFav(no) {
   const adding = !favs.has(no);
   adding ? favs.add(no) : favs.delete(no); saveSet(KEYS.FAVS, favs);
   reactions.onFavChange(no, adding);
-  afterMark();
+  afterMark(no);
 }
 function toggleRead(no) {
   if (readSet.has(no)) readSet.delete(no);
   else { readSet.add(no); if (todoSet.delete(no)) saveSet(KEYS.TODO, todoSet); }   // 讀完自動移出待閱讀
-  saveSet(KEYS.READ, readSet); afterMark();
+  saveSet(KEYS.READ, readSet); afterMark(no);
 }
-function toggleTodo(no) { todoSet.has(no) ? todoSet.delete(no) : todoSet.add(no); saveSet(KEYS.TODO, todoSet); afterMark(); }
+function toggleTodo(no) { todoSet.has(no) ? todoSet.delete(no) : todoSet.add(no); saveSet(KEYS.TODO, todoSet); afterMark(no); }
+/** 書架分頁上的數字(已收藏 / 待閱讀 / 已讀)就地更新,不重建分頁列(書架沒展開時什麼都不用做)。 */
+function updateShelfCounts() {
+  if (!shelfOn) return;
+  $('shelfTabs')?.querySelectorAll('.ctl[onclick^="setShelfTab("]').forEach((b) => {
+    const k = (b.getAttribute('onclick').match(/'(\w+)'/) || [])[1], sc = b.querySelector('.sc');
+    if (SHELF[k] && sc) sc.textContent = SHELF[k].size;
+  });
+}
 function setShelfTab(k) { shelfTab = k; saveShelfTab(k); updateShelfBtn(); render(); }
 function updateShelfBtn() {
   const b = $('shelfBtn'); if (b) { b.textContent = '📚 書架'; b.classList.toggle('on', shelfOn); b.setAttribute('aria-pressed', String(shelfOn)); }
