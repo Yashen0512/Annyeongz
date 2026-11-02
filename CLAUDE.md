@@ -189,8 +189,10 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
 
 - **分批渲染**(`render.js` `createLazyList`,`main.js` 接線):主列表不分頁,先畫前 40 張(`BATCH`),`#more` 哨兵進到視窗下方 800px 內
   (IntersectionObserver)就自動補下一批;哨兵裡的「再載入 N 篇」按鈕是沒有 IntersectionObserver 時的退路。
-  篩選 / 排序 / 書架切換 → `render()` 重置回第一批;搜尋 / 排序下拉 / 勾選框 / 收藏重繪 → `render(true)` **維持已顯示的張數**
-  (對應原站「不跳回第 1 頁」)。詳情的 ←→ 上下篇仍走完整的篩選結果,不受已顯示張數影響。
+  篩選 / 排序 / 書架切換 → `render()` 重置回第一批;搜尋 / 排序下拉 / 勾選框 → `render(true)` **維持已顯示的張數**
+  (對應原站「不跳回第 1 頁」)。**收藏 / 已讀 / 待閱讀不重畫清單**(`main.js` `afterMark` → `render.js` `syncCard` / `syncDetailActions`):只就地更新那一張卡的
+  收藏鈕與標題記號、詳情動作列的三顆鈕、書架分頁的數字,捲動位置、已載入張數、焦點都不動;收藏不是篩選條件,所以就算「隱藏已讀」或愛心排序正在作用
+  也不會把該卡抽離或重排,下一次 `render()` 才套用(2026-11-02 手機實機:點愛心整頁跳開,就是以前走 `render(true)` 把清單 `innerHTML` 清掉重畫造成的)。詳情的 ←→ 上下篇仍走完整的篩選結果,不受已顯示張數影響。
   書卡 CSS 加了 `content-visibility:auto`,畫面外的書卡不排版不繪製,所以沒有另外做虛擬捲動。
 - **跳到 #編號**(列表上方 `#jumpForm`,`main.js` `jumpTo`):在目前篩選結果裡找該篇,`lazyList.ensure(idx+1)` 一次補到那張,
   即時捲到畫面中央、加 `.hl` 高亮約 2 秒、焦點給卡片標題鈕;不在結果裡 / 不存在會在 `#jumpMsg`(role=status)提示。
@@ -198,6 +200,8 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
   `sig` 是會影響清單內容的全部狀態(標籤三態、任一全部、作者、搜尋字、排序、書架分頁、兩個勾選框)的 JSON;
   開站 `render()` 之後 `restoreList()`:簽章對得上就 `ensure(shown)` 再捲回 `y`,所以從詳情、分享頁(`p/<No>/` → `?p=`)或瀏覽器「上一頁」回來
   不會重置回第一批。`boot.js` 把 `history.scrollRestoration` 設成 `manual`,避免瀏覽器自己的還原跟分批渲染打架。
+- **詳情標題不被關閉鈕蓋住**(`modal.css` `.sheet h2`):`.sheet` 上的 `--sheet-px` / `--close-w` / `--close-r` 三個變數算出標題的 `padding-right`
+  (鈕右距 + 鈕寬 + 10px − 內距;桌機 32px、手機 56px),加 `overflow-wrap:anywhere` 讓韓文 + 中譯這種沒空白的長標題在鈕左邊折行;手機版改關閉鈕大小只改 `responsive.css` 那三個變數。
 - **彈窗開著時鎖住背景捲動**(`main.js` `lockScroll` / `unlockScroll`,樣式 `modal.css` 的 `body.az-lock`):iOS Safari 只靠 `overflow:hidden`
   擋不住觸控捲動,所以 `showSheet()` 記下 `scrollY`、把 body 設成 `position:fixed; top:-scrollY; width:100%`(桌機另補回捲軸寬度不跳版),
   關閉時還原並 `scrollTo` 回原位置;詳情 / 公告 / 三個書架工具視窗都走同一條路。`closeDetail()` **同步**解鎖後才 `close()`
@@ -465,6 +469,7 @@ python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆�
 - 本機儲存的 key 只能從 `storage.js` 的 `KEYS` 拿,**key 名稱不可改**(改了讀者的書架就不見了)。
 - `index.html` 的文案、emoji、全形標點(「：」「（）」)是刻意的,不要「順手」改成半形。
 - 原站的幾個既有行為是刻意保留的,改之前先確認:搜尋 / 排序 / 勾選框觸發重繪時**不會跳回第一批**(維持已顯示張數,只會夾到清單長度);
+  點愛心 / 已讀 / 待閱讀**不重畫清單**(就地更新那張卡,見「分批渲染與 PWA」);
   從詳情 / 分享頁 / 上一頁返回也不會重置(見「列表狀態記憶」);
   分面標籤三態循環是 包含 → 排除 → 取消;穿越蟲洞略過原文已刪與無連結的文。
 - 標籤名稱、分面順序、改名合併規則都在 `_build/facets_def.py`,前端不要寫死標籤清單(`related.js` 的 `REL_FACETS` 與

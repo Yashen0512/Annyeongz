@@ -7,12 +7,17 @@
 .modal::backdrop{background:rgba(0,0,0,.4)}
 /* 內容超出時在 sheet 裡捲,捲到底也不外溢帶動整頁(overscroll-behavior);dialog 本身也設,灰底區不會把捲動傳給背景 */
 .modal{overscroll-behavior:contain}
-.sheet{background:var(--card);border-radius:16px;max-width:560px;width:100%;max-height:85vh;overflow:auto;overscroll-behavior:contain;padding:24px 26px;position:relative}
+/* --sheet-px 左右內距、--close-w / --close-r 關閉鈕的寬與右距:標題的 padding-right 由這三個算出(responsive.css 手機版會改這三個值,算式不用重寫) */
+.sheet{--sheet-px:26px;--close-w:30px;--close-r:18px;
+       background:var(--card);border-radius:16px;max-width:560px;width:100%;max-height:85vh;overflow:auto;overscroll-behavior:contain;padding:24px var(--sheet-px);position:relative}
 /* 彈窗開著時鎖住背景(main.js lockScroll):iOS 只有 overflow:hidden 擋不住觸控捲動,改把 body 固定住,top 由 main.js 設成 -scrollY */
 body.az-lock{position:fixed;left:0;right:0;width:100%;overflow:hidden}
-.sheet h2{margin:0 30px 12px 0;font-size:20px}
-.sheet h2 .no{font-size:12px;color:var(--muted);font-weight:400}
-.close{position:absolute;top:16px;right:18px;border:none;background:var(--chip);border-radius:50%;width:30px;height:30px;cursor:pointer;font-size:14px}
+/* 標題右側永遠留出關閉鈕的位置(鈕右距 + 鈕寬 + 10px 間隔,扣掉 sheet 本身的內距),長標題(韓文 + 中譯、無空白可斷的字串)一律在鈕左邊折行,
+   絕不延伸到鈕底下(2026-11-02 手機實機:長標題被 ✕ 蓋住) */
+.sheet h2{margin:0 0 12px;padding-right:calc(var(--close-r) + var(--close-w) + 10px - var(--sheet-px));min-width:0;font-size:20px;line-height:1.35;
+          white-space:normal;overflow-wrap:anywhere;word-break:break-word}
+.sheet h2 .no{font-size:12px;color:var(--muted);font-weight:400;white-space:nowrap}
+.close{position:absolute;top:16px;right:var(--close-r);border:none;background:var(--chip);border-radius:50%;width:var(--close-w);height:var(--close-w);cursor:pointer;font-size:14px;z-index:1}
 .drow{display:flex;gap:10px;padding:6px 0;border-top:1px solid var(--line);font-size:14px}
 .dk{flex:0 0 84px;color:var(--muted);font-size:13px}
 .dv{flex:1}

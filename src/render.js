@@ -63,12 +63,35 @@ export function aliasLine(al) {
   return `<div class="persona alias"><span class="al-t">收錄：${first}</span>${L.length > 1 ? `<span class="al-n">等 ${L.length} 篇</span>` : ''}</div>`;
 }
 
+/** 書卡標題鈕的內容:標題 + #編號 + ✓已讀 / 🔖 記號(syncCard 就地更新時也用這段,只換 <button> 的內容、不換元素,焦點不掉)。 */
+export function cardTitleHTML(a, ctx) {
+  return `${a.name || '(無標題)'} <span class="no">#${a.no}</span>${ctx.readSet.has(a.no) ? ' <span class="readmark">✓已讀</span>' : ''}${ctx.todoSet.has(a.no) ? ' <span class="todomark" title="待閱讀" aria-label="待閱讀">🔖</span>' : ''}`;
+}
+/** 書卡右上角的收藏鈕(❤️ / 🤍 + 公開愛心數)。 */
+export function favBtnHTML(a, ctx) {
+  const lk = ctx.likeNum(a.no), on = ctx.favs.has(a.no);
+  return `<button type="button" class="fav-btn${on ? ' on' : ''}" onclick="event.stopPropagation();toggleFav('${a.no}')" title="收藏${lk ? '（' + lk + ' 人收藏）' : ''}" aria-label="收藏${lk ? '，' + lk + ' 人收藏' : ''}" aria-pressed="${on}">${favBtnInner(a, ctx)}</button>`;
+}
+const favBtnInner = (a, ctx) => { const lk = ctx.likeNum(a.no); return `${ctx.favs.has(a.no) ? '❤️' : '🤍'}${lk ? `<span class="fc" aria-hidden="true">${lk}</span>` : ''}`; };
+/** 就地更新一顆既有的收藏鈕(class / aria / 內容),不換掉元素:點的人焦點還在鈕上、鄰近版面不動。 */
+export function syncFavBtn(btn, a, ctx) {
+  if (!btn) return;
+  const lk = ctx.likeNum(a.no), on = ctx.favs.has(a.no);
+  btn.classList.toggle('on', on); btn.setAttribute('aria-pressed', String(on));
+  btn.title = `收藏${lk ? '（' + lk + ' 人收藏）' : ''}`; btn.setAttribute('aria-label', `收藏${lk ? '，' + lk + ' 人收藏' : ''}`);
+  btn.innerHTML = favBtnInner(a, ctx);
+}
+/** 收藏 / 已讀 / 待閱讀改了之後,只就地更新「那一張」書卡(收藏鈕 + 標題上的記號);不重畫清單、不動其他卡、不改捲動位置。 */
+export function syncCard(cardEl, a, ctx) {
+  if (!cardEl) return;
+  syncFavBtn(cardEl.querySelector('.fav-btn'), a, ctx);
+  const t = cardEl.querySelector('.card-open'); if (t) t.innerHTML = cardTitleHTML(a, ctx);
+}
+
 export function cardHTML(a, ctx) {
   const persona = (a.persona || '').replace(/\s*\n\s*/g, ' ／ ').trim();
-  const lk = ctx.likeNum(a.no);
-  const on = ctx.favs.has(a.no);
-  return `<button type="button" class="t card-open">${a.name || '(無標題)'} <span class="no">#${a.no}</span>${ctx.readSet.has(a.no) ? ' <span class="readmark">✓已讀</span>' : ''}${ctx.todoSet.has(a.no) ? ' <span class="todomark" title="待閱讀" aria-label="待閱讀">🔖</span>' : ''}</button>
-    <button type="button" class="fav-btn${on ? ' on' : ''}" onclick="event.stopPropagation();toggleFav('${a.no}')" title="收藏${lk ? '（' + lk + ' 人收藏）' : ''}" aria-label="收藏${lk ? '，' + lk + ' 人收藏' : ''}" aria-pressed="${on}">${on ? '❤️' : '🤍'}${lk ? `<span class="fc" aria-hidden="true">${lk}</span>` : ''}</button>
+  return `<button type="button" class="t card-open">${cardTitleHTML(a, ctx)}</button>
+    ${favBtnHTML(a, ctx)}
     <div class="badges">${badges(a)}</div>
     ${persona ? `<div class="persona">${persona}</div>` : ''}
     ${aliasLine(a.alias)}
@@ -344,26 +367,43 @@ export function linksHTML(a) {
   return `<div class="links">${rows}</div>${a.dead && live ? '<div class="deadnote">(此篇多數內容已失效,僅部分連結仍可閱讀)</div>' : ''}`;
 }
 
+/** 詳情動作列三顆狀態鈕(收藏 / 待閱讀 / 已讀)的目前狀態與內容;detailHTML 與 syncDetailActions 共用。 */
+function detailActState(a, ctx) {
+  const lk = ctx.likeNum(a.no), fav = ctx.favs.has(a.no), todo = ctx.todoSet.has(a.no), read = ctx.readSet.has(a.no);
+  return {
+    fav: { on: fav, fn: 'toggleFav', html: `${fav ? '❤️ 已收藏' : '🤍 收藏'}${lk ? ' · ' + lk : ''}` },
+    todo: { on: todo, fn: 'toggleTodo', html: todo ? '🔖 待閱讀中' : '🔖 待閱讀' },
+    read: { on: read, fn: 'toggleRead', html: read ? '✓ 已讀' : '標為已讀' },
+  };
+}
+/** 詳情開著時按了收藏 / 待閱讀 / 已讀:只就地更新動作列那三顆鈕(class / aria / 文字),不重建整個詳情,捲動位置與焦點都留在原處。 */
+export function syncDetailActions(sheet, a, ctx) {
+  if (!sheet) return;
+  const act = detailActState(a, ctx);
+  sheet.querySelectorAll('.detail-actions [data-act]').forEach((b) => {
+    const st = act[b.dataset.act]; if (!st) return;
+    b.classList.toggle('on', st.on); b.setAttribute('aria-pressed', String(st.on)); b.innerHTML = st.html;
+  });
+}
+
 /**
  * 文章詳情彈窗內容。
  * @param a 文章  @param ctx 見檔頭
  * @param {{rel:Array, navIndex:number, navLen:number}} extra 類似的文、在上下篇清單中的位置
  */
 export function detailHTML(a, ctx, { rel, navIndex, navLen }) {
-  const lk = ctx.likeNum(a.no), vw = ctx.viewNum(a.no);
+  const vw = ctx.viewNum(a.no);
   let rows = '';
   ctx.facets.forEach((f) => {
     if (f.type !== 'multi') return; const vals = [...new Set(a.tags[f.key] || [])]; if (!vals.length) return;
     rows += `<div class="drow"><span class="dk">${f.key}</span><span class="dv">${vals.map((v) => `<button type="button" class="chip" onclick="filterByTag('${encodeURIComponent(v)}')" aria-label="篩選標籤：${v}">${v}</button>`).join('')}</span></div>`;
   });
-  const fav = ctx.favs.has(a.no), todo = ctx.todoSet.has(a.no), read = ctx.readSet.has(a.no);
+  const act = detailActState(a, ctx);
   return `<button type="button" class="close" onclick="closeDetail()" aria-label="關閉">✕</button>
     <h2 id="sheetTitle">${a.name || '(無標題)'} <span class="no">#${a.no}</span></h2>
     <div class="badges">${badges(a)}</div>
     <div class="detail-actions">
-      <button type="button" class="ctl${fav ? ' on' : ''}" aria-pressed="${fav}" onclick="toggleFav('${a.no}')">${fav ? '❤️ 已收藏' : '🤍 收藏'}${lk ? ' · ' + lk : ''}</button>
-      <button type="button" class="ctl${todo ? ' on' : ''}" aria-pressed="${todo}" onclick="toggleTodo('${a.no}')">${todo ? '🔖 待閱讀中' : '🔖 待閱讀'}</button>
-      <button type="button" class="ctl${read ? ' on' : ''}" aria-pressed="${read}" onclick="toggleRead('${a.no}')">${read ? '✓ 已讀' : '標為已讀'}</button>
+      ${['fav', 'todo', 'read'].map((k) => `<button type="button" class="ctl${act[k].on ? ' on' : ''}" data-act="${k}" aria-pressed="${act[k].on}" onclick="${act[k].fn}('${a.no}')">${act[k].html}</button>`).join('\n      ')}
       <button type="button" class="ctl" onclick="shareArticle('${a.no}', this)" title="複製這篇的分享連結(貼到社群會顯示預覽卡)" aria-label="分享，複製這篇的分享連結">🔗 分享</button>
     </div>
     ${deadBar(a)}
