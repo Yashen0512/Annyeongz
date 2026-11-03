@@ -1,0 +1,111 @@
+Annyeongz 平行宇宙 — License / 授權條款
+https://yashen0512.github.io/Annyeongz/
+
+====================================================================
+English
+====================================================================
+
+Copyright (c) 2023-2026 Annyeongz 平行宇宙 (the "Site Owner").
+All Rights Reserved.
+
+1. What this site is
+
+   Annyeongz 平行宇宙 (the "Site") is an index of fan fiction. It stores
+   bibliographic data and links to works hosted on third-party platforms
+   (Postype, Lofter, AO3, AsianFanfics and others). It does not host the
+   text of any work.
+
+2. Original works belong to their authors
+
+   The copyright of every fan fiction work listed on the Site belongs to
+   its original author and/or translator. Nothing in this file claims any
+   right over those works. Links point to the authors' own pages; please
+   read, share and credit the works according to each author's wishes.
+
+3. Editorial content belongs to the Site Owner
+
+   The following are original editorial content created by the Site Owner
+   and are protected by copyright:
+
+   - the classification scheme and facet definitions;
+   - the tagging, curation and organisation of works;
+   - the reading guides, descriptions and author introductions;
+   - the dataset as a whole (including data.json and the CSV / JSON files
+     under _build/), being a selection and arrangement made by the
+     Site Owner;
+   - the site's source code, templates, styles and build scripts.
+
+4. What you may do
+
+   - Browse the Site and follow its links.
+   - Quote a short excerpt of the editorial content, with attribution and
+     a link back to the Site, for the purpose of commentary or discussion.
+
+5. What you may not do without prior written permission
+
+   - Copy, mirror, scrape or redistribute the dataset, in whole or in
+     substantial part, in any form.
+   - Fork, clone or reuse the Site's structure, source code, templates or
+     build scripts to run another site or service.
+   - Reproduce, translate or adapt the editorial content (classification,
+     tags, guides, author introductions).
+   - Present the editorial content as your own or remove attribution.
+
+   The repository being publicly visible on GitHub does not grant any
+   licence. "Fork" buttons and GitHub's Terms of Service allow viewing and
+   forking within GitHub only; they do not permit any use listed above.
+
+6. Contact
+
+   To request permission, open an issue in this repository or contact the
+   Site Owner through the channels listed on the Site.
+
+====================================================================
+繁體中文
+====================================================================
+
+著作權所有 (c) 2023-2026 Annyeongz 平行宇宙（以下稱「站主」）。
+保留所有權利（All Rights Reserved）。
+
+一、本站是什麼
+
+   Annyeongz 平行宇宙（以下稱「本站」）是同人文索引站，只收錄書目資料與
+   閱讀連結，原文放在 Postype、Lofter、AO3、AsianFanfics 等第三方平台，
+   本站不存放任何作品原文。
+
+二、原始文章著作權屬各原作者
+
+   本站收錄的每一篇同人文，著作權均屬原作者與／或譯者所有。本檔案不主張
+   對這些作品的任何權利。閱讀連結皆指向作者本人的頁面，請依各作者意願閱讀、
+   分享與標示出處。
+
+三、編輯內容著作權屬站主
+
+   以下為站主原創的編輯內容，受著作權保護：
+
+   - 分類架構與分面定義；
+   - 標籤整理、選錄與編排；
+   - 導讀、說明文字與作者介紹；
+   - 整個資料集（含 data.json 與 _build/ 底下的 CSV、JSON 檔），
+     即站主所做的選擇與編排；
+   - 本站的原始碼、樣板、樣式與建置腳本。
+
+四、你可以做的事
+
+   - 瀏覽本站、點閱其中的連結。
+   - 為評論或討論目的，在註明出處並附本站連結的前提下，引用一小段編輯內容。
+
+五、未經站主事前書面同意，不得做的事
+
+   - 以任何形式複製、鏡像、爬取或散布整個資料集或其實質部分。
+   - fork、複製或沿用本站的架構、原始碼、樣板或建置腳本，用來架設另一個
+     網站或服務。
+   - 轉載、翻譯或改作編輯內容（分類、標籤、導讀、作者介紹）。
+   - 將編輯內容當作自己的成果，或移除出處標示。
+
+   本倉庫在 GitHub 上公開可見，不代表授與任何授權。GitHub 的 Fork 按鈕與
+   服務條款只允許在 GitHub 平台內檢視與 fork，並不允許上述任何用途。
+
+六、聯絡
+
+   如需取得授權，請在本倉庫開 Issue，或透過本站列出的管道聯絡站主。

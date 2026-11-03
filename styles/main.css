@@ -193,6 +193,8 @@ body.loading .main{min-height:100vh}
 .foot-note{margin-top:14px;color:var(--muted);font-size:13px}
 .foot-link{color:var(--accent-t);text-decoration:underline;text-underline-offset:2px}   /* 頁尾文字裡的連結要有底線,不能只靠顏色區分(axe link-in-text-block) */
 .foot-link:hover{text-decoration-thickness:2px}
+/* 版權聲明:字級比 .foot-note 再小一級、淡色不搶眼;用 --muted 深淺色對比都 ≥ 4.5:1;限寬置中,手機折行也好讀 */
+.foot-copy{margin:18px auto 0;max-width:640px;color:var(--muted);font-size:12px;line-height:1.7;overflow-wrap:anywhere}
 /* 自製瀏覽人次統計卡 */
 .stats-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;text-align:left}
 .stats-title{font-weight:700;color:var(--ink);margin-bottom:14px;display:flex;align-items:center;gap:6px}
