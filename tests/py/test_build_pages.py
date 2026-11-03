@@ -43,6 +43,14 @@ def test_page_html_meta_and_redirect():
     assert '作者:littlecan' in h and '標籤:員/安 · 甜文 · 日常 · 長篇 · HE' in h and '原文已刪' in h
     assert P.HASH_RE.search(h).group(1) == P.page_hash(art(name='A<B>&"C"', dead=True), FACETS)
 
+def test_page_html_has_watermark_comment_head_and_body():
+    h = P.page_html(art(), FACETS, year=2026)
+    wm = B.watermark(2026)
+    assert h.count(wm) == 2 and h.index(wm) < h.index('<title>') and h.rindex(wm) < h.index('</body>')
+    assert P.page_hash(art(), FACETS, 2026) != P.page_hash(art(), FACETS, 2027)   # 年份進 hash:跨年會重產一次
+    assert P.HASH_RE.search(h).group(1) == P.page_hash(art(), FACETS, 2026)
+    assert B.watermark(datetime.now(P.TZ8).year) in P.page_html(art(), FACETS)   # 沒給年份就用現在的
+
 def test_hash_changes_with_content_only():
     assert P.page_hash(art(), FACETS) == P.page_hash(art(), FACETS)
     assert P.page_hash(art(), FACETS) != P.page_hash(art(name='改名'), FACETS)
@@ -101,6 +109,7 @@ def test_build_pages_outputs(site):
         assert im.size == (1200, 630) and im.text['az-hash'] == P.og_hash(a, DATA['facets'])
     dead = [x for x in DATA['articles'] if x['dead']]
     assert dead and '(原文已刪)' in (out / 'p' / dead[0]['no'] / 'index.html').read_text(encoding='utf-8')
+    assert html.count(B.watermark(2026)) == 2   # 水印年份 = DATA['synced'] 的建置年份(fixture 是 2026/10/30)
 
 def test_build_pages_skips_unchanged_and_regenerates_changed(site):
     out, DATA, _ = site

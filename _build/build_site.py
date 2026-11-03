@@ -7,6 +7,7 @@ import csv, glob, io, json, os, re, shutil
 from collections import Counter, OrderedDict
 from datetime import datetime, timezone, timedelta
 import facets_def as F
+import canary
 
 PLACEHOLDER_URL = "https://pebble-honeycrisp-a9a.notion.site/176a7213548080cda25dd9e1edd5b7a4"
 
@@ -415,7 +416,7 @@ def compact_data(DATA):
     return C
 
 def expand_data(C):
-    """精簡 dict → 完整 DATA(與 build_data() 的輸出相同;沒有 v 欄位的舊格式原樣回傳)。
+    """精簡 dict → 完整 DATA(與 build_data() 的輸出相同;沒有 v 欄位的舊格式原樣回傳;`_` 開頭的 meta 鍵丟掉)。
     與 src/data.js 的 expandData() 邏輯一致,改一邊要改另一邊。"""
     if not C or C.get('v') != COMPACT_VERSION:
         return C
@@ -438,17 +439,45 @@ def expand_data(C):
             'created': _date_of(o.get('c', 0)), 'ck': o.get('c', 0),
             'tags': tags, 'links': o.get('l') or [], 'dead': bool(o.get('d')), 'alias': o.get('s', ''),
         })
-    D = OrderedDict((k, v) for k, v in C.items() if k not in ('v', 'pids', 'articles'))
+    # 以 _ 開頭的頂層鍵(_origin / _canary 水印)是 data.json 的 meta,不進完整形狀
+    D = OrderedDict((k, v) for k, v in C.items() if k not in ('v', 'pids', 'articles') and not k.startswith('_'))
     D['articles'] = arts
     return D
 
-def data_json(DATA):
-    """data.json 的內容:精簡格式、無空白、UTF-8 不轉義(gzip 後最小)。"""
-    return json.dumps(compact_data(DATA), ensure_ascii=False, separators=(',', ':'), sort_keys=True)
+# ---------- 隱形版權水印 ----------
+# 三樣都不影響畫面:① data.json 頂層 `_origin` 標記(整包下載的人看得到)、② index.html / 分享頁的 HTML 註解(view-source 才看得到)、
+# ③ data.json 頂層 `_canary`(幾篇編號 + 篇名的 HMAC,祕密只在本機 canary.json / Actions secret,見 canary.py)。
+# 以 `_` 開頭的頂層鍵一律是 meta:expand_data(Python)與 src/data.js expandData 都不會把它們帶進完整形狀。
+SITE_BIRTH_YEAR = 2023
+WATERMARK_PLACEHOLDER = '__WATERMARK__'
+
+def build_year(synced):
+    """synced 顯示字串『2026/10/30 2:05 PM』→ 建置年份 2026;解析不了就用現在(台北)的年份。"""
+    m = re.match(r'(\d{4})/', synced or '')
+    return int(m.group(1)) if m else datetime.now(timezone(timedelta(hours=8))).year
+
+def origin_mark(synced):
+    """data.json 的 `_origin`:『annyeongz-平行宇宙-原創編輯-<建置時間戳>』,時間戳同 sw.js 版本號(YYYYMMDD-HHMM)。"""
+    return 'annyeongz-平行宇宙-原創編輯-' + sw_version(synced)
+
+def watermark(year):
+    """HTML 註解水印(讀者看不到;view-source 或整頁複製會帶走)。年份 = 建置年份。"""
+    return '<!-- 本站編輯內容為 Annyeongz 平行宇宙原創，© %d-%d https://yashen0512.github.io/Annyeongz/ -->' % (SITE_BIRTH_YEAR, year)
+
+def data_json(DATA, canary=None):
+    """data.json 的內容:精簡格式、無空白、UTF-8 不轉義(gzip 後最小)。
+    頂層另帶 `_origin` 版權標記;canary(hash 陣列,canary.canary_list 算出)有給才加 `_canary`。sort_keys 讓兩個 `_` 鍵排在最前面。"""
+    C = compact_data(DATA)
+    C['_origin'] = origin_mark(DATA.get('synced', ''))
+    if canary:
+        C['_canary'] = list(canary)
+    return json.dumps(C, ensure_ascii=False, separators=(',', ':'), sort_keys=True)
 
 def render_index(tpl, DATA, stmap):
-    """樣板 → index.html:注入簡繁對照表(佔位符 __STMAP_T__ / __STMAP_S__)。資料不再內嵌,前端自己抓 data.json。"""
-    return tpl.replace('__STMAP_T__', stmap[0]).replace('__STMAP_S__', stmap[1])
+    """樣板 → index.html:注入簡繁對照表(佔位符 __STMAP_T__ / __STMAP_S__)與版權註解水印(__WATERMARK__,head 與 body 結尾各一)。
+    資料不再內嵌,前端自己抓 data.json。"""
+    return (tpl.replace('__STMAP_T__', stmap[0]).replace('__STMAP_S__', stmap[1])
+               .replace(WATERMARK_PLACEHOLDER, watermark(build_year(DATA.get('synced', '')))))
 
 def sw_version(synced):
     """synced 顯示字串『2026/10/30 2:05 PM』→ service worker 版本號 '20261030-1405'(24 時制,每次建置都不同)。
@@ -491,10 +520,12 @@ def copy_static(repo_root, out_dir):
     return copied
 
 def write_site(DATA, src_dir, out_dir, repo_root=None):
-    """輸出 data.json、index.html、sw.js(版本號帶入),並複製 src/、styles/、vendor/、assets/ 與 stats.html / manifest / 橫幅 PNG。
-    回傳 (樣板字串, 複製了哪些資料夾 / 檔案)。"""
+    """輸出 data.json(含 _origin,有祕密時含 _canary)、index.html(含註解水印)、sw.js(版本號帶入),
+    並複製 src/、styles/、vendor/、assets/ 與 stats.html / manifest / 橫幅 PNG。回傳 (樣板字串, 複製了哪些資料夾 / 檔案)。"""
     os.makedirs(out_dir, exist_ok=True)
-    io.open(os.path.join(out_dir, 'data.json'), 'w', encoding='utf-8').write(data_json(DATA))
+    secret = canary.load_secret(src_dir)   # 環境變數 CANARY_SECRET 或 <src_dir>/canary.json;沒有就不埋 _canary
+    io.open(os.path.join(out_dir, 'data.json'), 'w', encoding='utf-8').write(
+        data_json(DATA, canary.canary_list(DATA, secret) if secret else None))
     tpl = io.open(os.path.join(src_dir, 'site_template.html'), encoding='utf-8').read()
     io.open(os.path.join(out_dir, 'index.html'), 'w', encoding='utf-8').write(render_index(tpl, DATA, load_stmap(src_dir)))
     sw_tpl = io.open(os.path.join(src_dir, 'sw_template.js'), encoding='utf-8').read()
@@ -552,6 +583,11 @@ def self_check(tpl, H, out_dir):
     # 4) 簡繁對照有沒有注入成功
     if '__STMAP_T__' in tpl or '__STMAP_S__' in tpl:
         _warn.append('stmap 佔位符未被取代(簡繁互搜會壞)')
+    # 4b) 版權註解水印有沒有注入(樣板 __WATERMARK__ 佔位符 → HTML 註解)
+    if WATERMARK_PLACEHOLDER in tpl:
+        _warn.append('水印佔位符 __WATERMARK__ 未被取代')
+    elif '本站編輯內容為 Annyeongz 平行宇宙原創' not in tpl:
+        _warn.append('index.html 缺少版權註解水印(樣板的 __WATERMARK__ 被拿掉了?)')
     # 5) 前端模組與樣式有沒有一起到輸出資料夾(index.html 用 <script type="module"> 引用它們)
     for d in STATIC_DIRS:
         if not os.path.isdir(os.path.join(out_dir, d)):
@@ -566,8 +602,11 @@ def self_check(tpl, H, out_dir):
         if not os.path.isfile(os.path.join(out_dir, 'vendor', _f)):
             _warn.append('輸出資料夾缺少 vendor/%s(%s)' % (_f, _why))
     # 8) 資料檔與 service worker:data.json 要在、sw.js 的版本號佔位符要被換掉(否則快取永遠不更新)
-    if not os.path.isfile(os.path.join(out_dir, 'data.json')):
+    _dp = os.path.join(out_dir, 'data.json')
+    if not os.path.isfile(_dp):
         _warn.append('輸出資料夾缺少 data.json(首頁會載不到資料)')
+    elif '"_origin":"annyeongz-平行宇宙-原創編輯-' not in io.open(_dp, encoding='utf-8').read(400):
+        _warn.append('data.json 缺少 _origin 版權標記')
     _swp = os.path.join(out_dir, 'sw.js')
     if not os.path.isfile(_swp):
         _warn.append('輸出資料夾缺少 sw.js(PWA 離線 / 安裝會失效)')
@@ -583,6 +622,13 @@ def main():
     articles = DATA['articles']
     print('site built:', len(articles), 'articles,', len(DATA['facets']), 'facets →', OUT,
           ('(複製 %s)' % '、'.join(copied)) if copied else '')
+    _secret = canary.load_secret('.')
+    if _secret:
+        if os.path.isfile(canary.FILE_NAME):   # 本機:把這次埋的幾篇記進 canary.json(git 忽略)
+            canary.record(DATA, _secret, canary.FILE_NAME)
+        print('版權水印:_origin ✅、HTML 註解 ✅、_canary ✅(%d 篇,本機清單見 _build/%s)' % (canary.K, canary.FILE_NAME))
+    else:
+        print('版權水印:_origin ✅、HTML 註解 ✅、_canary 略過(沒有 CANARY_SECRET / %s;要埋請 python canary.py init)' % canary.FILE_NAME)
     if report['dead_conflicts']:
         print('待確認:紅標但仍有未標 ❌ 的連結 %d 篇(補 ❌ 或取消紅標):No.%s'
               % (len(report['dead_conflicts']), ', '.join(report['dead_conflicts'])))
@@ -596,7 +642,7 @@ def main():
             print('  ⚠️ ' + _w)
         print('==============================================================')
     else:
-        print('架構自檢:通過 ✅(端點/欄位/簡繁注入/模組複製/統計星圖/data.json/sw.js 都正常)')
+        print('架構自檢:通過 ✅(端點/欄位/簡繁注入/水印/模組複製/統計星圖/data.json/sw.js 都正常)')
 
 
 if __name__ == '__main__':

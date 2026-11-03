@@ -88,10 +88,9 @@ def main():
     expected = {'articles': arts, 'people': {pid: D['people'][pid] for pid in pids}, 'announcements': D['announcements'],
                 'updated': B.fmt_updated(max(a['ek'] for a in arts))}
     io.open(os.path.join(OUT, 'expected.json'), 'w', encoding='utf-8').write(json.dumps(expected, ensure_ascii=False, indent=0))
-    # 精簡格式版本(src/data.js expandData 與 build_site.compact_data 的對照測試用)
+    # 精簡格式版本(src/data.js expandData 與 build_site.data_json 的對照測試用;跟 data.json 一樣帶 _origin)
     DATA, _ = B.build_data(OUT, now=datetime(2026, 10, 30, 14, 5, tzinfo=timezone(timedelta(hours=8))))
-    io.open(os.path.join(OUT, '..', 'compact_30.json'), 'w', encoding='utf-8').write(
-        json.dumps(B.compact_data(DATA), ensure_ascii=False, separators=(',', ':'), sort_keys=True))
+    io.open(os.path.join(OUT, '..', 'compact_30.json'), 'w', encoding='utf-8').write(B.data_json(DATA))   # 含 _origin 版權標記(不埋 _canary)
     print('fixture:', len(arts), '篇', len(pids), '位作者 →', OUT)
 
 if __name__ == '__main__':
