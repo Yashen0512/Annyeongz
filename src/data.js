@@ -28,7 +28,8 @@ export function expandData(C) {
     };
   });
   const D = {};
-  for (const k in C) if (k !== 'v' && k !== 'pids' && k !== 'articles') D[k] = C[k];
+  // 以 _ 開頭的頂層鍵是 data.json 的 meta(_origin 版權標記、_canary 水印),不進完整形狀(與 build_site.expand_data 相同)
+  for (const k in C) if (k !== 'v' && k !== 'pids' && k !== 'articles' && !k.startsWith('_')) D[k] = C[k];
   D.articles = articles;
   return D;
 }

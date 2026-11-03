@@ -132,7 +132,8 @@ def test_old_authors_csv_without_id_column_is_resolved(tmp_path):
     expected = json.load(io.open(os.path.join(FIXTURE, 'expected.json'), encoding='utf-8'))
     assert DATA['people'] == expected['people']
 
-def test_write_site_outputs_data_json_sw_and_copies_static(tmp_path):
+def test_write_site_outputs_data_json_sw_and_copies_static(tmp_path, monkeypatch):
+    monkeypatch.delenv('CANARY_SECRET', raising=False)   # 這裡不埋 canary(另有測試)
     DATA, _ = B.build_data(FIXTURE)
     src = tmp_path / 'build'; src.mkdir()
     for fn in ('site_template.html', 'stmap.txt', 'sw_template.js'):
@@ -145,8 +146,13 @@ def test_write_site_outputs_data_json_sw_and_copies_static(tmp_path):
     assert '<script type="module" src="src/boot.js"></script>' in html
     assert 'rel="manifest"' in html and 'rel="modulepreload" href="src/main.js"' in html
     assert 'href="stats.html"' in html   # 首頁頁尾有「📊 統計星圖」連結
-    data = json.loads((out / 'data.json').read_text(encoding='utf-8'))
+    assert html.count(B.watermark(B.build_year(DATA['synced']))) == 2 and B.WATERMARK_PLACEHOLDER not in html   # 版權註解水印:head 與 body 結尾
+    assert html.index('<!-- 本站編輯內容為') < html.index('<title>') and html.rindex('<!-- 本站編輯內容為') < html.index('</body>')
+    raw = (out / 'data.json').read_text(encoding='utf-8')
+    data = json.loads(raw)
     assert data['v'] == B.COMPACT_VERSION and B.expand_data(data) == json.loads(json.dumps(DATA))
+    assert data['_origin'] == B.origin_mark(DATA['synced']) and '_canary' not in data   # 沒有祕密就不埋 canary
+    assert raw.startswith('{"_origin":"annyeongz-平行宇宙-原創編輯-')              # sort_keys 讓標記排最前面,整包下載一眼就看到
     sw = (out / 'sw.js').read_text(encoding='utf-8')
     assert B.SW_PLACEHOLDER not in sw and "const VERSION = '%s'" % B.sw_version(DATA['synced']) in sw
     assert copied == ['src', 'styles', 'vendor', 'assets', 'stats.html', 'manifest.webmanifest', 'banner.png', 'banner-mobile.png']
@@ -172,11 +178,51 @@ def test_compact_expand_roundtrip(built):
     assert B.expand_data(json.loads(json.dumps(C))) == json.loads(json.dumps(DATA))
 
 def test_compact_fixture_matches_committed_file(built):
-    """tests/fixtures/compact_30.json 是 vitest(src/data.js expandData)用的對照檔,要跟 compact_data 的現況一致;
+    """tests/fixtures/compact_30.json 是 vitest(src/data.js expandData)用的對照檔,要跟 data_json 的現況一致(含 _origin);
     格式改了就 python3 tests/fixtures/make_fixture.py 重產。"""
     DATA = built[0]
     committed = json.load(io.open(os.path.join(ROOT, 'tests', 'fixtures', 'compact_30.json'), encoding='utf-8'))
-    assert json.loads(json.dumps(B.compact_data(DATA))) == committed
+    assert json.loads(B.data_json(DATA)) == committed
+    assert committed['_origin'] == 'annyeongz-平行宇宙-原創編輯-20261030-1405'
+
+# ---- 隱形版權水印 ----
+def test_origin_mark_watermark_and_build_year():
+    assert B.origin_mark('2026/11/3 8:31 AM') == 'annyeongz-平行宇宙-原創編輯-20261103-0831'
+    assert B.build_year('2026/11/3 8:31 AM') == 2026 and B.build_year('2027/1/2 9:01 PM') == 2027
+    assert B.build_year('') == datetime.now(timezone(timedelta(hours=8))).year
+    assert B.watermark(2026) == '<!-- 本站編輯內容為 Annyeongz 平行宇宙原創，© 2023-2026 https://yashen0512.github.io/Annyeongz/ -->'
+
+def test_data_json_meta_keys_are_stripped_on_expand(built):
+    DATA = built[0]
+    raw = B.data_json(DATA, canary=['ff' * 12, 'aa' * 12])
+    C = json.loads(raw)
+    assert C['_origin'] == B.origin_mark(DATA['synced']) and C['_canary'] == ['ff' * 12, 'aa' * 12]
+    assert raw.startswith('{"_canary":["ffffffffffffffffffffffff","aaaaaaaaaaaaaaaaaaaaaaaa"],"_origin":"')
+    D = B.expand_data(C)
+    assert '_origin' not in D and '_canary' not in D and D == json.loads(json.dumps(DATA))   # 水印不影響任何顯示資料
+    assert B.expand_data(json.loads(B.data_json(DATA))) == json.loads(json.dumps(DATA))
+
+def test_render_index_injects_watermark():
+    html = B.render_index('<head>\n__WATERMARK__\n</head><body>x\n__WATERMARK__\n</body>', {'synced': '2026/10/30 2:05 PM'}, ('繁', '简'))
+    assert html.count(B.watermark(2026)) == 2 and '__WATERMARK__' not in html
+
+def test_write_site_embeds_canary_when_secret_present(tmp_path, monkeypatch):
+    import canary as CN
+    DATA, _ = B.build_data(FIXTURE)
+    src = tmp_path / 'build'; src.mkdir()
+    for fn in ('site_template.html', 'stmap.txt', 'sw_template.js'):
+        shutil.copy(os.path.join(ROOT, '_build', fn), src / fn)
+    monkeypatch.delenv('CANARY_SECRET', raising=False)
+    (src / 'canary.json').write_text(json.dumps({'secret': 'test-secret', 'k': 5, 'items': []}), encoding='utf-8')   # 本機祕密檔
+    out = tmp_path / 'site'
+    B.write_site(DATA, str(src), str(out), repo_root=ROOT)
+    data = json.loads((out / 'data.json').read_text(encoding='utf-8'))
+    assert data['_canary'] == CN.canary_list(DATA, 'test-secret') and len(data['_canary']) == 5
+    assert B.expand_data(data) == json.loads(json.dumps(DATA))
+    monkeypatch.setenv('CANARY_SECRET', 'env-secret')                                     # 環境變數優先(Actions)
+    B.write_site(DATA, str(src), str(out), repo_root=ROOT)
+    data = json.loads((out / 'data.json').read_text(encoding='utf-8'))
+    assert data['_canary'] == CN.canary_list(DATA, 'env-secret') != CN.canary_list(DATA, 'test-secret')
 
 def test_expand_data_passthrough_and_fallbacks():
     full = {'total': 1, 'articles': [{'no': '1'}]}
@@ -195,6 +241,8 @@ def test_sw_version_from_synced():
 
 def test_self_check_reports_missing_endpoint():
     warn = B.self_check('<html></html>', {}, '/nonexistent')
+    assert any('版權註解水印' in w for w in warn)
+    assert any('__WATERMARK__' in w for w in B.self_check('<html>__WATERMARK__</html>', {}, '/nonexistent'))
     assert any('REACT_API' in w for w in warn) and any('缺欄位' in w for w in warn) and any('src/' in w for w in warn)
     assert any('stats.html' in w for w in warn) and any('chart.umd.js' in w for w in warn)
     assert any('lz-string.min.js' in w for w in warn) and any('qrcode.js' in w for w in warn)

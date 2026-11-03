@@ -30,6 +30,7 @@ jobs:
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           GOATCOUNTER_TOKEN: ${{ secrets.GOATCOUNTER_TOKEN }}
+          CANARY_SECRET: ${{ secrets.CANARY_SECRET }}   # 隱形版權 canary 的祕密(選填;沒設就不埋 _canary,見 _build/canary.py)
           SITE_OUT: '..'
           PYTHONIOENCODING: utf-8
         run: |

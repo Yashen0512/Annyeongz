@@ -15,7 +15,7 @@
 
 ```
 index.html                 由樣板建置出來的首頁(只注入簡繁表與端點;資料不再內嵌),不要手改 → 改 _build/site_template.html
-data.json                  全部資料的**精簡格式**(建置產物;前端由 src/boot.js 抓回、src/data.js expandData 還原)
+data.json                  全部資料的**精簡格式**(建置產物;前端由 src/boot.js 抓回、src/data.js expandData 還原;頂層 `_origin` / `_canary` 是版權水印,不進完整形狀)
 sw.js                      PWA service worker(建置產物:由 _build/sw_template.js 帶入版本號,不要手改;預先快取 src/、styles/、vendor/、assets/ 與 stats.html)
 manifest.webmanifest       PWA 設定(名稱、色、圖示 → assets/icons/)
 assets/                    圖示(icons/icon-192、icon-512、icon-maskable-512)與 WebP 橫幅(banner、banner-1200、banner-mobile)
@@ -53,13 +53,14 @@ docs/                      lighthouse-before.json / lighthouse-after.json(行動
 _build/                    建置工具(Python,只用標準庫;build_pages.py 另需 Pillow)
   fetch_data.py            從 Notion API 抓主表 / 作者 / 公告 / 每篇連結 → CSV + article_links.json(主流程在 main())
   build_site.py            CSV → data.json(compact_data 精簡)+ index.html(樣板注入簡繁對照表)+ sw.js(版本號)+ 複製 src/、styles/、vendor/、assets/、stats.html;
-                           含編號重複 / 架構自檢(build_data / write_site / compact_data / expand_data 可被 import)
+                           含編號重複 / 架構自檢(build_data / write_site / compact_data / expand_data 可被 import);data.json 的 `_origin` / `_canary` 與 HTML 註解水印也在這裡(見「隱形版權水印」)
   build_pages.py           data.json(expand_data 還原)→ p/<No>/{index.html, og.png} + sitemap.xml + feed.xml / feed-updated.xml + robots.txt;只重產內容 hash 有變的(build_pages 可被 import)
   fonts/                   OG 圖字型:Noto Sans TC / KR 的 Regular、Bold(Google Fonts,OFL);諺文用 KR 回退、TC 沒有的簡體字用 stmap 轉繁、emoji 略過
   og_brand.png             OG 圖左上的 🐶❤️🐰(預先畫好,Actions 不用裝 emoji 字型)
   site_template.html       首頁樣板(真正要改的 HTML 在這裡)
   sw_template.js           service worker 樣板(__SW_VERSION__ 由 build_site.py 以 synced 時間戳帶入)
   facets_def.py            分面定義、標籤改名 / 合併規則、逐篇人工校正(單一事實來源)
+  canary.py                隱形版權 canary:HMAC 幾篇「編號 + 篇名」埋進 data.json 的 `_canary`;祕密與清單在本機 canary.json(git 忽略);`check` 比對別站
   stmap.txt                簡繁對照表(兩行:繁字串 / 簡字串,逐字對應)
   article_links.json       每篇閱讀連結(fetch_data.py 產生;保留鍵 __edited__ / __blocks__ 見「原文巡檢」)
   reactions_backup.json    愛心 / 觀測計數的備份({編號: [愛心, 觀測]})
@@ -184,6 +185,27 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
   由 `src/reactions.js` 在開站時 GET 回來;收藏 / 取消收藏 / 打開詳情時 POST `{no, type:'like'|'unlike'|'view'}`。
   `REACT_API` 留空或讀取失敗時只是不顯示數字(愛心 / 觀測排序會退回編號大→小),書架照常。
   `_build/reactions_backup.json` 是這份計數的備份。
+
+## 隱形版權水印(`build_site.py` 「隱形版權水印」區、`canary.py`)
+
+三樣都**不影響任何顯示資料**;前端與測試只看完整形狀,`expand_data`(Python)與 `src/data.js` `expandData` 都會把 data.json 頂層
+**以 `_` 開頭的 meta 鍵**丟掉(以後要再加 meta 也用 `_` 開頭,兩邊不用改)。
+
+- **① `data.json` 的 `_origin`**(`origin_mark`):`annyeongz-平行宇宙-原創編輯-<YYYYMMDD-HHMM>`,時間戳同 sw.js 版本號(`sw_version(synced)`);
+  `data_json()` 以 `sort_keys` 輸出,所以 `_canary` / `_origin` 排在檔案最前面,整包下載的人一眼就看到。架構自檢會確認它在。
+- **② HTML 註解水印**(`watermark(year)`):`<!-- 本站編輯內容為 Annyeongz 平行宇宙原創,© 2023-<建置年份> https://… -->`,
+  `index.html`(樣板 `__WATERMARK__` 佔位符兩處:`<head>` 的 `<title>` 之前、`</body>` 之前,`render_index` 注入)與每個分享頁 `p/<No>/index.html`
+  (`build_pages.page_html` 同樣 head / body 結尾各一;年份進 `page_hash`,跨年會全部重產一次)。讀者看不到,view-source 或整頁複製會帶走。
+  自檢:佔位符沒換掉、或樣板把它拿掉都會警告。年份由 `build_year(synced)` 取建置年份。
+- **③ canary(`_build/canary.py`,選用)**:用一把只有站長知道的祕密對幾篇(`K` = 5)「編號 + 篇名」算 HMAC-SHA256(取 24 個 hex),
+  排序後埋進 data.json 的 `_canary`;挑哪幾篇由 HMAC(祕密, 編號) 排序決定(同祕密同資料 → 本機與 Actions 一致;略過原文已刪、無篇名),外人看不出也偽造不了。
+  祕密來源:環境變數 `CANARY_SECRET`(Actions:到 repo Settings → Secrets 加 `CANARY_SECRET`,`sync.yml` 已帶入)→ `_build/canary.json`(本機,**git 忽略**)→ 都沒有就**不埋**(data.json 沒有 `_canary`,其他照常)。
+  - `python canary.py init` 產生祕密檔(請自行備份;同一把祕密也放進 Actions secret,兩邊建置的 `_canary` 才一樣);
+    `python canary.py show` 列出目前埋的幾篇與 hash 並更新 `canary.json` 的 `items`(舊的進 `history`,篇名改了還比得出來);
+    本機 `build_site.py` 建置時若有 `canary.json` 也會自動更新 `items`。
+  - `python canary.py check <別站的 data.json 或任何檔案>`:報告對方內容裡有沒有我方 `_origin` 標記、我方 canary hash、
+    對方「編號 + 篇名」用我方祕密重算後是否就在對方自己的 `_canary` 裡(= 整包搬走),以及對應關係與本站相同的幾篇(= 搬走編輯內容)。
+  - 測試:`tests/py/test_canary.py`(純函式、祕密來源、record / history、CLI);`test_build_site.py` 有「有祕密才埋、環境變數優先」。
 
 ## 主列表的分批渲染與 PWA
 
@@ -411,7 +433,7 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
 - **資料更新**走 `sync.yml`(手動觸發,或排程 08:31 / 21:01):`fetch_data.py` → `build_site.py` 產出 `index.html`、`data.json`、`sw.js`,
   commit 回 `main` 再部署。**改 HTML 一律改 `_build/site_template.html`**,`index.html` 會被下一次同步覆蓋。
   本機沒有 Notion CSV 時,可用現有 `data.json`(`expand_data` 還原)呼叫 `build_site.write_site(DATA, '_build', '.', repo_root='.')` 重產三個產物。
-- `index.html` 裡由建置 / 部署決定的東西:`window.AZ_STMAP`(簡繁表)、`window.AZ_CONFIG`
+- `index.html` 裡由建置 / 部署決定的東西:版權註解水印(`__WATERMARK__`)、`window.AZ_STMAP`(簡繁表)、`window.AZ_CONFIG`
   (`REACT_API` / `REPORT_API` / `STATS_API` 三個 Val Town 端點;`build_site.py` 的架構自檢會檢查它們還在)、GoatCounter 追蹤碼。
 - 因為用 ES module,**本機要用 http 伺服器開**(`npm run serve` 或 `python3 -m http.server 8000`),直接雙擊 `index.html`(file://)不行。
 - `package.json` / `tests/` / `node_modules` 只為了測試,部署用不到(`node_modules` 不進版控)。
@@ -437,7 +459,7 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
 npm install                       # 只需一次(vitest 是 devDependency)
 npm test                          # vitest run:tests/filter.test.js、sort.test.js、url.test.js、data.test.js(expandData)、stats.test.js、storage.test.js
 pip install -r requirements-dev.txt   # 只需一次(pytest + Pillow)
-python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆分與 ID、日期、精簡格式 round-trip、sw 版本號、30 篇 fixture 完整建置比對)、fetch_data(No 三種型別、token 來源)、
+python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆分與 ID、日期、精簡格式 round-trip、sw 版本號、水印 / _origin / canary 埋入、30 篇 fixture 完整建置比對)、fetch_data(No 三種型別、token 來源)、canary(hash / 挑選 / 比對 / CLI)、
                                   #          build_pages(描述 / 標題折行 / 字型回退 / sitemap / RSS、30 篇產頁與 hash 跳過重產)
                                   #          checkers(各平台 HTML 樣本)、check_links(連續兩天狀態機、到期、改名判斷、平台被擋短路、重試)、notion_writeback(❌ 加 / 移除、PATCH 格式、曾用名合併)、build_site 曾用名、fetch_data block 位置與 merge_links 清舊標題、notion_writeback 只信記錄的 block、collect_targets 略過舊標題
 ```

@@ -10,6 +10,8 @@ describe('expandData:精簡 data.json → 完整資料', () => {
   it('30 篇 fixture 還原後與 build_site 的完整輸出逐篇相同(含 tags 15 面、作者 ID、created/edited)', () => {
     const D = expandData(JSON.parse(JSON.stringify(compact)));
     expect(D.v).toBeUndefined(); expect(D.pids).toBeUndefined();
+    expect(compact._origin).toMatch(/^annyeongz-平行宇宙-原創編輯-\d{8}-\d{4}$/);   // data.json 有版權標記
+    expect(D._origin).toBeUndefined();                                             // 但不進完整形狀
     expect(D.total).toBe(30); expect(D.facets.length).toBe(15);
     expect(D.people).toEqual(expected.people);
     expect(D.announcements).toEqual(expected.announcements);
@@ -23,6 +25,12 @@ describe('expandData:精簡 data.json → 完整資料', () => {
     expect(Object.keys(a.tags).length).toBe(15);
     expect(Array.isArray(a.tags['文章狀態'])).toBe(true);
     expect(D.articles.some((x) => x.dead === true) && D.articles.some((x) => x.dead === false)).toBe(true);
+  });
+  it('以 _ 開頭的頂層 meta 鍵(_origin / _canary 水印)全部丟掉,其餘頂層欄位照留', () => {
+    const C = { ...JSON.parse(JSON.stringify(compact)), _canary: ['abc'], _origin: 'x', _whatever: 1 };
+    const D = expandData(C);
+    expect(Object.keys(D).some((k) => k.startsWith('_'))).toBe(false);
+    expect(D.total).toBe(30); expect(D.synced).toBe(compact.synced); expect(D.stats).toEqual(compact.stats);
   });
   it('舊的完整格式(沒有 v)原樣回傳;空值不會炸', () => {
     const full = { total: 1, facets: [], articles: [{ no: '1' }] };

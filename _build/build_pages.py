@@ -17,7 +17,7 @@ BRAND_TEXT = 'Annyeongz 平行宇宙'          # OG 圖左上角文字(前面接
 HERE = os.path.dirname(os.path.abspath(__file__))
 FONT_DIR = os.path.join(HERE, 'fonts')
 BRAND_IMG = os.path.join(HERE, 'og_brand.png')   # 🐶❤️🐰 預先畫好的小圖(Actions 不用裝 emoji 字型)
-PAGE_VERSION = 1    # 改了分享頁樣板就 +1 → 全部重產
+PAGE_VERSION = 2    # 改了分享頁樣板就 +1 → 全部重產(2:加版權註解水印)
 OG_VERSION = 1      # 改了 OG 圖版面就 +1 → 全部重畫
 FEED_N = 50
 TZ8 = timezone(timedelta(hours=8))
@@ -97,13 +97,20 @@ def content_hash(*parts):
 
 # ---------- 分享頁 ----------
 
-def page_hash(a, facets):
-    return content_hash(PAGE_VERSION, SITE_URL, a['no'], a.get('name'), a.get('author'), a.get('translator'),
-                        a.get('alias'), a.get('tags'), bool(a.get('dead')), a.get('edited'))
+def _year(year):
+    """水印年份:沒給就用現在(台北)的年份;build_pages() 會傳 DATA['synced'] 的建置年份進來。"""
+    return year or datetime.now(TZ8).year
 
-def page_html(a, facets):
+def page_hash(a, facets, year=None):
+    return content_hash(PAGE_VERSION, SITE_URL, a['no'], a.get('name'), a.get('author'), a.get('translator'),
+                        a.get('alias'), a.get('tags'), bool(a.get('dead')), a.get('edited'), _year(year))
+
+def page_html(a, facets, year=None):
     """分享頁:head 給爬蟲看的 meta,body 列出作品名 / 作者 / 標籤,script 導回首頁並打開該篇詳情。
-    導向用相對路徑 ../../?p=<No>,在正式站就是 /Annyeongz/?p=<No>,本機 site/ 用 http 伺服器開也通。"""
+    導向用相對路徑 ../../?p=<No>,在正式站就是 /Annyeongz/?p=<No>,本機 site/ 用 http 伺服器開也通。
+    head 與 body 結尾各一段版權註解水印(build_site.watermark;讀者看不到,view-source / 整頁複製會帶走)。"""
+    import build_site
+    wm = build_site.watermark(_year(year))
     no = a['no']
     e = html.escape
     title, desc, url = page_title(a), description(a, facets), share_url(no)
@@ -125,7 +132,8 @@ def page_html(a, facets):
     body.append('<p><a href="%s">在 %s 開啟這篇的詳情 →</a></p>' % (e(home), e(SITE_NAME)))
     return ('<!DOCTYPE html>\n<html lang="zh-Hant">\n<head>\n<meta charset="utf-8">\n'
             '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
-            '<meta name="az-hash" content="%s">\n' % page_hash(a, facets)
+            + wm + '\n'
+            + '<meta name="az-hash" content="%s">\n' % page_hash(a, facets, year)
             + '<title>%s</title>\n' % e(title)
             + '<meta name="description" content="%s">\n' % e(desc)
             + '<link rel="canonical" href="%s">\n' % e(url)
@@ -146,7 +154,7 @@ def page_html(a, facets):
               'background:%s;color:%s;line-height:1.6}h1{font-size:22px}small{color:%s;font-weight:400}'
               'a{color:%s}.dead{color:%s}</style>\n' % (C_BG, C_INK, C_MUTED, C_ACCENT, C_DEAD)
             + '<script>location.replace(%s);</script>\n' % json.dumps(home, ensure_ascii=False)
-            + '</head>\n<body>\n<main>\n' + '\n'.join(body) + '\n</main>\n</body>\n</html>\n')
+            + '</head>\n<body>\n<main>\n' + '\n'.join(body) + '\n</main>\n' + wm + '\n</body>\n</html>\n')
 
 def read_page_hash(path):
     try:
@@ -445,6 +453,8 @@ def build_pages(DATA, out_dir, images=True, fonts=None, log=None):
     回傳統計 {'pages', 'images', 'skipped', 'removed', 'feeds', 'bad_no'}。"""
     log = log or (lambda *a: None)
     facets, articles = DATA['facets'], DATA['articles']
+    import build_site
+    year = build_site.build_year(DATA.get('synced', ''))   # 水印年份 = 建置年份
     pdir = os.path.join(out_dir, 'p')
     os.makedirs(pdir, exist_ok=True)
     st = {'pages': 0, 'images': 0, 'skipped': 0, 'removed': 0, 'feeds': [], 'bad_no': []}
@@ -457,10 +467,10 @@ def build_pages(DATA, out_dir, images=True, fonts=None, log=None):
         keep.add(no)
         adir = os.path.join(pdir, no)
         os.makedirs(adir, exist_ok=True)
-        hp = page_hash(a, facets)
+        hp = page_hash(a, facets, year)
         ppath = os.path.join(adir, 'index.html')
         if read_page_hash(ppath) != hp:
-            io.open(ppath, 'w', encoding='utf-8', newline='\n').write(page_html(a, facets))
+            io.open(ppath, 'w', encoding='utf-8', newline='\n').write(page_html(a, facets, year))
             st['pages'] += 1
         else:
             st['skipped'] += 1
