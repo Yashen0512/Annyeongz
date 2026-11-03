@@ -6,7 +6,23 @@
     <description>安員同人文索引站:最新收錄的 50 篇</description>
     <language>zh-Hant</language>
     <atom:link href="https://yashen0512.github.io/Annyeongz/feed.xml" rel="self" type="application/rss+xml"/>
-    <lastBuildDate>Wed, 28 Oct 2026 18:57:00 +0800</lastBuildDate>
+    <lastBuildDate>Mon, 02 Nov 2026 23:45:00 +0800</lastBuildDate>
+    <item>
+      <title>당신을 "좋아요"합니다(我「喜歡」你) — 실수</title>
+      <link>https://yashen0512.github.io/Annyeongz/p/1397/</link>
+      <guid isPermaLink="false">https://yashen0512.github.io/Annyeongz/p/1397/</guid>
+      <pubDate>Mon, 02 Nov 2026 23:45:00 +0800</pubDate>
+      <category>安/員</category>
+      <category>甜文</category>
+      <category>喜劇</category>
+      <category>暗戀</category>
+      <category>🚗轎車</category>
+      <category>韓餐生吃</category>
+      <category>都市現實</category>
+      <category>連載中</category>
+      <dc:creator>실수</dc:creator>
+      <description>作者:실수|標籤:安/員 · 甜文 · 喜劇 · 暗戀 · 🚗轎車 · 韓餐生吃 · 都市現實 · 連載中</description>
+    </item>
     <item>
       <title>블박(Black Box) — 꿀구마(蜜地瓜)</title>
       <link>https://yashen0512.github.io/Annyeongz/p/1396/</link>
@@ -351,9 +367,10 @@
       <category>2026831901Annyeongz生日慶祝活動</category>
       <category>都市現實</category>
       <category>中篇</category>
+      <category>HE</category>
       <category>完結</category>
       <dc:creator>forever🧣</dc:creator>
-      <description>作者:forever🧣|標籤:2026831901Annyeongz生日慶祝活動 · 都市現實 · 中篇 · 完結</description>
+      <description>作者:forever🧣|標籤:2026831901Annyeongz生日慶祝活動 · 都市現實 · 中篇 · HE · 完結</description>
     </item>
     <item>
       <title>-恭喜你找到了寶藏- — 糟糕</title>
@@ -725,21 +742,6 @@
       <category>完結</category>
       <dc:creator>noname</dc:creator>
       <description>作者:noname|標籤:涉及宗教 · CP潔癖勿入 · ⚠️題材警告 · 💰付費內容 · 韓餐生吃 · 都市現實 · 中篇 · OE · 完結</description>
-    </item>
-    <item>
-      <title>페이지를 찾을 수 없습니다(找不到頁面) — 플레인(Playin)</title>
-      <link>https://yashen0512.github.io/Annyeongz/p/1347/</link>
-      <guid isPermaLink="false">https://yashen0512.github.io/Annyeongz/p/1347/</guid>
-      <pubDate>Mon, 20 Jul 2026 01:02:00 +0800</pubDate>
-      <category>辦公室</category>
-      <category>CP潔癖勿入</category>
-      <category>韓餐生吃</category>
-      <category>都市現實</category>
-      <category>中篇</category>
-      <category>HE</category>
-      <category>完結+番外</category>
-      <dc:creator>플레인(Playin)</dc:creator>
-      <description>作者:플레인(Playin)|標籤:辦公室 · CP潔癖勿入 · 韓餐生吃 · 都市現實 · 中篇 · HE · 完結+番外</description>
     </item>
   </channel>
 </rss>
