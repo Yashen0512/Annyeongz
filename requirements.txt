@@ -1,3 +1,6 @@
 # Build deps (installed by sync.yml and on the site owner's PC): Pillow draws the OG images in build_pages.py.
 # fetch_data.py / build_site.py use the standard library only. Keep this file ASCII-only (pip reads it in the locale encoding).
 Pillow>=10
+# Optional (site owner's PC only, NOT installed by sync.yml / check_links.yml): browser check mode for Lofter / AO3 / Asianfanfics
+# (check_links.py --browser). Install by hand:  pip install playwright  &&  playwright install chromium
+# playwright>=1.45

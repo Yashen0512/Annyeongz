@@ -11,3 +11,4 @@ _build/stats.json
 _build/notion_token.txt
 _build/goatcounter_token.txt
 _build/canary.json
+_build/cookies/

@@ -1,0 +1,4 @@
+[
+  {"domain": ".lofter.com", "expirationDate": 1767225600, "hostOnly": false, "httpOnly": true, "name": "LOFTER_SESS", "path": "/", "sameSite": "no_restriction", "secure": false, "session": false, "storeId": null, "value": "sess-value"},
+  {"domain": ".lofter.com", "hostOnly": false, "httpOnly": false, "name": "usertrack", "path": "/", "sameSite": null, "secure": false, "session": true, "storeId": null, "value": "ut"}
+]
