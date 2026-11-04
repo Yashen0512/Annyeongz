@@ -45,10 +45,12 @@ vendor/                    第三方單檔(Chart.js 統計星圖;lz-string 壓�
 tests/                     測試
   *.test.js                Vitest(filter / sort / url / data(expandData、parseSynced / relativeTime)/ stats / storage 純函式)+ fixtures.js
   py/                      pytest(build_site / fetch_data / build_pages 純函式 + 用 30 篇 fixture 跑完整建置與產頁、精簡格式 round-trip、sw 版本號;
-                           checkers HTML 樣本;check_links 狀態機與改名判斷;notion_writeback 的 rich_text 純函式)
+                           checkers HTML 樣本;check_links 狀態機與改名判斷;notion_writeback 的 rich_text 純函式;
+                           browser_checker 的 classify / cookie 解析 / 挑戰頁計數(假 session,不開瀏覽器))
   fixtures/build_input/    30 篇的建置輸入(主表 / 作者 / 公告 CSV、article_links.json、expected.json),由 make_fixture.py 從 data.json 反推
   fixtures/compact_30.json 同 30 篇的精簡格式(vitest 與 pytest 的對照檔,make_fixture.py 一起重產)
-  fixtures/html/           各平台頁面的最小 HTML 樣本(正常 / 已刪 / 登入牆 / Cloudflare 挑戰頁),給 checkers 測試用
+  fixtures/html/           各平台頁面的最小 HTML 樣本(正常 / 已刪 / 登入牆 / Cloudflare 挑戰頁),給 checkers 與 browser_checker 測試用
+  fixtures/cookies/        Lofter cookie 匯出檔的三種格式樣本(Get cookies.txt LOCALLY JSON / Cookie-Editor JSON / Netscape),給 browser_checker 測試用
 docs/                      lighthouse-before.json / lighthouse-after.json(行動版四項分數與主要紅字)、axe-before.json / axe-after.json(無障礙掃描)
 _build/                    建置工具(Python,只用標準庫;build_pages.py 另需 Pillow)
   fetch_data.py            從 Notion API 抓主表 / 作者 / 公告 / 每篇連結 → CSV + article_links.json(主流程在 main())
@@ -65,13 +67,15 @@ _build/                    建置工具(Python,只用標準庫;build_pages.py �
   article_links.json       每篇閱讀連結(fetch_data.py 產生;保留鍵 __edited__ / __blocks__ 見「原文巡檢」)
   reactions_backup.json    愛心 / 觀測計數的備份({編號: [愛心, 觀測]})
   probe.py                 可行性測試:四個平台各抓正常 / 已刪 / 不存在三個連結,印狀態碼、最終網址、HTML 前 2000 字
-  checkers/                各平台「還在不在」檢查器(postype / lofter / ao3 / aff;共用介面 check(url))
-  check_links.py           每日巡檢:所有原文連結 + 作者庫平台網址 → link_status.json、check_report.json(不寫 Notion)
+  checkers/                各平台「還在不在」檢查器(postype / lofter / ao3 / aff;共用介面 check(url);urllib)
+  browser_checker.py       瀏覽器巡檢模式(check_links.py --browser,只在站長本機):Playwright 真瀏覽器抓 lofter / ao3 / aff,判斷純函式 classify();見「瀏覽器巡檢模式」
+  cookies/                 Lofter 登入 cookie 匯出檔 lofter.json(git 忽略整個目錄;瀏覽器巡檢用)
+  check_links.py           每日巡檢:所有原文連結 + 作者庫平台網址 → link_status.json、check_report.json(不寫 Notion);--browser / --probe 見「瀏覽器巡檢模式」
   notion_writeback.py      把巡檢結果寫回 Notion(❌ 標記 / 作者改名 + 曾用名);預設 dry-run,--go 才寫
   link_status.json         每個連結的上次狀態、連續天數、上次檢查時間(commit 進 repo;巡檢排程每天更新)
 .github/workflows/         sync.yml(同步 Notion + 建置 + 部署)、static.yml(push main → 部署)、test.yml(PR → Vitest + pytest)、
                            check_links.yml(每天 03:00 巡檢原文連結 + 寫回 Notion + 開 Issue)
-requirements.txt           建置相依:只有 Pillow(build_pages.py 畫 OG 圖);sync.yml 與站長電腦都要裝
+requirements.txt           建置相依:只有 Pillow(build_pages.py 畫 OG 圖);sync.yml 與站長電腦都要裝;playwright 以註解列為可選(瀏覽器巡檢,只在站長本機手動裝)
 package.json / pytest.ini / requirements-dev.txt   只為了測試,部署用不到
 ```
 
@@ -311,9 +315,41 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
 - **排程 `check_links.yml`**:每天 UTC 19:00(台灣 03:00)與 `workflow_dispatch`(可選 dry-run、平台);讀 secret `NOTION_TOKEN`;
   commit `_build/link_status.json`;`check_report.md` 存在(有新死 / 復活 / 改名)就用 `gh issue create` 開 Issue。
 - **本機**:`更新網站.bat` 預設不巡檢;帶參數(`更新網站.bat 巡檢`)才在 fetch 之後跑 `check_links.py` + `notion_writeback.py --go`,
-  片段在 `_build/更新網站_巡檢片段.bat.txt`。
+  `更新網站.bat 巡檢 瀏覽器` 改跑 `check_links.py --browser`(三個海外平台走真瀏覽器,見下一節),片段在 `_build/更新網站_巡檢片段.bat.txt`。
 - 手動測試:`python check_links.py --platforms postype --no 1352,1255`(只查這幾篇)→ `python notion_writeback.py --no 1352`(dry-run)
   → 加 `--go`。`article_links.json` 的保留鍵一律以 `__` 開頭,迭代時要跳過。
+
+## 瀏覽器巡檢模式(`_build/browser_checker.py`,`check_links.py --browser`)
+
+Lofter(1300 多筆,最大平台)、AO3、Asianfanfics 用 urllib 從任何 IP 都會被登入牆 / Cloudflare 擋,但真的 Chrome 過得去,
+所以這三個平台改用 **Playwright 開 headless Chromium** 抓;Postype 維持 urllib。結果形狀與 `checkers` 一致(`status / reason / author_name`),
+進同一套 `advance()` 連續兩天規則、同一份 `link_status.json`,`notion_writeback.py` 照樣寫回 ❌。**只在站長本機跑**:
+雲端 / GitHub Actions 連不到這三個平台,`check_links.yml` 不加 `--browser`、照舊只跑 Postype。
+
+- **安裝(一次)**:`pip install playwright` 然後 `playwright install chromium`(`requirements.txt` 裡那行是註解,`sync.yml` 不會裝)。
+  沒裝 Playwright 時 `--browser` 會印提示並略過這三個平台(狀態不動),其他照常。
+- **Lofter cookie**:登入 Lofter 後用瀏覽器擴充「Get cookies.txt LOCALLY」(選 JSON)或「Cookie-Editor」(Export → JSON)匯出,
+  存成 `_build/cookies/lofter.json`(`cookies/` 整個目錄 git 忽略;Netscape 格式的 cookies.txt 也吃)。沒有這個檔就印提示、略過 Lofter。
+  啟動時讀 `LOFTER_SESS` 的到期日:**剩不到 3 天印 🚨 警告、已過期就略過 Lofter**;帶了 cookie 仍被導到 `www.lofter.com/front/login`
+  = cookie 失效 → 該平台 `login_required`(不算死)並略過其餘。處理方式都一樣:重新登入 Lofter、重新匯出覆蓋 `lofter.json`。
+- **WARP 要關**:啟動時 GET `https://www.cloudflare.com/cdn-cgi/trace`,回應有 `warp=on` 就印「偵測到 Cloudflare WARP 開啟…」並略過三個平台
+  (WARP 的出口 IP 會被這幾站擋)。其他 VPN 不會被偵測到,被 Cloudflare 擋時先想到這個。
+- **判斷規則**(純函式 `classify(platform, final_url, status, html, url, error)`,`tests/py/test_browser_checker.py` 用合成樣本測;
+  **尚未在真瀏覽器實測,先跑 `--probe` 再修**):
+  - Lofter:404 / 頁面「页面不存在」→ `deleted`;整個部落格打不開(子網域 DNS 不存在 / 連線被拒,且 `www.lofter.com` 連得上)
+    或頁面「博客不存在」→ `deleted`(reason `blog_gone`);導到登入頁 → `login_required`(blocked);其餘 200 → `ok`,作者名取 og:site_name / `<title>`。
+  - AO3:自動加 `?view_adult=true`;404 或「Sorry, we couldn't find the work」→ `deleted`;「only available to registered users」→ `login_required`;
+    另外解析 `Chapters: 5/10`(或 `5/?`)、`Completed` / `Updated` 日期、字數,放進結果 `extra`,`advance()` 存到 `link_status.json` 該筆的 `extra`
+    (`{chapters, chapter_current, chapter_total, complete, status, status_date, words}`),**先只記錄、不寫回 Notion 的文章狀態**。
+  - Asianfanfics:正常、或「SUBSCRIBERS ONLY / Please subscribe to read」都算 `ok`(文還在);404 / Page Not Found → `deleted`。
+  - 共用:同平台順序跑、每筆隨機間隔 2~4 秒、每個平台一個 browser context 重用;逾時 20 秒 → `unknown`;Cloudflare 挑戰頁等 8 秒再抓一次,
+    仍擋 → `unknown` 並計數,**同平台連續 5 筆挑戰頁就略過該平台**並印警告。三個平台在同一條執行緒依序跑(Playwright sync API 綁執行緒),Postype 的執行緒並行。
+- **`--probe`(驗判斷規則用)**:`python check_links.py --browser --probe` 每個平台只抓 3 筆(1 筆預期正常、1 筆 Notion 已標 ❌、1 筆捏造的不存在網址;
+  Lofter 多 1 筆不存在的部落格),印最終網址、狀態碼、導覽錯誤、判定(status / reason / author / extra)、`<title>` 與頁面前 300 字,**不寫任何檔案**。
+  可加 `--platforms lofter`(只試一個)、`--headed`(開視窗看畫面)、`--browser-channel chrome`(用系統 Chrome)、環境變數 `AZ_BROWSER_EXE`(指定執行檔)。
+  規則改了就把對應的 `tests/fixtures/html/` 合成樣本一起改。
+- **正式跑**:`python check_links.py --browser`(或 `更新網站.bat 巡檢 瀏覽器`)→ `notion_writeback.py --go` 照舊;
+  `--no 1352` / `--limit 5` / `--verbose` 都能搭配。報告與 `link_status.json` 的 `__meta__.platforms` 會多 `challenges` 與略過原因 `note`。
 
 ## 篩選邏輯(`src/filter.js`)
 
@@ -461,7 +497,8 @@ npm test                          # vitest run:tests/filter.test.js、sort.test.
 pip install -r requirements-dev.txt   # 只需一次(pytest + Pillow)
 python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆分與 ID、日期、精簡格式 round-trip、sw 版本號、水印 / _origin / canary 埋入、30 篇 fixture 完整建置比對)、fetch_data(No 三種型別、token 來源)、canary(hash / 挑選 / 比對 / CLI)、
                                   #          build_pages(描述 / 標題折行 / 字型回退 / sitemap / RSS、30 篇產頁與 hash 跳過重產)
-                                  #          checkers(各平台 HTML 樣本)、check_links(連續兩天狀態機、到期、改名判斷、平台被擋短路、重試)、notion_writeback(❌ 加 / 移除、PATCH 格式、曾用名合併)、build_site 曾用名、fetch_data block 位置與 merge_links 清舊標題、notion_writeback 只信記錄的 block、collect_targets 略過舊標題
+                                  #          checkers(各平台 HTML 樣本)、check_links(連續兩天狀態機、到期、改名判斷、平台被擋短路、重試)、notion_writeback(❌ 加 / 移除、PATCH 格式、曾用名合併)、build_site 曾用名、fetch_data block 位置與 merge_links 清舊標題、notion_writeback 只信記錄的 block、collect_targets 略過舊標題、
+                                  #          browser_checker(classify 各平台合成樣本、AO3 章節進度、cookie 三種格式與到期、WARP、--probe 樣本挑選、挑戰頁連續 5 筆 / 登入牆短路、preflight、--browser / --probe 接進 main)
 ```
 
 - `.github/workflows/test.yml` 在 PR 時兩組都自動跑,不需要 Notion token。

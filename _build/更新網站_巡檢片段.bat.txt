@@ -1,18 +1,28 @@
 rem ============================================================================
 rem 更新網站.bat 的可選巡檢片段(此檔只是範本;更新網站.bat 不在 repo 裡,請把下面這段貼進去)
-rem 用法:更新網站.bat          → 跟以前一樣,不巡檢(巡檢要打 1000 多個連結,會慢)
-rem       更新網站.bat 巡檢    → fetch_data.py 之後多跑 check_links.py + notion_writeback.py --go
-rem       更新網站.bat 巡檢 dry → 只巡檢並印出將寫回的清單,不寫 Notion
+rem 用法:更新網站.bat               → 跟以前一樣,不巡檢(巡檢要打 1000 多個連結,會慢)
+rem       更新網站.bat 巡檢         → fetch_data.py 之後多跑 check_links.py + notion_writeback.py --go(只有 Postype 查得到)
+rem       更新網站.bat 巡檢 瀏覽器   → check_links.py --browser:Lofter / AO3 / Asianfanfics 用 Playwright 真瀏覽器抓
+rem                                   (要先 pip install playwright && playwright install chromium,Lofter 要放 _build\cookies\lofter.json;
+rem                                    WARP 要關;見 CLAUDE.md「瀏覽器巡檢模式」)
+rem       更新網站.bat 巡檢 dry      → 只巡檢並印出將寫回的清單,不寫 Notion(「瀏覽器」與「dry」可以同時給,順序不拘)
 rem 放在「python fetch_data.py」那行之後、「python build_site.py」之前(check_links 需要 fetch 產出的 CSV 與 article_links.json)。
 rem ============================================================================
 set AZ_CHECK=
+set AZ_BROWSER=
+set AZ_DRY=
 if /I "%~1"=="巡檢" set AZ_CHECK=1
 if /I "%~1"=="check" set AZ_CHECK=1
+for %%A in (%2 %3) do (
+    if /I "%%~A"=="瀏覽器" set AZ_BROWSER=--browser
+    if /I "%%~A"=="browser" set AZ_BROWSER=--browser
+    if /I "%%~A"=="dry" set AZ_DRY=1
+)
 if defined AZ_CHECK (
     echo.
-    echo ===== 原文連結巡檢(check_links.py)=====
-    python check_links.py
-    if /I "%~2"=="dry" (
+    echo ===== 原文連結巡檢(check_links.py %AZ_BROWSER%)=====
+    python check_links.py %AZ_BROWSER%
+    if defined AZ_DRY (
         python notion_writeback.py
     ) else (
         python notion_writeback.py --go

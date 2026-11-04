@@ -16,7 +16,11 @@
    - 作者改名:同一作者(Notion 作者頁 ID)在同一平台有兩篇以上作品解析到同一個新名字、該名字不是目前名稱 /
      括號內別名 / 曾用名、該名字 / 帳號沒有同時出現在別的作者名下(合集帳號)、且作者庫該平台網址與頁面作者帳號相符
      → renames(會寫回);缺平台網址無法核對的 → rename_candidates(只列在報告,不寫回)
+   - --browser(只在站長本機):lofter / ao3 / aff 改走 browser_checker.py(Playwright 真瀏覽器),postype 照舊 urllib;
+     結果形狀相同、進同一套 advance() 與 link_status.json。沒裝 Playwright / WARP 開著 / 沒有 Lofter cookie 時印提示並略過該平台。
+     --browser --probe:每個平台只抓 3 筆(正常 / 已知 ❌ / 不存在)印出最終網址、狀態碼、判定、頁面前 300 字,不寫任何檔案(驗判斷規則用)。
    用法:python check_links.py [--platforms postype,lofter,ao3,aff] [--no 1352,1255] [--limit N] [--verbose]
+                              [--browser [--probe] [--headed] [--browser-channel chrome]]
 """
 import argparse, io, json, os, random, re, sys, threading, time
 from collections import OrderedDict, defaultdict
@@ -61,7 +65,8 @@ def advance(entry, res, today):
     """把一次檢查結果併進紀錄。回傳新的 entry(不改原物件)。
     - unknown:只更新 last / code / reason,status / streak / dead 都不動
     - deleted:status 變成 deleted,streak = 連續觀測到 deleted 的「天數」(同一天重跑不重複計);streak ≥ 2 → dead
-    - ok / login_required:streak 同樣按天數累計;ok 且原本 dead → 復活(dead=False);ok 時更新 author_name"""
+    - ok / login_required:streak 同樣按天數累計;ok 且原本 dead → 復活(dead=False);ok 時更新 author_name
+    - 結果帶 extra(AO3 章節進度)就原樣存進 entry['extra']"""
     e = dict(entry or {})
     st = res.get('status', 'unknown')
     e['last'], e['code'], e['reason'] = today, res.get('code'), res.get('reason')
@@ -85,6 +90,8 @@ def advance(entry, res, today):
             e['author_name'] = res['author_name']
             if res.get('author_url'):
                 e['author_url'] = res['author_url']
+    if res.get('extra'):
+        e['extra'] = res['extra']      # 瀏覽器模式解析到的附加資訊(AO3 章節進度 / 完結);先記錄、不寫回 Notion
     return e
 
 def events_for(entry, marked, today):
@@ -354,7 +361,8 @@ def report_markdown(rep):
         L += ['- %s:%s(%s)' % (x['name'], x['url'], checkers.PLATFORM_LABEL[x['platform']]) for x in rep['author_pages']['deleted']]
     L += ['', '### 平台狀態']
     for plat, st in rep['platforms'].items():
-        L.append('- %s:檢查 %d 筆%s' % (st['label'], st['checked'], ';被擋,略過 %d 筆' % st['skipped'] if st.get('blocked') else ''))
+        L.append('- %s:檢查 %d 筆%s%s' % (st['label'], st['checked'], ';被擋,略過 %d 筆' % st['skipped'] if st.get('blocked') else '',
+                                        ';' + st['note'] if st.get('note') else ''))
     return '\n'.join(L) + '\n'
 
 # ---------- 主流程 ----------
@@ -368,9 +376,21 @@ def main(argv=None):
     ap.add_argument('--state', default=STATE_FILE)
     ap.add_argument('--report', default=REPORT_FILE)
     ap.add_argument('--verbose', action='store_true')
+    ap.add_argument('--browser', action='store_true', help='lofter / ao3 / aff 改用 Playwright 真瀏覽器抓(只在本機;需 pip install playwright)')
+    ap.add_argument('--probe', action='store_true', help='搭配 --browser:每平台只抓 3 筆樣本印出判斷依據,不寫任何檔案')
+    ap.add_argument('--headed', action='store_true', help='搭配 --browser:開有頭的瀏覽器視窗(除錯用)')
+    ap.add_argument('--browser-channel', default='', help="搭配 --browser:Playwright 的 channel,例如 chrome(用系統 Chrome)或留空用內建 Chromium")
     args = ap.parse_args(argv)
+    if args.probe and not args.browser:
+        ap.error('--probe 要搭配 --browser')
 
     platforms = [p.strip() for p in args.platforms.split(',') if p.strip() in checkers.PLATFORMS]
+    BC, pre, browser_plats = None, None, []
+    if args.browser:
+        import browser_checker as BC
+        browser_plats = [p for p in platforms if p in BC.PLATFORMS]
+        pre = BC.preflight(args.src, browser_plats)
+    http_plats = [p for p in platforms if p not in browser_plats]
     only = set(x.strip() for x in args.no.split(',') if x.strip()) or None
     today = today_str()
     links_json = load_json(os.path.join(args.src, 'article_links.json'), {})
@@ -382,6 +402,10 @@ def main(argv=None):
     meta = state.pop('__meta__', {})
 
     targets = collect_targets(links_json, articles, people, platforms, only)
+    if args.probe:
+        print('--probe:只抓樣本、不寫任何檔案(平台:%s)' % '、'.join(browser_plats), flush=True)
+        BC.probe(targets, state, browser_plats, pre, headed=args.headed, channel=args.browser_channel)
+        return None
     due = [t for t in targets if is_due(state.get(t['url']), today)]
     by_plat = defaultdict(list)
     for t in due:
@@ -396,7 +420,14 @@ def main(argv=None):
     results, lock, plat_stats, threads = {}, threading.Lock(), {}, []
     def worker(p):
         plat_stats[p] = run_platform(p, by_plat[p], results, lock, args.verbose)
-    for p in platforms:
+    def browser_worker():
+        # Playwright sync API 要在同一條執行緒上開、用、關,所以三個瀏覽器平台在這一條執行緒依序跑;Postype 的 urllib 執行緒照舊並行
+        plat_stats.update(BC.run_all(pre, by_plat, browser_plats, results, lock, args.verbose,
+                                     headed=args.headed, channel=args.browser_channel))
+    if browser_plats:
+        th = threading.Thread(target=browser_worker, daemon=True)
+        th.start(); threads.append(th)
+    for p in http_plats:
         if by_plat.get(p):
             th = threading.Thread(target=worker, args=(p,), daemon=True)
             th.start(); threads.append(th)
@@ -426,7 +457,7 @@ def main(argv=None):
     print('結果:', ', '.join('%s %d' % kv for kv in sorted(rep['counts'].items())) or '(沒有檢查任何連結)')
     for p, st in plat_stats.items():
         if st.get('blocked'):
-            print('  ⚠️ %s 被擋(略過 %d 筆)' % (checkers.PLATFORM_LABEL[p], st['skipped']))
+            print('  ⚠️ %s 被擋(略過 %d 筆%s)' % (checkers.PLATFORM_LABEL[p], st['skipped'], ';' + st['note'] if st.get('note') else ''))
     print('新死 %d、復活 %d、改名 %d(候選 %d)、作者頁失效 %d' % (
         len(rep['new_dead']), len(rep['revived']), len(rep['renames']), len(rep['rename_candidates']),
         len(rep['author_pages']['deleted'])))

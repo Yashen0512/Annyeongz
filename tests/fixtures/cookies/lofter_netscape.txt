@@ -1,0 +1,4 @@
+# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+#HttpOnly_.lofter.com	TRUE	/	FALSE	1767225600	LOFTER_SESS	sess-value
+.lofter.com	TRUE	/	TRUE	1767225600	NTES_PASSPORT	pp
