@@ -49,7 +49,8 @@ tests/                     測試
                            browser_checker 的 classify / cookie 解析 / 挑戰頁計數(假 session,不開瀏覽器))
   fixtures/build_input/    30 篇的建置輸入(主表 / 作者 / 公告 CSV、article_links.json、expected.json),由 make_fixture.py 從 data.json 反推
   fixtures/compact_30.json 同 30 篇的精簡格式(vitest 與 pytest 的對照檔,make_fixture.py 一起重產)
-  fixtures/html/           各平台頁面的最小 HTML 樣本(正常 / 已刪 / 登入牆 / Cloudflare 挑戰頁),給 checkers 與 browser_checker 測試用
+  fixtures/html/           各平台頁面的最小 HTML 樣本(正常 / 已刪 / 登入牆 / Cloudflare 挑戰頁英文版與 AFF 繁中版 / AO3 停機頁),給 checkers 與 browser_checker 測試用;
+                           lofter_404、aff_cf_zh、ao3_down 依 2026-11-04 本機 --probe 的真實字樣寫成
   fixtures/cookies/        Lofter cookie 匯出檔的三種格式樣本(Get cookies.txt LOCALLY JSON / Cookie-Editor JSON / Netscape),給 browser_checker 測試用
 docs/                      lighthouse-before.json / lighthouse-after.json(行動版四項分數與主要紅字)、axe-before.json / axe-after.json(無障礙掃描)
 _build/                    建置工具(Python,只用標準庫;build_pages.py 另需 Pillow)
@@ -330,20 +331,32 @@ Lofter(1300 多筆,最大平台)、AO3、Asianfanfics 用 urllib 從任何 IP �
   沒裝 Playwright 時 `--browser` 會印提示並略過這三個平台(狀態不動),其他照常。
 - **Lofter cookie**:登入 Lofter 後用瀏覽器擴充「Get cookies.txt LOCALLY」(選 JSON)或「Cookie-Editor」(Export → JSON)匯出,
   存成 `_build/cookies/lofter.json`(`cookies/` 整個目錄 git 忽略;Netscape 格式的 cookies.txt 也吃)。沒有這個檔就印提示、略過 Lofter。
-  啟動時讀 `LOFTER_SESS` 的到期日:**剩不到 3 天印 🚨 警告、已過期就略過 Lofter**;帶了 cookie 仍被導到 `www.lofter.com/front/login`
+  啟動時讀 `LOFTER_SESS` 的到期日(`COOKIE_WARN_DAYS` = 3):正常時印「到期 X(剩 N 天,剩不到 3 天會警告)」,**剩不到 3 天每次執行都印 🚨 警告、已過期就略過 Lofter**;
+  帶了 cookie 仍被導到 `www.lofter.com/front/login`
   = cookie 失效 → 該平台 `login_required`(不算死)並略過其餘。處理方式都一樣:重新登入 Lofter、重新匯出覆蓋 `lofter.json`。
 - **WARP 要關**:啟動時 GET `https://www.cloudflare.com/cdn-cgi/trace`,回應有 `warp=on` 就印「偵測到 Cloudflare WARP 開啟…」並略過三個平台
   (WARP 的出口 IP 會被這幾站擋)。其他 VPN 不會被偵測到,被 Cloudflare 擋時先想到這個。
-- **判斷規則**(純函式 `classify(platform, final_url, status, html, url, error)`,`tests/py/test_browser_checker.py` 用合成樣本測;
-  **尚未在真瀏覽器實測,先跑 `--probe` 再修**):
-  - Lofter:404 / 頁面「页面不存在」→ `deleted`;整個部落格打不開(子網域 DNS 不存在 / 連線被拒,且 `www.lofter.com` 連得上)
-    或頁面「博客不存在」→ `deleted`(reason `blog_gone`);導到登入頁 → `login_required`(blocked);其餘 200 → `ok`,作者名取 og:site_name / `<title>`。
-  - AO3:自動加 `?view_adult=true`;404 或「Sorry, we couldn't find the work」→ `deleted`;「only available to registered users」→ `login_required`;
+- **判斷規則**(純函式 `classify(platform, final_url, status, html, url, error)`,`tests/py/test_browser_checker.py` 用合成樣本測。
+  **2026-11-04 站長本機 `--probe` 實測**(headless Chromium 與 `--headed --browser-channel chrome` 結果相同,headed 沒有幫助):
+  Lofter 四筆全對;AFF 第一筆正常、第二筆起被 Cloudflare 擋;AO3 全站停機。AO3 正常 / 已刪頁的真實字樣等恢復後再 `--probe` 補):
+  - Lofter:404(真的 404 頁:`<title>404 Not Found`、「哎呀，页面走丢了...」「你查找的链接可能已损毁，或页面已被移除」)/ 頁面「页面不存在」→ `deleted`;
+    整個部落格打不開(子網域 DNS 不存在 / 連線被拒,且 `www.lofter.com` 連得上)、首頁 404 或頁面「博客不存在」→ `deleted`(reason `blog_gone`;
+    某篇 404 時會再看一次部落格首頁,首頁也 404 就改成 `blog_gone`);導到登入頁 → `login_required`(blocked);其餘 200 → `ok`,作者名取 og:site_name / `<title>`。
+  - AO3:自動加 `?view_adult=true`;**全站停機**(狀態碼 418、`<title>` 含「Request temporarily denied」、或內文「down for maintenance」;
+    2026-11 初因資安事件停機 2~4 週,不是 Cloudflare)→ `unknown`(reason `ao3_down`,不改任何計數),**第一筆遇到就略過整個 AO3、本次不再打**,
+    log 印「AO3 停機中，略過」、報告 note「AO3 停機中」;404 或「Sorry, we couldn't find the work」→ `deleted`;「only available to registered users」→ `login_required`;
     另外解析 `Chapters: 5/10`(或 `5/?`)、`Completed` / `Updated` 日期、字數,放進結果 `extra`,`advance()` 存到 `link_status.json` 該筆的 `extra`
     (`{chapters, chapter_current, chapter_total, complete, status, status_date, words}`),**先只記錄、不寫回 Notion 的文章狀態**。
   - Asianfanfics:正常、或「SUBSCRIBERS ONLY / Please subscribe to read」都算 `ok`(文還在);404 / Page Not Found → `deleted`。
-  - 共用:同平台順序跑、每筆隨機間隔 2~4 秒、每個平台一個 browser context 重用;逾時 20 秒 → `unknown`;Cloudflare 挑戰頁等 8 秒再抓一次,
-    仍擋 → `unknown` 並計數,**同平台連續 5 筆挑戰頁就略過該平台**並印警告。三個平台在同一條執行緒依序跑(Playwright sync API 綁執行緒),Postype 的執行緒並行。
+    連續請求第二筆起就是 403 Cloudflare 驗證頁,所以 AFF 每筆間隔拉長到 **6~10 秒**(`GAP_PLAT`)。
+  - Cloudflare 挑戰頁**只看頁面內容、不看狀態碼**(實測 AFF 是 403 繁中版):`<title>` 是 Just a moment / 請稍候 / 请稍候,或內文有 Ray ID /
+    Performance and Security by Cloudflare / Enable JavaScript and cookies to continue / 正在執行安全驗證 / cf-chl 等(`CF_TITLES` / `CF_MARKERS`;
+    「請稍候」只看 `<title>`,文章內文出現不算)→ 在**同一頁等驗證自己跑完**(`wait_challenge`:每秒看標題 / 網址有沒有變、頁面是不是還是挑戰頁,
+    最多 `CF_SOLVE_S` = 20 秒;「驗證成功。正在等待回應」這種中間頁繼續等),跑完就用那頁的內容判斷(狀態碼取自 `page.on('response')` 記下的最後一次主框架導覽);
+    等完仍是挑戰頁 → `unknown`(reason `cf_challenge_wait`)並計數,**同平台連續 5 筆挑戰頁就略過該平台**並印警告。
+    還過不了的下一步才是 `launch_persistent_context` 固定設定檔(`browser_profile/`,要加進 .gitignore),這次沒做。
+  - 共用:同平台順序跑、每筆隨機間隔 2~4 秒(AFF 6~10)、每個平台一個 browser context 重用;逾時 20 秒 → `unknown`;
+    三個平台在同一條執行緒依序跑(Playwright sync API 綁執行緒),Postype 的執行緒並行。
 - **`--probe`(驗判斷規則用)**:`python check_links.py --browser --probe` 每個平台只抓 3 筆(1 筆預期正常、1 筆 Notion 已標 ❌、1 筆捏造的不存在網址;
   Lofter 多 1 筆不存在的部落格),印最終網址、狀態碼、導覽錯誤、判定(status / reason / author / extra)、`<title>` 與頁面前 300 字,**不寫任何檔案**。
   可加 `--platforms lofter`(只試一個)、`--headed`(開視窗看畫面)、`--browser-channel chrome`(用系統 Chrome)、環境變數 `AZ_BROWSER_EXE`(指定執行檔)。

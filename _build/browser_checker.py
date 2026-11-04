@@ -6,8 +6,11 @@
 
    判斷邏輯全部在純函式 classify(platform, final_url, status, html, url='', error='') → 跟 checkers 同形狀的結果
    {status, author_name, reason, code, final, …};pytest 用 tests/fixtures/html/ 的合成樣本直接測,不碰瀏覽器。
-   ⚠️ 這些規則(尤其 Lofter 帶 cookie 之後的頁面、AFF 訂閱頁)是依已知行為寫的、尚未在真瀏覽器實測,
-   請先用 `python check_links.py --browser --probe` 在本機跑一遍,把輸出貼回來修規則。
+   2026-11-04 站長本機 `--probe` 實測(headless Chromium 與系統 Chrome 結果相同):Lofter 四筆判定全對(404 頁 `<title>404 Not Found`、
+   「哎呀，页面走丢了...」「你查找的链接可能已损毁，或页面已被移除」);AFF 第一筆 200 正常、第二筆起 403 繁中版 Cloudflare 驗證頁
+   (`<title>請稍候...`、「正在執行安全驗證」「Enable JavaScript and cookies to continue」「Ray ID」「Performance and Security by Cloudflare」);
+   AO3 全站停機回 418「Request temporarily denied. | Archive of Our Own」「The archive is down for maintenance」(資安事件,非 Cloudflare)。
+   AO3 正常頁 / 已刪頁的真實字樣要等恢復後再 `--probe` 補。規則改了請一併更新 tests/fixtures/html/ 的合成樣本。
 
    各平台:
    - Lofter:啟動前載入 cookies/lofter.json(「Get cookies.txt LOCALLY」或 Cookie-Editor 匯出的 JSON;也吃 Netscape cookies.txt)。
@@ -15,13 +18,18 @@
        不算死)並略過其餘 Lofter 連結。404 / 頁面顯示「页面不存在」→ deleted;整個部落格打不開(子網域 DNS 不存在 /
        連線被拒,且 www.lofter.com 本身連得上)或頁面顯示「博客不存在」→ deleted,reason = blog_gone。
        啟動時看 LOFTER_SESS 的到期日:剩不到 COOKIE_WARN_DAYS 天印醒目警告,已過期就略過 Lofter。
-   - AO3:網址自動加 ?view_adult=true 跳過成人確認頁。404 或「Sorry, we couldn't find the work you were looking for」→ deleted;
-       「This work is only available to registered users」→ login_required(不算死)。另外解析章節進度(Chapters: 5/10、5/?)
-       與 Completed 日期,放在結果的 extra 欄位(check_links.advance 會存進 link_status.json),先只記錄、不寫回 Notion。
+   - AO3:網址自動加 ?view_adult=true 跳過成人確認頁。**全站停機**(狀態碼 418、標題含 Request temporarily denied、或內文 down for maintenance)
+       → unknown,reason = ao3_down(不是 Cloudflare、不改任何計數),第一筆遇到就略過整個 AO3、本次不再打(印「AO3 停機中，略過」)。
+       404 或「Sorry, we couldn't find the work you were looking for」→ deleted;「This work is only available to registered users」→ login_required(不算死)。
+       另外解析章節進度(Chapters: 5/10、5/?)與 Completed 日期,放在結果的 extra 欄位(check_links.advance 會存進 link_status.json),先只記錄、不寫回 Notion。
    - Asianfanfics:正常、或顯示 SUBSCRIBERS ONLY / Please subscribe to read 都算 ok(文還在,只是要訂閱);404 Page Not Found → deleted。
-   - 共用:同平台順序跑、每筆間隔 GAP 隨機 2~4 秒;每個平台一個 browser context 重用(不每筆開新瀏覽器);逾時 TIMEOUT_MS = 20 秒 → unknown;
-       Cloudflare 挑戰頁(Just a moment / cf-challenge…)等 CF_WAIT = 8 秒再抓一次,仍擋 → unknown 並計數,同平台連續 CF_MAX_STREAK = 5 筆
-       就略過該平台並印警告。啟動時 GET https://www.cloudflare.com/cdn-cgi/trace,回應含 warp=on 就印提示並略過三個平台(WARP 的出口 IP 會被擋)。
+       連續請求會被 Cloudflare 擋(第二筆起 403 驗證頁),所以 AFF 每筆間隔拉長到 GAP_PLAT['aff'] = 6~10 秒。
+   - 共用:同平台順序跑、每筆間隔 GAP 隨機 2~4 秒(AFF 另計);每個平台一個 browser context 重用(不每筆開新瀏覽器);逾時 TIMEOUT_MS = 20 秒 → unknown;
+       Cloudflare 挑戰頁用**頁面內容**判斷、不看狀態碼(標題 Just a moment / 請稍候 / 请稍候,或內文 Ray ID / Performance and Security by Cloudflare /
+       Enable JavaScript and cookies to continue / 正在執行安全驗證…):在**同一頁**等驗證自己跑完(標題或網址變了、頁面不再是挑戰頁),
+       最多 CF_SOLVE_S = 20 秒,過了就用那頁的內容判斷;等完仍是挑戰頁 → unknown(cf_challenge_wait)並計數,同平台連續 CF_MAX_STREAK = 5 筆
+       就略過該平台並印警告(還過不了的話,下一步才考慮 launch_persistent_context 固定設定檔)。
+       啟動時 GET https://www.cloudflare.com/cdn-cgi/trace,回應含 warp=on 就印提示並略過三個平台(WARP 的出口 IP 會被擋)。
    瀏覽器:預設 Playwright 內建的 Chromium(無頭;UA 裡的 HeadlessChrome 會換成 Chrome);--browser-channel chrome 改用系統 Chrome、
        --headed 開視窗看畫面、環境變數 AZ_BROWSER_EXE 直接指定執行檔。
    用法:由 check_links.py 呼叫(--browser / --probe);本檔不自己當 main。"""
@@ -34,9 +42,11 @@ from checkers import lofter as _lofter, ao3 as _ao3, aff as _aff
 
 PLATFORMS = ('lofter', 'ao3', 'aff')
 GAP = (2.0, 4.0)            # 同平台每筆間隔(秒,隨機)
+GAP_PLAT = {'aff': (6.0, 10.0)}   # 個別平台的間隔(AFF 連續請求第二筆起就被 Cloudflare 擋,拉長)
 TIMEOUT_MS = 20000          # 單頁逾時 → unknown
 SETTLE_MS = 3000            # domcontentloaded 之後再等 networkidle 最多這麼久(讓 JS 把內容畫出來;逾時不算錯)
-CF_WAIT = 8                 # 遇到 Cloudflare 挑戰頁:等幾秒再抓一次
+CF_SOLVE_S = 20             # 遇到 Cloudflare 挑戰頁:在同一頁等驗證跑完,最多幾秒
+CF_POLL_S = 1.0             # 等驗證時每隔幾秒看一次標題 / 網址有沒有變
 CF_MAX_STREAK = 5           # 同平台連續幾筆挑戰頁就略過該平台
 COOKIE_DIR = 'cookies'
 COOKIE_FILE = os.path.join(COOKIE_DIR, 'lofter.json')
@@ -46,10 +56,16 @@ WARP_TRACE = 'https://www.cloudflare.com/cdn-cgi/trace'
 TZ = timezone(timedelta(hours=8))
 INSTALL_HINT = 'pip install playwright && playwright install chromium'
 
-CF_MARKERS = ('Just a moment', 'cf-challenge', 'cf-chl-', '_cf_chl_opt', 'Request temporarily denied',
-              'Verify you are human', 'Checking your browser', 'Attention Required! | Cloudflare')
+CF_TITLES = ('Just a moment', '請稍候', '请稍候', 'Attention Required! | Cloudflare')     # 挑戰頁的 <title>(多語系)
+CF_MARKERS = ('cf-challenge', 'cf-chl-', '_cf_chl_opt', 'Ray ID', 'Performance and Security by Cloudflare',
+              'Performance & security by Cloudflare', 'Enable JavaScript and cookies to continue',
+              'Verify you are human', 'Verifying you are human', 'Checking your browser',
+              '正在執行安全驗證', '正在执行安全验证', '驗證您是人類', '验证您是人类')
+AO3_DOWN_CODE = 418                                      # AO3 全站停機時 nginx 回的狀態碼(2026-11 資安事件)
+AO3_DOWN = ('Request temporarily denied', 'down for maintenance')   # 前者看 <title>,後者看內文
 LOFTER_BLOG_GONE = ('博客不存在', '该博客不存在', '博客已注销', '该博客已注销', '博主已注销', '博客已关闭', '该用户不存在')
-LOFTER_GONE = _lofter.GONE_TEXT + ('文章不存在', '该文章不存在', '该文章已被删除', '内容不存在', '404')
+LOFTER_GONE = _lofter.GONE_TEXT + ('文章不存在', '该文章不存在', '该文章已被删除', '内容不存在', '404',
+                                   '页面走丢了', '页面已被移除', '链接可能已损毁')     # 後三個是 2026-11-04 實測的 404 頁字樣
 AFF_SUBSCRIBE = ('subscribers only', 'please subscribe to read', 'subscribe to read', 'subscribe to this story to read')
 AFF_GONE = tuple(k for k in _aff.GONE_TEXT if k != 'the page you requested') + ('404 page not found',)
 AO3_GONE = (_ao3.NOT_FOUND, 'this work has been deleted', 'work could not be found')
@@ -163,8 +179,23 @@ def fmt_dt(dt):
 # ---------- 判斷(純函式) ----------
 
 def is_cf_challenge(status, html):
-    """Cloudflare 挑戰頁:看 <head> 附近有沒有標記字樣(不看狀態碼,真瀏覽器拿到的挑戰頁有時是 200 / 403 / 503 / 418)。"""
-    return any(k in (html or '')[:30000] for k in CF_MARKERS)
+    """Cloudflare 挑戰頁:看 <title>(Just a moment / 請稍候 / 请稍候…)或頁面前段的標記字樣(Ray ID、Performance and Security by Cloudflare、
+    Enable JavaScript and cookies to continue、正在執行安全驗證…)。只看內容、不看狀態碼:真瀏覽器拿到的挑戰頁有 200 / 403 / 503 都見過,
+    2026-11-04 實測 AFF 的是 403 繁中版。"""
+    body = (html or '')[:30000]
+    title = H.title_of(body)
+    return any(k in title for k in CF_TITLES) or any(k in body for k in CF_MARKERS)
+
+def gap_for(platform):
+    """該平台每筆之間的間隔範圍(秒)。"""
+    return GAP_PLAT.get(platform, GAP)
+
+def is_ao3_down(status, html):
+    """AO3 全站停機頁(不是 Cloudflare):狀態碼 418、<title> 含 Request temporarily denied、或內文含 down for maintenance。"""
+    if status == AO3_DOWN_CODE:
+        return True
+    body = (html or '')[:30000]
+    return AO3_DOWN[0].lower() in H.title_of(body).lower() or AO3_DOWN[1].lower() in H.text_of(body).lower()
 
 def ao3_progress(html):
     """AO3 作品頁的 stats:Chapters: 5/10(或 5/?)、Completed / Updated 日期、字數 → extra dict;解析不到回 None。"""
@@ -197,11 +228,13 @@ def _nav_error_result(platform, error, final, url):
 def classify(platform, final_url, status, html, url='', error=''):
     """瀏覽器抓到的東西 → checkers 同形狀的結果。status 是 HTTP 狀態碼(None = 沒拿到),error 是導覽錯誤
     ('timeout'、'net::ERR_NAME_NOT_RESOLVED'、'network'…;'' = 沒錯誤)。多出來的鍵:challenge(Cloudflare 挑戰頁,呼叫端據此等待重試 / 計數)、
-    blocked(平台層級被擋,呼叫端略過該平台其餘連結)、extra(AO3 章節進度)。"""
+    blocked(平台層級被擋,呼叫端略過該平台其餘連結)、down(AO3 全站停機,呼叫端略過整個平台且不計挑戰頁)、extra(AO3 章節進度)。"""
     final = final_url or url
     if error:
         return _nav_error_result(platform, error, final, url)
     body = html or ''
+    if platform == 'ao3' and is_ao3_down(status, body):
+        return H.result('unknown', reason='ao3_down', code=status, final=final, blocked=True, down=True)
     if is_cf_challenge(status, body):
         return H.result('unknown', reason='cf_challenge', code=status, final=final, blocked=True, challenge=True)
     if platform == 'lofter':
@@ -318,6 +351,7 @@ class BrowserSession:
         self._pw = self._browser = self._ua = None
         self._ctx = {}
         self._reach = {}
+        self._status = {}    # id(page) → 該頁最後一次主框架導覽的狀態碼(Cloudflare 驗證完自動重載時,page.goto 的回應已經過時)
         self.last = None     # 最後一次 fetch 的 (status, final, html, error),--probe 印頁面文字用
 
     def start(self):
@@ -358,8 +392,23 @@ class BrowserSession:
             ctx = self._browser.new_context(user_agent=self._ua, locale='zh-TW', viewport={'width': 1280, 'height': 900})
             if self.cookies.get(plat):
                 ctx.add_cookies(self.cookies[plat])
-            self._ctx[plat] = (ctx, ctx.new_page())
+            page = ctx.new_page()
+            self._track_status(page)
+            self._ctx[plat] = (ctx, page)
         return self._ctx[plat][1]
+
+    def _track_status(self, page):
+        """記下這頁每次主框架導覽的狀態碼(含 Cloudflare 驗證完的自動重載),wait_challenge 之後才知道最後那頁是幾。"""
+        def on_response(resp):
+            try:
+                if resp.frame == page.main_frame and resp.request.is_navigation_request():
+                    self._status[id(page)] = resp.status
+            except Exception:
+                pass
+        try:
+            page.on('response', on_response)
+        except Exception:
+            pass
 
     def fetch(self, plat, url, page=None):
         """→ (status, final_url, html, error);error:''、'timeout'、'net::ERR_…'、'nav_error:…'。"""
@@ -377,11 +426,39 @@ class BrowserSession:
             page.wait_for_load_state('networkidle', timeout=SETTLE_MS)
         except PWError:
             pass
+        html = self._content(page)
+        st = resp.status if resp else None
+        self._status[id(page)] = st
+        return st, page.url, html, ''
+
+    def _content(self, page):
         try:
-            html = page.content()
-        except PWError:
-            html = ''
-        return (resp.status if resp else None), page.url, html, ''
+            return page.content()
+        except Exception:        # Playwright 的 Error(頁面正在重載時 content() 會丟);不在這裡 import playwright,測試用假 page 也能跑
+            return ''
+
+    def wait_challenge(self, page, final0, html0):
+        """Cloudflare 挑戰頁:在同一頁等驗證自己跑完(標題或網址變了、或頁面不再是挑戰頁),每 CF_POLL_S 秒看一次、最多 CF_SOLVE_S 秒。
+        回 (status, final, html):status 是這頁最後一次主框架導覽的狀態碼(驗證完 Cloudflare 會自動重載)。時間到仍是挑戰頁就回當下那頁。
+        (不 import playwright:例外一律接 Exception,pytest 用假 page 就能測。)"""
+        title0 = H.title_of(html0)
+        for _ in range(max(1, int(CF_SOLVE_S / CF_POLL_S))):
+            self.sleep(CF_POLL_S)
+            try:
+                title, url = page.title(), page.url
+            except Exception:
+                continue
+            if title == title0 and url == final0:
+                continue
+            try:
+                page.wait_for_load_state('networkidle', timeout=SETTLE_MS)
+            except Exception:
+                pass
+            html = self._content(page)
+            if not is_cf_challenge(None, html):
+                return self._status.get(id(page)), page.url, html
+            title0, final0 = H.title_of(html), page.url      # 「驗證成功。正在等待回應」之類的中間頁,繼續等
+        return self._status.get(id(page)), page.url, self._content(page)
 
     def reachable(self, plat, home):
         """平台首頁連不連得上(每次執行只試一次):Lofter 子網域打不開時,先確認不是自己的網路斷了。"""
@@ -405,23 +482,22 @@ class BrowserSession:
         """某篇判定已刪時多看一眼部落格首頁(同一個 host 只查一次):整個部落格沒了 → True。"""
         key = 'root:' + host
         if key not in self._reach:
-            self.sleep(random.uniform(*GAP))
+            self.sleep(random.uniform(*gap_for('lofter')))
             st, _, html, err = self.fetch('lofter', 'https://%s/' % host)
             self._reach[key] = blog_root_gone(st, html, self._qualify_error('lofter', err))
         return self._reach[key]
 
     def check(self, plat, url):
-        """抓一筆並判斷;Cloudflare 挑戰頁等 CF_WAIT 秒再抓一次;Lofter 某篇已刪時再看部落格首頁在不在(reason 改成 blog_gone)。
-        回傳 checkers 形狀的結果。"""
+        """抓一筆並判斷;Cloudflare 挑戰頁在同一頁等驗證跑完(wait_challenge)再判斷一次,仍是挑戰頁 → reason = cf_challenge_wait;
+        Lofter 某篇已刪時再看部落格首頁在不在(reason 改成 blog_gone)。回傳 checkers 形狀的結果。"""
         target = _ao3.with_view_adult(url) if plat == 'ao3' else url
         st, final, html, err = self.fetch(plat, target)
         res = classify(plat, final, st, html, url=url, error=self._qualify_error(plat, err))
         if res.get('challenge'):
-            self.sleep(CF_WAIT)
-            st, final, html, err = self.fetch(plat, target)
-            res = classify(plat, final, st, html, url=url, error=self._qualify_error(plat, err))
+            st, final, html = self.wait_challenge(self.page_for(plat), final, html)
+            res = classify(plat, final, st, html, url=url)
             if res.get('challenge'):
-                res['reason'] = 'cf_challenge_x2'
+                res['reason'] = 'cf_challenge_wait'
         self.last = (st, final, html, err)
         if plat == 'lofter' and res['status'] == 'deleted' and res.get('reason') != 'blog_gone' and '/post/' in H.path_of(url):
             host = H.host_of(url)
@@ -472,7 +548,8 @@ def preflight(src_dir, platforms, log=print, now=None, trace=None):
             elif st == 'missing':
                 log('⚠️ %s 裡沒有 %s,可能不是登入後匯出的;仍會嘗試,被導到登入頁就會略過。' % (path, COOKIE_SESS))
             else:
-                log('Lofter cookie:%d 筆,%s %s' % (len(cookies), COOKIE_SESS, '到期 ' + fmt_dt(exp) if exp else '(session cookie,無到期日)'))
+                log('Lofter cookie:%d 筆,%s %s' % (len(cookies), COOKIE_SESS,
+                                                   '到期 %s(剩 %.1f 天,剩不到 %d 天會警告)' % (fmt_dt(exp), left, COOKIE_WARN_DAYS) if exp else '(session cookie,無到期日)'))
             pre['cookies'][p] = cookies
         pre['usable'].append(p)
     return pre
@@ -482,6 +559,7 @@ def skip_stat(n, note):
 
 def run_platform(plat, targets, session, results, lock, verbose=False, log=print, sleep=time.sleep):
     """一個平台順序跑完(呼叫端保證在 session 的執行緒上)。回傳 {'checked','blocked','skipped','challenges', 'note'?}。
+    - AO3 全站停機(down)→ 第一筆遇到就略過整個 AO3,本次不再打(狀態 unknown,不改任何計數)
     - Cloudflare 挑戰頁連續 CF_MAX_STREAK 筆 → 略過其餘並印警告
     - Lofter 登入牆(blocked 且不是挑戰頁)→ cookie 過期,略過其餘(狀態 login_required,不算死)"""
     stat = {'checked': 0, 'blocked': False, 'skipped': 0, 'challenges': 0}
@@ -494,6 +572,11 @@ def run_platform(plat, targets, session, results, lock, verbose=False, log=print
         if verbose or res['status'] != 'ok':
             log('  [%s] %-14s %s  %s' % (plat, res['status'] + ('(' + str(res.get('reason')) + ')' if res.get('reason') else ''),
                                          t['url'], res.get('author_name') or ''))
+        if res.get('down'):
+            stat['blocked'], stat['skipped'] = True, len(targets) - stat['checked']
+            stat['note'] = 'AO3 停機中'
+            log('  ⚠️ [%s] AO3 停機中，略過(本次不再打其餘 %d 筆;恢復後再跑,不改任何計數)' % (plat, stat['skipped']))
+            break
         if res.get('challenge'):
             stat['challenges'] += 1
             streak += 1
@@ -510,7 +593,7 @@ def run_platform(plat, targets, session, results, lock, verbose=False, log=print
                 log('  ⚠️ [%s] 帶了 cookie 仍被導到登入頁 → cookie 已過期或無效,請重新匯出 %s;本次略過其餘 %d 筆(不算已刪)' % (plat, COOKIE_FILE, stat['skipped']))
                 break
         if i < len(targets) - 1:
-            sleep(random.uniform(*GAP))
+            sleep(random.uniform(*gap_for(plat)))
     return stat
 
 def run_all(pre, by_plat, platforms, results, lock, verbose=False, log=print, headed=False, channel='', session=None):
@@ -574,7 +657,10 @@ def probe(targets, state, platforms, pre, log=print, headed=False, channel='', s
                                                    '  extra=' + json.dumps(res['extra'], ensure_ascii=False) if res.get('extra') else ''))
                 log('    頁面文字:%s' % H.text_of(html)[:300].replace('\n', ' '))
                 log('    <title>:%s' % H.title_of(html))
-                session.sleep(random.uniform(*GAP))
+                if res.get('down'):
+                    log('    ⚠️ AO3 停機中，略過(其餘樣本本次不再打)')
+                    break
+                session.sleep(random.uniform(*gap_for(p)))
     finally:
         if own:
             session.close()
