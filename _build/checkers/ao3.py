@@ -8,7 +8,8 @@
      若仍遇到 → ok(作品還在),author_name 盡量從頁面的 byline 解析
    - 200 且有 byline(<h3 class="byline heading"><a rel="author" href="/users/帳號/pseuds/筆名">筆名</a>)→ ok,
      author_name = 筆名(pseud);Anonymous / 孤兒化作品沒有 <a rel="author"> → None
-   - 418 / 403 / 503 + Cloudflare 挑戰 → unknown(blocked)"""
+   - 418 / 403 / 503 + Cloudflare 挑戰 → unknown(blocked)。2026-11 起 AO3 全站停機時也是 418「Request temporarily denied」
+     「The archive is down for maintenance」(不是 Cloudflare),一樣 unknown;browser_checker 另判成 ao3_down 並整站略過。"""
 import re
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from . import _http as H

@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """browser_checker.py(check_links.py --browser):判斷純函式 classify()、AO3 章節進度、cookie 匯出檔解析與到期判斷、WARP 偵測、
    --probe 的樣本挑選、挑戰頁連續計數與登入牆短路(用假的 session,不開瀏覽器)、preflight 的各種略過原因、與 check_links 的接線。
-   HTML 樣本是依各平台已知行為自己寫的合成片段(tests/fixtures/html/),尚未在真瀏覽器實測;規則修正時請一併更新樣本。"""
+   HTML 樣本是合成片段(tests/fixtures/html/):lofter_404 / aff_cf_zh / ao3_down 依 2026-11-04 站長本機 --probe 的真實字樣寫成,
+   其餘依已知行為自己寫;規則修正時請一併更新樣本。"""
 import io, json, os, threading
 from datetime import datetime, timedelta
 import pytest
@@ -26,6 +27,10 @@ def test_lofter_login_wall_with_cookie_is_login_required_blocked():
 
 def test_lofter_404_and_gone_text_are_deleted():
     assert BC.classify('lofter', LF, 404, load('lofter_404.html'), url=LF)['reason'] == '404'
+    # 2026-11-04 實測的 404 頁:標題 404 Not Found、「哎呀，页面走丢了...」;就算拿掉標題與 404 字樣也認得出
+    soft = '<html><head><title>LOFTER</title></head><body><p>哎呀，页面走丢了...</p><p>你查找的链接可能已损毁，或页面已被移除。</p></body></html>'
+    r = BC.classify('lofter', LF, 200, soft, url=LF)
+    assert r['status'] == 'deleted' and r['reason'] == 'gone_text'
     r = BC.classify('lofter', LF, 200, load('lofter_404.html'), url=LF)        # 軟 404(200 但頁面說不存在)
     assert r['status'] == 'deleted' and r['reason'] == 'gone_text'
     assert BC.classify('lofter', LF, 200, load('lofter_gone.html'), url=LF)['status'] == 'deleted'
@@ -114,11 +119,107 @@ def test_aff_404_and_ok():
 # ---- Cloudflare ----
 @pytest.mark.parametrize('plat,url', [('ao3', A3), ('aff', AF), ('lofter', LF)])
 def test_cloudflare_challenge_is_unknown_and_flagged(plat, url):
-    for code in (200, 403, 503, 418):
+    for code in (200, 403, 503):
         r = BC.classify(plat, url, code, load('cf_challenge.html'), url=url)
-        assert r['status'] == 'unknown' and r['reason'] == 'cf_challenge' and r['challenge'] and r['blocked']
+        assert r['status'] == 'unknown' and r['reason'] == 'cf_challenge' and r['challenge'] and r['blocked'] and not r.get('down')
     assert BC.classify('aff', AF, 403, load('aff_cf.html'), url=AF)['challenge']
     assert not BC.classify('aff', AF, 200, load('aff_ok.html'), url=AF).get('challenge')
+
+def test_cloudflare_challenge_traditional_chinese_aff_403():
+    """2026-11-04 實測:AFF 第二筆起回 403 繁中版驗證頁(<title>請稍候...、正在執行安全驗證、Ray ID、Performance and Security by Cloudflare),
+    以前只看英文字樣所以判成 http_403、3 秒就放棄。"""
+    for name in ('aff_cf_zh.html', 'aff_cf_min.html'):
+        for code in (403, 200, 503):
+            r = BC.classify('aff', AF, code, load(name), url=AF)
+            assert r['status'] == 'unknown' and r['reason'] == 'cf_challenge' and r['challenge'] and r['blocked'], (name, code)
+    assert BC.classify('aff', AF, 403, '<html><head><title>請稍候...</title></head><body></body></html>', url=AF)['challenge']   # 標題就夠
+    assert BC.classify('aff', AF, 403, '<html><head><title>请稍候...</title></head><body></body></html>', url=AF)['challenge']   # 簡體版
+    for k in ('Ray ID: <code>abc</code>', 'Performance and Security by Cloudflare', 'Enable JavaScript and cookies to continue', '正在執行安全驗證'):
+        assert BC.is_cf_challenge(403, '<html><head><title>x</title></head><body>%s</body></html>' % k), k
+
+def test_cloudflare_detection_uses_content_not_status():
+    assert not BC.is_cf_challenge(403, load('aff_ok.html')) and not BC.is_cf_challenge(418, load('ao3_ok.html'))
+    assert not BC.is_cf_challenge(200, load('lofter_post_js.html')) and not BC.is_cf_challenge(200, load('lofter_404.html'))
+    # 內文剛好出現「請稍候」(文章內容)不算:這個字樣只看 <title>
+    post = load('lofter_post_js.html').replace('</body>', '<p>請稍候，下一章明天更新。</p></body>')
+    assert not BC.is_cf_challenge(200, post) and BC.classify('lofter', LF, 200, post, url=LF)['status'] == 'ok'
+    assert BC.classify('aff', AF, 403, load('aff_empty.html'), url=AF)['reason'] == 'http_403'      # 真的只是 403、不是挑戰頁才算 http_403
+
+def test_gap_for_platform():
+    assert BC.gap_for('aff') == (6.0, 10.0) and BC.gap_for('aff')[0] > BC.GAP[1]     # AFF 連續請求第二筆就被擋,間隔拉長
+    assert BC.gap_for('lofter') == BC.GAP and BC.gap_for('ao3') == BC.GAP
+
+# ---- AO3 停機(2026-11 資安事件,全站 418) ----
+def test_ao3_down_is_unknown_and_down_not_challenge():
+    for code in (418, 200, 503, None):
+        r = BC.classify('ao3', A3 + '?view_adult=true', code, load('ao3_down.html'), url=A3)
+        assert r['status'] == 'unknown' and r['reason'] == 'ao3_down' and r['blocked'] and r['down'] and not r.get('challenge'), code
+    assert BC.classify('ao3', A3, 418, '', url=A3)['reason'] == 'ao3_down'                                   # 418 本身就算
+    assert BC.classify('ao3', A3, 200, '<html><head><title>Request temporarily denied. | Archive of Our Own</title></head><body></body></html>', url=A3)['reason'] == 'ao3_down'
+    assert BC.classify('ao3', A3, 200, '<html><head><title>AO3</title></head><body><p>The archive is down for maintenance.</p></body></html>', url=A3)['reason'] == 'ao3_down'
+    assert BC.is_ao3_down(418, '') and BC.is_ao3_down(200, load('ao3_down.html')) and not BC.is_ao3_down(200, load('ao3_ok.html'))
+    # 只有 AO3 這樣判:AFF 的 418 + 挑戰頁仍是 cf_challenge,AFF 一般 418 是 http_418
+    assert BC.classify('aff', AF, 418, load('cf_challenge.html'), url=AF)['reason'] == 'cf_challenge'
+    assert BC.classify('aff', AF, 418, load('aff_empty.html'), url=AF)['reason'] == 'http_418'
+    assert BC.classify('ao3', A3, 200, load('ao3_ok.html'), url=A3)['status'] == 'ok'                     # 正常頁不受影響
+
+# ---- 同頁等 Cloudflare 驗證跑完 ----
+class FakePage:
+    """假的 Playwright page:steps 是每次 poll 後的 (title, url, html);用完就停在最後一個。"""
+    def __init__(self, steps, url):
+        self.steps, self.url, self._title, self._html, self.i = list(steps), url, '', '', 0
+        self.main_frame = object()
+        self.waited = 0
+    def _advance(self):
+        if self.i < len(self.steps):
+            self._title, self.url, self._html = self.steps[self.i]
+            self.i += 1
+    def title(self):
+        self._advance()
+        return self._title
+    def wait_for_load_state(self, state, timeout=0):
+        self.waited += 1
+    def content(self):
+        return self._html
+
+def _cf_session(monkeypatch, page, first):
+    slept = []
+    s = BC.BrowserSession(sleep=slept.append, log=lambda *a: None)
+    monkeypatch.setattr(s, 'fetch', lambda plat, url, page=None: first)
+    monkeypatch.setattr(s, 'page_for', lambda plat: page)
+    return s, slept
+
+def test_wait_challenge_resolves_when_title_changes(monkeypatch):
+    cf = load('aff_cf_zh.html')
+    ok = load('aff_subscribers.html')
+    page = FakePage([('請稍候...', AF, cf), ('請稍候...', AF, cf), ('Test Story - Asianfanfics', AF, ok)], AF)
+    s, slept = _cf_session(monkeypatch, page, (403, AF, cf, ''))
+    s._status[id(page)] = 200                                   # 驗證完 Cloudflare 自動重載,response 事件記到的狀態碼
+    r = s.check('aff', AF)
+    assert r['status'] == 'ok' and r['reason'] == 'subscribers_only' and r['code'] == 200 and not r.get('challenge')
+    assert slept == [BC.CF_POLL_S] * 3 and page.waited == 1 and s.last[2] == ok
+
+def test_wait_challenge_keeps_waiting_through_intermediate_page(monkeypatch):
+    """「驗證成功。正在等待回應」標題變了但還是挑戰頁 → 繼續等,直到真的換頁。"""
+    cf, mid, ok = load('aff_cf_zh.html'), load('aff_cf_min.html').replace('請稍候...', '驗證成功'), load('aff_ok.html')
+    page = FakePage([('驗證成功', AF, mid), ('驗證成功', AF, mid), ('Test Story - Asianfanfics', AF, ok)], AF)
+    s, slept = _cf_session(monkeypatch, page, (403, AF, cf, ''))
+    r = s.check('aff', AF)
+    assert r['status'] == 'ok' and r['reason'] == 'author_link' and r['code'] is None and len(slept) == 3
+
+def test_wait_challenge_gives_up_after_cf_solve_seconds(monkeypatch):
+    cf = load('aff_cf_zh.html')
+    page = FakePage([('請稍候...', AF, cf)], AF)
+    s, slept = _cf_session(monkeypatch, page, (403, AF, cf, ''))
+    r = s.check('aff', AF)
+    assert r['status'] == 'unknown' and r['reason'] == 'cf_challenge_wait' and r['challenge'] and r['blocked']
+    assert len(slept) == int(BC.CF_SOLVE_S / BC.CF_POLL_S) and sum(slept) == pytest.approx(BC.CF_SOLVE_S)   # 最多等 20 秒
+
+def test_check_does_not_wait_for_ao3_down(monkeypatch):
+    page = FakePage([], A3)
+    s, slept = _cf_session(monkeypatch, page, (418, A3 + '?view_adult=true', load('ao3_down.html'), ''))
+    r = s.check('ao3', A3)
+    assert r['reason'] == 'ao3_down' and r['down'] and slept == []
 
 # ---- cookie ----
 def test_load_cookies_get_cookies_txt_locally_json():
@@ -159,6 +260,14 @@ def test_cookie_status():
     st, e, left = BC.cookie_status(cs, now=exp - timedelta(days=2))
     assert st == 'expiring' and 1.9 < left < 2.1
     assert BC.cookie_status(cs, now=exp + timedelta(hours=1))[0] == 'expired'
+    assert BC.COOKIE_WARN_DAYS == 3
+    assert BC.cookie_status(cs, now=exp - timedelta(days=3, hours=1))[0] == 'ok'          # 剩 3 天多:還不警告
+    assert BC.cookie_status(cs, now=exp - timedelta(days=2, hours=23))[0] == 'expiring'   # 剩不到 3 天:開始警告
+    # 2026-11-04 實測:LOFTER_SESS 到期 2026-11-16 17:29 → 11/04 正常、11/13 傍晚起每天警告
+    real = [{'name': 'LOFTER_SESS', 'expires': datetime(2026, 11, 16, 17, 29, tzinfo=BC.TZ).timestamp()}]
+    assert BC.cookie_status(real, now=datetime(2026, 11, 4, 12, 0, tzinfo=BC.TZ))[0] == 'ok'
+    assert BC.cookie_status(real, now=datetime(2026, 11, 13, 18, 0, tzinfo=BC.TZ))[0] == 'expiring'
+    assert BC.cookie_status(real, now=datetime(2026, 11, 16, 18, 0, tzinfo=BC.TZ))[0] == 'expired'
     assert BC.cookie_status([{'name': 'other', 'expires': 1.0}], now=exp)[0] == 'missing'
     assert BC.cookie_status([{'name': 'LOFTER_SESS'}], now=exp)[0] == 'no_expiry'
 
@@ -220,6 +329,17 @@ def test_run_platform_challenge_streak_resets_on_success():
     st = BC.run_platform('ao3', tg('ao3', 8), s, {}, threading.Lock(), log=lambda *a: None, sleep=lambda x: None)
     assert st['checked'] == 8 and st['blocked'] is False and st['challenges'] == 6
 
+DOWN = lambda: {'status': 'unknown', 'author_name': None, 'reason': 'ao3_down', 'code': 418, 'blocked': True, 'down': True}
+def test_run_platform_ao3_down_skips_whole_platform_at_first_hit():
+    lines, results = [], {}
+    s = FakeSession(lambda p, u: DOWN())
+    st = BC.run_platform('ao3', tg('ao3', 7), s, results, threading.Lock(), log=lines.append, sleep=lambda x: None)
+    assert st == {'checked': 1, 'blocked': True, 'skipped': 6, 'challenges': 0, 'note': 'AO3 停機中'}
+    assert len(s.calls) == 1 and any('AO3 停機中，略過' in l for l in lines)
+    assert results['https://x/ao3/0']['status'] == 'unknown'          # 走 advance 只會記 unknown,不改任何計數
+    e = CL.advance({'status': 'ok', 'streak': 3, 'counted': '2026-11-03', 'last': '2026-11-03'}, DOWN(), '2026-11-04')
+    assert e['status'] == 'ok' and e['streak'] == 3 and e['reason'] == 'ao3_down' and e['last'] == '2026-11-04' and not e.get('dead')
+
 def test_run_platform_lofter_login_wall_stops_platform():
     seq = iter([OK(), WALL(), OK()])
     s, results = FakeSession(lambda p, u: next(seq)), {}
@@ -252,6 +372,16 @@ def test_probe_prints_and_writes_nothing(tmp_path, monkeypatch):
     assert 'extra={"chapters": "1/1"}' in out and '頁面文字:t text' in out and '判定:ok(author_link)' in out
     assert len(s.calls) == 4 and os.listdir(tmp_path) == []
 
+def test_probe_stops_ao3_after_down(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    lines = []
+    s = FakeSession(lambda p, u: DOWN() if p == 'ao3' else OK())
+    pre = {'usable': ['ao3', 'aff'], 'notes': {}, 'cookies': {}}
+    BC.probe(targets(), {}, ['ao3', 'aff'], pre, log=lines.append, session=s)
+    out = '\n'.join(lines)
+    assert '判定:unknown(ao3_down)' in out and 'AO3 停機中，略過' in out
+    assert [p for p, _ in s.calls] == ['ao3', 'aff', 'aff'] and os.listdir(tmp_path) == []
+
 # ---- preflight ----
 def test_preflight_without_playwright(monkeypatch, tmp_path):
     monkeypatch.setattr(BC, 'is_available', lambda: False)
@@ -277,6 +407,9 @@ def test_preflight_lofter_cookie_cases(monkeypatch, tmp_path):
     lines.clear()
     pre = BC.preflight(str(tmp_path), ['lofter'], log=lines.append, trace='', now=exp - timedelta(days=1))
     assert pre['usable'] == ['lofter'] and len(pre['cookies']['lofter']) == 3 and any('🚨' in l and '2026-01-01' in l for l in lines)
+    lines.clear()
+    pre = BC.preflight(str(tmp_path), ['lofter'], log=lines.append, trace='', now=exp - timedelta(days=12))
+    assert pre['usable'] == ['lofter'] and not any('🚨' in l for l in lines) and any('剩 12.0 天' in l and '剩不到 3 天' in l for l in lines)
     pre = BC.preflight(str(tmp_path), ['lofter'], log=lines.append, trace='', now=exp + timedelta(days=1))
     assert pre['usable'] == [] and '過期' in pre['notes']['lofter']
     dst.write_text('not json at all', encoding='utf-8')
@@ -321,6 +454,7 @@ def test_main_browser_runs_fake_session_through_advance(tmp_path, monkeypatch):
                 'aff': {'status': 'deleted', 'author_name': None, 'reason': '404', 'code': 404}}[p]
     monkeypatch.setattr(BC, 'BrowserSession', lambda **k: FakeSession(script))
     monkeypatch.setattr(BC, 'GAP', (0, 0))
+    monkeypatch.setattr(BC, 'GAP_PLAT', {})
     rep = CL.main(['--browser', '--src', str(b), '--platforms', 'lofter,ao3,aff', '--no', '1,2'])
     assert rep['counts'] == {'ok': 2, 'deleted': 1}
     st = json.load(io.open(str(b / 'link_status.json'), encoding='utf-8'))
@@ -334,6 +468,7 @@ def test_main_probe_writes_nothing(tmp_path, monkeypatch):
     fake = FakeSession(lambda p, u: OK())
     monkeypatch.setattr(BC, 'BrowserSession', lambda **k: fake)
     monkeypatch.setattr(BC, 'GAP', (0, 0))
+    monkeypatch.setattr(BC, 'GAP_PLAT', {})
     assert CL.main(['--browser', '--probe', '--src', str(b), '--platforms', 'lofter,ao3,aff', '--no', '1,2']) is None
     assert sorted(os.listdir(str(b))) == ['article_links.json'] and fake.closed
     assert {p for p, _ in fake.calls} == {'lofter', 'ao3', 'aff'} and len(fake.calls) == 3 + 2 + 2

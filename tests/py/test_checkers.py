@@ -93,6 +93,7 @@ def test_lofter_title_fallback_for_blog_name():
 
 def test_lofter_deleted_cases():
     assert lofter.parse(404, LF, '', LF)['status'] == 'deleted'
+    assert lofter.parse(200, LF, load('lofter_404.html'), LF)['status'] == 'deleted'     # 實測 404 頁字樣(軟 404)
     assert lofter.parse(200, 'https://testblog.lofter.com/', load('lofter_ok.html'), LF)['reason'] == 'redirect_home'
     assert lofter.parse(200, LF, load('lofter_gone.html'), LF)['status'] == 'deleted'
 
@@ -114,8 +115,9 @@ def test_ao3_adult_interstitial_is_ok():
     assert r['status'] == 'ok' and r['author_name'] == 'testpseud'
 
 def test_ao3_cloudflare_418_is_unknown_blocked():
-    r = ao3.parse(418, A3, load('ao3_cf.html'), A3)
-    assert r['status'] == 'unknown' and r.get('blocked')
+    for name in ('cf_challenge.html', 'ao3_down.html'):        # Cloudflare 挑戰頁、2026-11 全站停機頁(418)都只是 unknown
+        r = ao3.parse(418, A3, load(name), A3)
+        assert r['status'] == 'unknown' and r.get('blocked')
 
 def test_ao3_view_adult_param():
     assert ao3.with_view_adult(A3) == A3 + '?view_adult=true'
