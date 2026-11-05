@@ -15,7 +15,11 @@
      (以「該是什麼狀態」為準,寫回失敗隔天會再列一次,不會漏)
    - 作者改名:同一作者(Notion 作者頁 ID)在同一平台有兩篇以上作品解析到同一個新名字、該名字不是目前名稱 /
      括號內別名 / 曾用名、該名字 / 帳號沒有同時出現在別的作者名下(合集帳號)、且作者庫該平台網址與頁面作者帳號相符
-     → renames(會寫回);缺平台網址無法核對的 → rename_candidates(只列在報告,不寫回)
+     → renames(會寫回);缺平台網址無法核對的 → rename_candidates(只列在報告,不寫回)。
+     比對名字前兩邊都經 stmap.txt 簡繁折算(fold_zh,與站內搜尋同一套:繁→簡逐字對應),所以「咸魚 / 咸鱼」「百憂解 / 百忧解」視為同名、不算改名。
+     以下改列「需人工確認」(rename_manual,寫進 Issue、不寫回;2026-11-05 實測誤判):
+       · 同一作者同一平台在不同篇抓到兩個以上不同的新名字(「上-一只大鹅 / 下-一只大鹅」= 抓到文章標題,不是作者名)
+       · 新名字像標題片段(上- / 下- / 番外 / 第N章 / (上)…,title_fragment)
    - --browser(只在站長本機):lofter / ao3 / aff 改走 browser_checker.py(Playwright 真瀏覽器),postype 照舊 urllib;
      結果形狀相同、進同一套 advance() 與 link_status.json。沒裝 Playwright / WARP 開著 / 沒有 Lofter cookie 時印提示並略過該平台。
      --browser --probe:每個平台只抓 3 筆(正常 / 已知 ❌ / 不存在)印出最終網址、狀態碼、判定、頁面前 300 字,不寫任何檔案(驗判斷規則用)。
@@ -109,8 +113,51 @@ def events_for(entry, marked, today):
 
 # ---------- 作者改名判斷(純函式) ----------
 
+_ZH = None
+def _zh_map():
+    """stmap.txt(繁字串 / 簡字串逐字對應)→ {繁: 簡};第一次用到才讀(import 不讀檔)。"""
+    global _ZH
+    if _ZH is None:
+        t, s = B.load_stmap(os.path.dirname(os.path.abspath(__file__)))
+        _ZH = dict(zip(t, s))
+    return _ZH
+
+def fold_zh(s, zh=None):
+    """簡繁折算:繁體逐字換成簡體(與 src/data.js 的 foldZH 同一套表),比對名字用;顯示照原樣。"""
+    m = _zh_map() if zh is None else zh
+    return ''.join(m.get(c, c) for c in (s or ''))
+
 def norm_name(s):
-    return re.sub(r'\s+', '', (s or '')).casefold()
+    return fold_zh(re.sub(r'\s+', '', (s or ''))).casefold()
+
+def same_name(a, b):
+    """兩個名字只差簡繁 / 大小寫 / 空白 → True。"""
+    return norm_name(a) == norm_name(b)
+
+_NUM = r'[0-9０-９一二三四五六七八九十百千零〇兩两]+'
+TITLE_FRAGMENT = re.compile(
+    r'^[上中下前後后][\-－—–_·・:：]'                     # 上-一只大鹅
+    r'|[\-－—–_·・][上中下前後后完]$'                       # 一只大鹅-下
+    r'|[(（【\[「][上中下前後后完續续][)）】\]」]'          # (上)【下】
+    r'|番外|第\s*' + _NUM + r'\s*[章話话回集篇部節节卷幕季]'
+    r'|[上中下前後后]篇|完[結结]篇|[終终最][章話话]|序章'
+    r'|\bchapter\s*\d|\bch\.?\s*\d|\bpart\s*\d|\bep\.?\s*\d', re.I)
+
+def title_fragment(name):
+    """名字裡像文章標題片段的字樣(上- / 下- / 番外 / 第N章…)→ 回該片段;正常筆名回 ''。"""
+    m = TITLE_FRAGMENT.search((name or '').strip())
+    return m.group(0) if m else ''
+
+def rename_hold_reason(old, new, known=()):
+    """改名寫回前的保險(check_links 與 notion_writeback 都用):簡繁 / 大小寫相同、或新名字像標題片段 → 回原因字串;可以寫回回 ''。"""
+    if not (new or '').strip():
+        return '新名字是空的'
+    if same_name(old, new) or norm_name(new) in set(known or ()):
+        return '只差簡繁 / 大小寫,不算改名'
+    frag = title_fragment(new)
+    if frag:
+        return '新名字含標題片段「%s」,可能抓到文章標題' % frag
+    return ''
 
 def known_names(person):
     """作者目前名稱本身、括號內外各段(「노네임(noname)」→ 노네임、noname)、斜線 / 頓號分段、曾用名。"""
@@ -164,9 +211,11 @@ def observed_handles(platform, author_url, work_url):
             hs.add(h)
     return hs
 
-def detect_renames(observations, people, articles):
+def detect_renames(observations, people, articles, manual=None):
     """observations: [{no, platform, name, author_url, url}];articles: {no: article};people: {pid: person}。
-    回傳 (renames, candidates),元素 {pid, old, new, platform, nos}。"""
+    回傳 (renames, candidates),元素 {pid, old, new, platform, nos}。
+    疑似抓錯來源的(同一作者同平台抓到多個不同新名字、新名字像標題片段)不進上面兩個清單,
+    改 append 到 manual(有給的話):{pid, old, platform, names: [{new, nos}], why}。"""
     by_pid = defaultdict(lambda: defaultdict(set))        # (pid) → (platform, norm new) → {no}
     display = {}                                          # (platform, norm) → 原始顯示名
     name_owner = defaultdict(set)                         # (platform, norm name) → {pid}
@@ -190,18 +239,39 @@ def detect_renames(observations, people, articles):
         for h in hs:
             handle_owner[(plat, h)].add(pid)
     renames, candidates = [], []
+    sort_nos = lambda nos: sorted(nos, key=lambda x: (len(x), x))
+    held = []
+    def hold(pid, plat, items, why):
+        held.append({'pid': pid, 'old': people[pid]['name'], 'platform': plat, 'why': why,
+                     'names': [{'new': display[(plat, nn)], 'nos': sort_nos(nos)} for nn, nos in items]})
     for pid, seen in by_pid.items():
         person = people[pid]
         kn = known_names(person)
+        # 新名字 = 不是已知名稱、不是合集 / 轉載帳號(同名掛在多位作者底下)、
+        # 也不是在別人帳號上看到的(作者庫有該平台網址、頁面帳號卻對不上 = 轉載)的;依平台分組
+        fresh = defaultdict(list)
         for (plat, nn), nos in seen.items():
-            if nn in kn or len(nos) < 2:
+            if nn in kn or len(name_owner[(plat, nn)]) > 1:
                 continue
-            if len(name_owner[(plat, nn)]) > 1:
-                continue   # 同一個名字掛在多位作者的作品上 → 合集 / 轉載帳號,不是改名
+            ph, oh = person_handles(plat, person), obs_handles[(pid, plat, nn)]
+            if ph and oh and not (ph & oh):
+                continue
+            fresh[plat].append((nn, nos))
+        for plat, items in fresh.items():
+            items.sort(key=lambda x: (-len(x[1]), x[0]))
+            if len(items) > 1:      # 同一作者在不同篇抓到不同新名字 → 抓錯來源(例如文章標題的上下集),不寫回
+                hold(pid, plat, items, '同一作者在不同篇抓到 %d 個不同的新名字,可能抓錯來源(文章標題?)' % len(items))
+                continue
+            nn, nos = items[0]
+            if len(nos) < 2:
+                continue
+            frag = title_fragment(display[(plat, nn)])
+            if frag:
+                hold(pid, plat, items, '新名字含標題片段「%s」,可能抓到文章標題' % frag)
+                continue
             ph = person_handles(plat, person)
             oh = obs_handles[(pid, plat, nn)]
-            item = {'pid': pid, 'old': person['name'], 'new': display[(plat, nn)], 'platform': plat,
-                    'nos': sorted(nos, key=lambda x: (len(x), x))}
+            item = {'pid': pid, 'old': person['name'], 'new': display[(plat, nn)], 'platform': plat, 'nos': sort_nos(nos)}
             if ph and oh and (ph & oh):
                 if any(len(handle_owner[(plat, h)]) > 1 for h in (ph & oh)):
                     continue   # 這個帳號同時出現在別的作者名下 → 共用帳號,不動
@@ -211,6 +281,8 @@ def detect_renames(observations, people, articles):
             else:
                 candidates.append(item)   # 無法核對帳號 → 只列出,不寫回
     key = lambda r: (r['platform'], r['old'], r['new'])
+    if manual is not None:
+        manual.extend(sorted(held, key=lambda r: (r['platform'], r['old'])))
     return sorted(renames, key=key), sorted(candidates, key=key)
 
 # ---------- 讀資料 ----------
@@ -309,7 +381,7 @@ def run_platform(plat, targets, results, lock, verbose, sleep=time.sleep, checke
 
 def build_report(today, targets, results, state, articles, people, plat_stats):
     rep = {'date': today, 'generated': datetime.now(TZ).isoformat(timespec='seconds'),
-           'platforms': {}, 'new_dead': [], 'revived': [], 'renames': [], 'rename_candidates': [],
+           'platforms': {}, 'new_dead': [], 'revived': [], 'renames': [], 'rename_candidates': [], 'rename_manual': [],
            'author_pages': {'deleted': [], 'revived': []}, 'counts': defaultdict(int)}
     for plat, st in plat_stats.items():
         rep['platforms'][plat] = dict(st, label=checkers.PLATFORM_LABEL[plat])
@@ -336,12 +408,25 @@ def build_report(today, targets, results, state, articles, people, plat_stats):
                 if e.get('dead') and res and res.get('status') == 'deleted':
                     rep['author_pages']['deleted'].append({'pid': ref['pid'], 'name': ref['name'], 'platform': t['platform'],
                                                            'url': url, 'streak': e.get('streak')})
-    rep['renames'], rep['rename_candidates'] = detect_renames(observations, people, articles)
+    rep['renames'], rep['rename_candidates'] = detect_renames(observations, people, articles, rep['rename_manual'])
     rep['counts'] = dict(rep['counts'])
     for k in ('new_dead', 'revived'):
         rep[k].sort(key=lambda x: (len(x['no']), x['no'], x['url']))
-    rep['has_changes'] = bool(rep['new_dead'] or rep['revived'] or rep['renames'])
+    rep['has_changes'] = bool(rep['new_dead'] or rep['revived'] or rep['renames'] or rep['rename_manual'])
     return rep
+
+RENAME_MANUAL_HEAD = '### 需人工確認:作者改名(疑似抓錯名字,未寫回 Notion)'
+
+def rename_manual_lines(items):
+    """Issue 內文「需人工確認」的改名段(check_links 的 rename_manual、notion_writeback 寫回前擋下的都用這個格式)。"""
+    if not items:
+        return []
+    L = ['', RENAME_MANUAL_HEAD]
+    for r in items:
+        names = r.get('names') or [{'new': r.get('new', ''), 'nos': r.get('nos') or []}]
+        got = ' / '.join('「%s」(No.%s)' % (x['new'], '、'.join(x['nos'])) for x in names)
+        L.append('- %s(%s):抓到 %s — %s' % (r['old'], checkers.PLATFORM_LABEL.get(r['platform'], r['platform']), got, r['why']))
+    return L
 
 def report_markdown(rep):
     """GitHub Issue 內文(分「已刪」「復活」「改名」三段;另附作者頁與平台狀態)。"""
@@ -359,6 +444,7 @@ def report_markdown(rep):
         L += ['', '### 待確認的改名候選(作者庫沒有該平台網址可核對,未寫回)']
         L += ['- %s → %s(%s);依據 No.%s' % (r['old'], r['new'], checkers.PLATFORM_LABEL[r['platform']], '、'.join(r['nos']))
               for r in rep['rename_candidates']]
+    L += rename_manual_lines(rep.get('rename_manual'))
     if rep['author_pages']['deleted']:
         L += ['', '### 作者頁連結失效(請人工確認是否已刪帳號 → 紅標)']
         L += ['- %s:%s(%s)' % (x['name'], x['url'], checkers.PLATFORM_LABEL[x['platform']]) for x in rep['author_pages']['deleted']]
@@ -473,8 +559,8 @@ def main(argv=None):
     for p, st in plat_stats.items():
         if st.get('blocked'):
             print('  ⚠️ %s 被擋(略過 %d 筆%s)' % (checkers.PLATFORM_LABEL[p], st['skipped'], ';' + st['note'] if st.get('note') else ''))
-    print('新死 %d、復活 %d、改名 %d(候選 %d)、作者頁失效 %d' % (
-        len(rep['new_dead']), len(rep['revived']), len(rep['renames']), len(rep['rename_candidates']),
+    print('新死 %d、復活 %d、改名 %d(候選 %d、需人工確認 %d)、作者頁失效 %d' % (
+        len(rep['new_dead']), len(rep['revived']), len(rep['renames']), len(rep['rename_candidates']), len(rep['rename_manual']),
         len(rep['author_pages']['deleted'])))
     for x in rep['new_dead']:
         print('  ❌ 新死 No.%s《%s》%s %s' % (x['no'], x['title'], x['label'], x['url']))
@@ -482,6 +568,9 @@ def main(argv=None):
         print('  ♻️ 復活 No.%s《%s》%s %s' % (x['no'], x['title'], x['label'], x['url']))
     for r in rep['renames']:
         print('  ✏️ 改名 %s → %s(%s;No.%s)' % (r['old'], r['new'], r['platform'], '、'.join(r['nos'])))
+    for r in rep['rename_manual']:
+        print('  ✋ 需人工確認 %s(%s):%s — %s' % (r['old'], r['platform'], ' / '.join(
+            '%s(No.%s)' % (x['new'], '、'.join(x['nos'])) for x in r['names']), r['why']))
     for r in rep['rename_candidates']:
         print('  ❔ 候選 %s → %s(%s;No.%s;作者庫無該平台網址可核對)' % (r['old'], r['new'], r['platform'], '、'.join(r['nos'])))
     print('已寫入 %s、%s%s' % (args.state, args.report, '、' + REPORT_MD if rep['has_changes'] else ''))

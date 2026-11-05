@@ -18,6 +18,10 @@
        不算死)並略過其餘 Lofter 連結。404 / 頁面顯示「页面不存在」→ deleted;整個部落格打不開(子網域 DNS 不存在 /
        連線被拒,且 www.lofter.com 本身連得上)或頁面顯示「博客不存在」→ deleted,reason = blog_gone。
        啟動時看 LOFTER_SESS 的到期日:剩不到 COOKIE_WARN_DAYS 天印醒目警告,已過期就略過 Lofter。
+       合集分享頁(www.lofter.com/front/blog/collection/share?collectionId=…)另一套規則:404 狀態碼不算已刪(unknown,collection_404),
+       只認「合集不存在 / 已被删除」字樣;author_name 一律 None(見 checkers/lofter.py)。
+       作者名(author_name)依序取文章頁 header 連回首頁的連結文字(<title> 以「-該名」結尾互相印證最好)→ 都沒有時改抓部落格首頁的名字
+       (lofter_home_name,同 host 只抓一次,source = blog_home)。2026-11-05 實測:舊版從 <title> 切「 - 」把「某文 - 上-一只大鹅」切成「上-一只大鹅」。
    - AO3:網址自動加 ?view_adult=true 跳過成人確認頁。**全站停機**(狀態碼 418、標題含 Request temporarily denied、或內文 down for maintenance)
        → unknown,reason = ao3_down(不是 Cloudflare、不改任何計數),第一筆遇到就略過整個 AO3、本次不再打(印「AO3 停機中，略過」)。
        404 或「Sorry, we couldn't find the work you were looking for」→ deleted;「This work is only available to registered users」→ login_required(不算死)。
@@ -33,6 +37,8 @@
        最多 CF_SOLVE_S = 20 秒,過了就用那頁的內容判斷;等完仍是挑戰頁 → unknown(cf_challenge_wait)並計數,同平台連續 CF_MAX_STREAK = 5 筆
        就略過該平台並印警告。
        啟動時 GET https://www.cloudflare.com/cdn-cgi/trace,回應含 warp=on 就印提示並略過三個平台(WARP 的出口 IP 會被擋)。
+   沙箱:Playwright 預設幫 Chromium 加 --no-sandbox;只有 Linux(容器)保留,Windows / macOS 傳 chromium_sandbox=True 不加
+       (有頭 Chrome 才不會跳黃色警告條;needs_no_sandbox)。
    瀏覽器:預設 Playwright 內建的 Chromium(無頭;UA 裡的 HeadlessChrome 會換成 Chrome);--browser-channel chrome 改用系統 Chrome、
        --headed 開視窗看畫面、環境變數 AZ_BROWSER_EXE 直接指定執行檔。
    基本反偵測(所有瀏覽器都套):--disable-blink-features=AutomationControlled、拿掉 Playwright 預設的 --enable-automation、
@@ -44,7 +50,7 @@
        用了設定檔仍是 cf_challenge_wait → AFF 維持 unknown(不改計數),log 提示「AFF 被 Cloudflare 擋，請重跑 --setup-profile 或手動檢查」。
        同一個設定檔一次只能被一個 Chrome 開:跑巡檢前把 --setup-profile 的視窗關掉。
    用法:由 check_links.py 呼叫(--browser / --probe);本檔不自己當 main。"""
-import io, json, os, random, re, time, urllib.request
+import io, json, os, random, re, sys, time, urllib.request
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlsplit
 
@@ -273,10 +279,21 @@ def blog_root_gone(status, html, error=''):
         return True
     return any(k in H.text_of((html or '')[:200000]) for k in LOFTER_BLOG_GONE)
 
+def home_blog_name(html, host):
+    """部落格首頁 → 博客名:header 連回首頁的連結文字;沒有就用首頁 <title>(首頁標題就是博客名,不含文章標題)。"""
+    name, src = _lofter.blog_name(html, host)
+    if src in ('header_title', 'header'):
+        return name
+    return H.title_of(html) or name
+
 def _classify_lofter(final, status, body, url):
     fh, fp = H.host_of(final), H.path_of(final)
     if fh in ('www.lofter.com', 'lofter.com') and (fp.startswith(_lofter.LOGIN_PATH) or fp.rstrip('/') == '/login'):
         return H.result('login_required', reason='login_wall', code=status, final=final, blocked=True)
+    if _lofter.is_collection(url):          # 合集分享頁:404 狀態碼不算已刪,只認「合集不存在」字樣(見 checkers/lofter.py)
+        if status in (403, 429):
+            return H.result('unknown', reason='http_%s' % status, code=status, final=final)
+        return _lofter.classify_collection(status, final, body, url)
     txt = H.text_of(body[:200000])
     if any(k in txt for k in LOFTER_BLOG_GONE):
         return H.result('deleted', reason='blog_gone', code=status, final=final)
@@ -295,7 +312,8 @@ def _classify_lofter(final, status, body, url):
         return H.result('login_required', reason='login_form', code=status, final=final, blocked=True)
     if not txt.strip():
         return H.result('unknown', reason='empty', code=status, final=final)
-    return H.result('ok', _lofter._blog_name(body), reason='200', code=status, final=final, author_url=fh)
+    name, src = _lofter.blog_name(body, fh)
+    return H.result('ok', name, reason='200', code=status, final=final, author_url=fh, author_source=src)
 
 def _classify_ao3(final, status, body, url):
     low = H.text_of(body[:300000]).lower()
@@ -342,7 +360,7 @@ def nonexistent_url(platform, base_url):
 
 def pick_probe_samples(targets, state, platform):
     """從 collect_targets 的清單 + link_status.json 挑:1 筆預期正常(link_status 曾是 ok,否則第一筆 Notion 沒標 ❌ 的)、
-    1 筆 Notion 已標 ❌、1 筆不存在的網址;Lofter 多一筆「整個部落格不存在」。回傳 [(說明, 網址)]。"""
+    1 筆 Notion 已標 ❌、1 筆不存在的網址;Lofter 多一筆「整個部落格不存在」,有合集連結時再多一筆合集分享頁。回傳 [(說明, 網址)]。"""
     plat = [t for t in targets if t['platform'] == platform]
     art = lambda t: [r for r in t['refs'] if r.get('kind') == 'article']
     ok = next((t for t in plat if (state.get(t['url']) or {}).get('status') == 'ok'), None) \
@@ -358,6 +376,9 @@ def pick_probe_samples(targets, state, platform):
         out.append(('不存在(預期 deleted)', nonexistent_url(platform, base['url'])))
     if platform == 'lofter':
         out.append(('整個部落格不存在(預期 deleted / blog_gone)', 'https://annyeongz-no-such-blog-0512.lofter.com/'))
+        coll = next((t for t in plat if _lofter.is_collection(t['url'])), None)
+        if coll:
+            out.append(('合集分享頁(預期 ok;404 狀態碼只算 unknown)', coll['url']))
     return out
 
 # ---------- 固定設定檔 / 反偵測(純函式部分可測) ----------
@@ -370,18 +391,26 @@ def profile_exists(src_dir):
     d = profile_dir(src_dir)
     return os.path.isdir(d) and bool(os.listdir(d))
 
-def launch_kwargs(headless, channel='', executable=''):
-    """chromium.launch / launch_persistent_context 共用的參數:有頭與否、channel / 執行檔、基本反偵測旗標。不給 user_agent。"""
+def needs_no_sandbox(os_name=None):
+    """Playwright 預設會幫 Chromium 加 --no-sandbox(chromium_sandbox=False)。只有 Linux(容器 / root 跑時沙箱起不來)需要它;
+    Windows / macOS 不需要,而且有頭 Chrome 會跳黃色警告條「您使用的是不受支援的命令列標記:--no-sandbox」(2026-11-05 站長回報)。"""
+    return (os_name or sys.platform).startswith('linux')
+
+def launch_kwargs(headless, channel='', executable='', os_name=None):
+    """chromium.launch / launch_persistent_context 共用的參數:有頭與否、channel / 執行檔、基本反偵測旗標、沙箱。不給 user_agent。
+    非 Linux 一律 chromium_sandbox=True(不加 --no-sandbox,見 needs_no_sandbox)。"""
     kw = {'headless': bool(headless), 'args': list(STEALTH_ARGS), 'ignore_default_args': list(STEALTH_IGNORE)}
+    if not needs_no_sandbox(os_name):
+        kw['chromium_sandbox'] = True
     if channel:
         kw['channel'] = channel
     if executable:
         kw['executable_path'] = executable
     return kw
 
-def profile_launch_kwargs(profile, executable=''):
+def profile_launch_kwargs(profile, executable='', os_name=None):
     """固定設定檔:預設有頭、系統 Chrome,不改 UA(cf_clearance 綁 UA)。"""
-    kw = launch_kwargs(bool(profile.get('headless')), profile.get('channel') or PROFILE_CHANNEL, executable)
+    kw = launch_kwargs(bool(profile.get('headless')), profile.get('channel') or PROFILE_CHANNEL, executable, os_name)
     kw.update(locale='zh-TW', viewport=dict(VIEWPORT))
     return kw
 
@@ -627,6 +656,18 @@ class BrowserSession:
             self._reach[key] = blog_root_gone(st, html, self._qualify_error('lofter', err))
         return self._reach[key]
 
+    def lofter_home_name(self, host):
+        """部落格首頁的博客名(同一個 host 只抓一次):文章頁 header 找不到博客名時的穩定來源。抓不到回 None。"""
+        key = 'name:' + host
+        if key not in self._reach:
+            self.sleep(random.uniform(*gap_for('lofter')))
+            st, _, html, err = self.fetch('lofter', 'https://%s/' % host)
+            name = None
+            if not err and st == 200 and not blog_root_gone(st, html):
+                name = home_blog_name(html, host)
+            self._reach[key] = name
+        return self._reach[key]
+
     def check(self, plat, url):
         """抓一筆並判斷;Cloudflare 挑戰頁在同一頁等驗證跑完(wait_challenge)再判斷一次,仍是挑戰頁 → reason = cf_challenge_wait;
         Lofter 某篇已刪時再看部落格首頁在不在(reason 改成 blog_gone)。回傳 checkers 形狀的結果。"""
@@ -643,6 +684,12 @@ class BrowserSession:
             host = H.host_of(url)
             if host.endswith('.lofter.com') and host != 'www.lofter.com' and self.lofter_blog_gone(host):
                 res['reason'], res['detail'] = 'blog_gone', 'post:' + str(res.get('reason'))
+        if plat == 'lofter' and res['status'] == 'ok' and res.get('author_source') not in ('header_title', 'header'):
+            host = H.host_of(url)               # 文章頁 header 找不到博客名(只剩 <title> / og 可猜)→ 改用部落格首頁的名字
+            if host.endswith('.lofter.com') and host != 'www.lofter.com':
+                name = self.lofter_home_name(host)
+                if name:
+                    res['author_name'], res['author_source'] = name, 'blog_home'
         res.setdefault('final', final)
         return res
 
@@ -830,7 +877,8 @@ def probe(targets, state, platforms, pre, log=print, headed=False, channel='', s
                 log('    網址:%s' % url)
                 log('    最終:%s' % final)
                 log('    狀態碼:%s  導覽錯誤:%s  耗時:%.1fs' % (st, err or '-', time.time() - t0))
-                log('    判定:%s(%s)  作者:%s%s' % (res['status'], res.get('reason'), res.get('author_name') or '-',
+                log('    判定:%s(%s)  作者:%s%s%s' % (res['status'], res.get('reason'), res.get('author_name') or '-',
+                                                   '(來源 %s)' % res['author_source'] if res.get('author_source') else '',
                                                    '  extra=' + json.dumps(res['extra'], ensure_ascii=False) if res.get('extra') else ''))
                 log('    頁面文字:%s' % H.text_of(html)[:300].replace('\n', ' '))
                 log('    <title>:%s' % H.title_of(html))

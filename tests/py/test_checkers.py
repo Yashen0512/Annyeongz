@@ -150,3 +150,28 @@ def test_html_helpers():
     assert _http.meta(h, 'og:site_name') == '測試博客'
     assert '內文' in _http.text_of(h) and '<' not in _http.text_of(h)
     assert _http.ld_json(load('postype_ok.html'))[0]['@type'] == 'BlogPosting'
+
+# ---- Lofter 博客名來源與合集頁(2026-11-05 實測誤判) ----
+def test_lofter_blog_name_prefers_header_over_title_dash():
+    # <title>「【安员】雨季 - 上-一只大鹅」:舊版先切「 - 」得到「上-一只大鹅」
+    html = load('lofter_post_header.html')
+    assert lofter.blog_name(html, 'testblog.lofter.com') == ('一只大鹅', 'header_title')
+    r = lofter.parse(200, LF, html, LF)
+    assert r['status'] == 'ok' and r['author_name'] == '一只大鹅' and r['author_source'] == 'header_title'
+    # 沒有 header 連結時:<title> 取最後一個連字號之後(不再優先切「 - 」)
+    no_head = html.replace('<h1><a href="//testblog.lofter.com/">一只大鹅</a></h1>', '')
+    assert lofter.blog_name(no_head, 'testblog.lofter.com') == ('一只大鹅', 'title')
+    assert lofter.header_names(html, 'testblog.lofter.com') == ['一只大鹅']        # 頭像(無文字)、首页、归档 都略過
+    assert lofter.header_names(html, 'www.lofter.com') == []
+    assert lofter.title_suffix('雨季 - 上-一只大鹅') == '一只大鹅' and lofter.title_suffix('沒有連字號') == ''
+
+def test_lofter_collection_rules():
+    C = 'https://www.lofter.com/front/blog/collection/share?collectionId=22232844&incantation=hjTWr10sOl21'
+    assert lofter.is_collection(C) and not lofter.is_collection(LF)
+    r = lofter.parse(404, C, '', C)
+    assert r['status'] == 'unknown' and r['reason'] == 'collection_404'           # 404 狀態碼不算已刪
+    r = lofter.parse(200, C, load('lofter_collection_ok.html'), C)
+    assert r['status'] == 'ok' and r['reason'] == 'collection' and r['author_name'] is None
+    r = lofter.parse(404, C, load('lofter_collection_gone.html'), C)
+    assert r['status'] == 'deleted' and r['reason'] == 'collection_gone'
+    assert lofter.parse(200, 'https://www.lofter.com/front/login', '', C)['status'] == 'login_required'
