@@ -472,3 +472,229 @@ def test_main_probe_writes_nothing(tmp_path, monkeypatch):
     assert CL.main(['--browser', '--probe', '--src', str(b), '--platforms', 'lofter,ao3,aff', '--no', '1,2']) is None
     assert sorted(os.listdir(str(b))) == ['article_links.json'] and fake.closed
     assert {p for p, _ in fake.calls} == {'lofter', 'ao3', 'aff'} and len(fake.calls) == 3 + 2 + 2
+
+# ---- AFF 404 頁(2026-11-05 站長用平常的 Chrome 實看) ----
+def test_aff_real_404_page_is_deleted():
+    r = BC.classify('aff', AF, 404, load('aff_404.html'), url=AF)
+    assert r['status'] == 'deleted' and r['reason'] == '404'
+    r = BC.classify('aff', AF, 200, load('aff_404.html'), url=AF)                  # 軟 404 也認得(樣本頁首有 Members only,不能判成 ok)
+    assert r['status'] == 'deleted' and r['reason'] == 'gone_text'
+    curly = '<html><head><title>Asianfanfics</title></head><body><p>The page you were looking for doesn\u2019t exist or has moved.</p></body></html>'
+    assert BC.classify('aff', AF, 200, curly, url=AF)['status'] == 'deleted'      # 彎引號
+    from checkers import aff
+    assert aff.parse(404, AF, load('aff_404.html'), AF)['status'] == 'deleted'
+    assert aff.parse(200, AF, curly, AF)['status'] == 'deleted'
+
+# ---- 固定設定檔 / 反偵測 ----
+def test_launch_kwargs_stealth_and_no_user_agent():
+    kw = BC.launch_kwargs(True)
+    assert kw == {'headless': True, 'args': ['--disable-blink-features=AutomationControlled'], 'ignore_default_args': ['--enable-automation']}
+    assert BC.launch_kwargs(False, 'chrome', 'C:/x/chrome.exe')['executable_path'] == 'C:/x/chrome.exe'
+    kw = BC.profile_launch_kwargs({})
+    assert kw['headless'] is False and kw['channel'] == 'chrome' and 'user_agent' not in kw     # 預設有頭、系統 Chrome、不改 UA
+    assert '--disable-blink-features=AutomationControlled' in kw['args'] and kw['locale'] == 'zh-TW'
+    assert BC.profile_launch_kwargs({'headless': True, 'channel': 'msedge'})['channel'] == 'msedge'
+    assert 'webdriver' in BC.STEALTH_JS and 'undefined' in BC.STEALTH_JS
+
+def test_profile_config(tmp_path):
+    assert BC.profile_config(str(tmp_path), ()) is None and BC.profile_config(str(tmp_path), ['postype']) is None
+    c = BC.profile_config(str(tmp_path))
+    assert c == {'dir': os.path.join(str(tmp_path), 'browser_profile'), 'platforms': ('aff',), 'headless': False,
+                 'channel': 'chrome', 'exists': False}
+    (tmp_path / 'browser_profile').mkdir()
+    assert not BC.profile_exists(str(tmp_path))                                    # 空資料夾不算
+    (tmp_path / 'browser_profile' / 'Local State').write_text('{}', encoding='utf-8')
+    assert BC.profile_config(str(tmp_path), ['aff', 'lofter'])['exists'] and BC.profile_config(str(tmp_path), ['aff', 'lofter'])['platforms'] == ('aff', 'lofter')
+
+def test_preflight_profile_defaults_to_aff_and_warns_when_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(BC, 'is_available', lambda: True)
+    lines = []
+    pre = BC.preflight(str(tmp_path), ['ao3', 'aff'], log=lines.append, trace='')
+    assert pre['profile']['platforms'] == ('aff',) and pre['usable'] == ['ao3', 'aff']
+    assert any('還沒有固定設定檔' in l and '--setup-profile' in l for l in lines)
+    (tmp_path / 'browser_profile').mkdir(); (tmp_path / 'browser_profile' / 'Local State').write_text('{}', encoding='utf-8')
+    lines.clear()
+    pre = BC.preflight(str(tmp_path), ['aff'], log=lines.append, trace='')
+    assert any('使用固定設定檔' in l and '有頭' in l for l in lines)
+    lines.clear()
+    pre = BC.preflight(str(tmp_path), ['aff'], log=lines.append, trace='', profile_platforms=())       # --no-profile
+    assert pre['profile'] is None and lines == []
+    pre = BC.preflight(str(tmp_path), ['ao3'], log=lines.append, trace='')                            # 這次沒跑 AFF → 不用設定檔
+    assert pre['profile'] is None
+    pre = BC.preflight(str(tmp_path), ['aff'], log=lines.append, trace='', profile_headless=True, profile_channel='msedge')
+    assert pre['profile']['headless'] and pre['profile']['channel'] == 'msedge'
+
+class _PWPage:
+    def __init__(self):
+        self.handlers = []
+    def evaluate(self, js):
+        return 'Mozilla/5.0 HeadlessChrome/143.0'
+    def on(self, ev, fn):
+        self.handlers.append(ev)
+
+class _PWCtx:
+    def __init__(self, kw, pages=0):
+        self.kw, self.scripts, self.cookies_added, self.closed = kw, [], [], 0
+        self.pages = [_PWPage() for _ in range(pages)]
+    def new_page(self):
+        p = _PWPage(); self.pages.append(p); return p
+    def add_init_script(self, js):
+        self.scripts.append(js)
+    def add_cookies(self, cs):
+        self.cookies_added += cs
+    def cookies(self, url=None):
+        return [{'name': 'cf_clearance'}, {'name': 'aff_session'}]
+    def close(self):
+        self.closed += 1
+
+class _PWBrowser:
+    version = '143.0'
+    class browser_type:
+        name = 'chromium'
+    def __init__(self, kw):
+        self.kw, self.contexts, self.closed = kw, [], 0
+    def new_context(self, **kw):
+        c = _PWCtx(kw); self.contexts.append(c); return c
+    def close(self):
+        self.closed += 1
+
+class _PWChromium:
+    def __init__(self):
+        self.launched, self.persistent = [], []
+    def launch(self, **kw):
+        b = _PWBrowser(kw); self.launched.append(b); return b
+    def launch_persistent_context(self, d, **kw):
+        c = _PWCtx(dict(kw, user_data_dir=d), pages=1); self.persistent.append(c); return c
+
+class _PW:
+    def __init__(self):
+        self.chromium, self.stopped = _PWChromium(), 0
+    def start(self):
+        return self
+    def stop(self):
+        self.stopped += 1
+    def __enter__(self):
+        return self
+    def __exit__(self, *a):
+        self.stopped += 1
+
+def test_session_uses_persistent_profile_for_aff_only(tmp_path):
+    pw, lines = _PW(), []
+    prof = BC.profile_config(str(tmp_path))
+    s = BC.BrowserSession(cookies={'lofter': [{'name': 'LOFTER_SESS', 'value': 'v', 'domain': '.lofter.com', 'path': '/'}]},
+                          log=lines.append, profile=prof, playwright_factory=lambda: pw).start()
+    assert pw.chromium.launched == [] and pw.chromium.persistent == []             # 第一次用到才開
+    s.prepare('aff')
+    pc = pw.chromium.persistent[0]
+    assert pc.kw['user_data_dir'] == prof['dir'] and os.path.isdir(prof['dir'])
+    assert pc.kw['headless'] is False and pc.kw['channel'] == 'chrome' and 'user_agent' not in pc.kw
+    assert '--enable-automation' in pc.kw['ignore_default_args'] and pc.scripts == [BC.STEALTH_JS]
+    assert s.page_for('aff') is pc.pages[0] and pw.chromium.launched == []        # 用 persistent context 原本那一頁
+    assert any('固定設定檔' in l and '有頭' in l for l in lines)
+    s.prepare('lofter')                                                            # 一般平台:無頭 Chromium、UA 換掉 HeadlessChrome、帶 cookie
+    b = pw.chromium.launched[0]
+    ctx = b.contexts[-1]
+    assert b.kw['headless'] is True and '--disable-blink-features=AutomationControlled' in b.kw['args']
+    assert ctx.kw['user_agent'] == 'Mozilla/5.0 Chrome/143.0' and ctx.scripts == [BC.STEALTH_JS] and ctx.cookies_added[0]['name'] == 'LOFTER_SESS'
+    assert s.uses_profile('aff') and not s.uses_profile('lofter')
+    s.close()
+    assert pc.closed == 1 and b.closed == 1 and pw.stopped == 1
+
+def test_session_without_profile_runs_aff_in_normal_browser(tmp_path):
+    pw = _PW()
+    s = BC.BrowserSession(log=lambda *a: None, playwright_factory=lambda: pw).start()
+    s.prepare('aff')
+    assert pw.chromium.persistent == [] and len(pw.chromium.launched) == 1 and not s.uses_profile('aff')
+
+def test_run_platform_profile_hint_once_and_in_note():
+    class ProfSession(FakeSession):
+        def uses_profile(self, plat):
+            return plat == 'aff'
+    lines = []
+    st = BC.run_platform('aff', tg('aff', 6), ProfSession(lambda p, u: dict(CF(), reason='cf_challenge_wait')), {}, threading.Lock(),
+                         log=lines.append, sleep=lambda x: None)
+    hint = 'AFF 被 Cloudflare 擋，請重跑 --setup-profile 或手動檢查'
+    assert sum(hint in l and '不改計數' in l for l in lines) == 1                  # 第一筆就提示,只提示一次
+    assert st['checked'] == 5 and st['blocked'] and hint in st['note'] and any(hint in l and '略過' in l for l in lines)
+    lines.clear()
+    BC.run_platform('aff', tg('aff', 2), FakeSession(lambda p, u: CF()), {}, threading.Lock(), log=lines.append, sleep=lambda x: None)
+    assert not any('setup-profile' in l for l in lines)                           # 沒用設定檔就不提示
+
+def test_run_all_skips_platform_when_browser_cannot_open():
+    class Broken(FakeSession):
+        def uses_profile(self, plat):
+            return True
+        def prepare(self, plat):
+            raise RuntimeError('Chromium distribution \'chrome\' is not found\nline2')
+    lines, s = [], Broken(lambda p, u: OK())
+    pre = {'usable': ['aff'], 'notes': {}, 'cookies': {}}
+    stats = BC.run_all(pre, {'aff': tg('aff', 3)}, ['aff'], {}, threading.Lock(), log=lines.append, session=s)
+    assert stats['aff'] == BC.skip_stat(3, '瀏覽器開不起來') and s.calls == []
+    assert any('is not found' in l for l in lines) and any('--setup-profile 的視窗關掉' in l for l in lines)
+
+def test_probe_prints_profile_hint(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    class ProfSession(FakeSession):
+        def uses_profile(self, plat):
+            return True
+    lines = []
+    s = ProfSession(lambda p, u: dict(CF(), reason='cf_challenge_wait'))
+    BC.probe(targets(), {}, ['aff'], {'usable': ['aff'], 'notes': {}, 'cookies': {}}, log=lines.append, session=s)
+    out = '\n'.join(lines)
+    assert '===== aff(2 筆,固定設定檔)=====' in out and out.count('請重跑 --setup-profile') == 2
+
+def test_setup_profile_opens_aff_home_and_waits_for_enter(tmp_path):
+    pw, lines, asked = _PW(), [], []
+    class Page(_PWPage):
+        def goto(self, url, **kw):
+            asked.append(('goto', url))
+    def factory():
+        orig = pw.chromium.launch_persistent_context
+        def lpc(d, **kw):
+            c = orig(d, **kw); c.pages = [Page()]; return c
+        pw.chromium.launch_persistent_context = lpc
+        return pw
+    ok = BC.setup_profile(str(tmp_path), log=lines.append, input_fn=lambda msg: asked.append(('input', msg)), playwright_factory=factory)
+    pc = pw.chromium.persistent[0]
+    assert ok and asked[0] == ('goto', BC.AFF_HOME) and asked[1][0] == 'input' and 'Enter' in asked[1][1]
+    assert pc.kw['headless'] is False and pc.kw['channel'] == 'chrome' and 'user_agent' not in pc.kw and pc.scripts == [BC.STEALTH_JS]
+    assert pc.kw['user_data_dir'] == os.path.join(str(tmp_path), 'browser_profile') and pc.closed == 1
+    assert any('cf_clearance:✅' in l for l in lines) and any('登入 AFF' in l for l in lines)
+
+def test_setup_profile_launch_failure(tmp_path):
+    pw, lines = _PW(), []
+    def boom(d, **kw):
+        raise RuntimeError('user data directory is already in use')
+    pw.chromium.launch_persistent_context = boom
+    assert BC.setup_profile(str(tmp_path), log=lines.append, input_fn=lambda m: None, playwright_factory=lambda: pw) is False
+    assert any('already in use' in l for l in lines) and any('關掉' in l for l in lines)
+
+def test_setup_profile_without_playwright(monkeypatch, tmp_path):
+    monkeypatch.setattr(BC, 'is_available', lambda: False)
+    lines = []
+    assert BC.setup_profile(str(tmp_path), log=lines.append) is False and 'pip install playwright' in lines[0]
+
+def test_main_setup_profile_needs_no_article_links(tmp_path, monkeypatch):
+    called = {}
+    monkeypatch.setattr(BC, 'setup_profile', lambda src, channel='': called.update(src=src, channel=channel) or True)
+    assert CL.main(['--setup-profile', '--src', str(tmp_path), '--browser-channel', 'msedge']) is None
+    assert called == {'src': str(tmp_path), 'channel': 'msedge'} and os.listdir(str(tmp_path)) == []
+    monkeypatch.setattr(BC, 'setup_profile', lambda src, channel='': False)
+    with pytest.raises(SystemExit):
+        CL.main(['--setup-profile', '--src', str(tmp_path)])
+
+@pytest.mark.parametrize('argv,expect', [([], (('aff',), False)), (['--no-profile'], ((), False)),
+                                         (['--profile', 'aff,lofter', '--profile-headless'], (('aff', 'lofter'), True))])
+def test_main_passes_profile_options_to_preflight(tmp_path, monkeypatch, argv, expect):
+    b = _build_dir(tmp_path)
+    got = {}
+    def fake_pre(src, plats, **k):
+        got.update(k)
+        return {'available': True, 'warp': False, 'usable': [], 'notes': {p: 'x' for p in plats}, 'cookies': {}, 'profile': None}
+    monkeypatch.setattr(BC, 'preflight', fake_pre)
+    CL.main(['--browser', '--src', str(b), '--platforms', 'aff', '--no', '1,2'] + argv)
+    assert (got['profile_platforms'], got['profile_headless']) == expect
+
+def test_gitignore_has_browser_profile():
+    gi = io.open(os.path.join(ROOT, '.gitignore'), encoding='utf-8').read().split()
+    assert '_build/browser_profile/' in gi and '_build/cookies/' in gi

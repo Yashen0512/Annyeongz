@@ -12,3 +12,5 @@ _build/notion_token.txt
 _build/goatcounter_token.txt
 _build/canary.json
 _build/cookies/
+_build/browser_profile/
+browser_profile/
