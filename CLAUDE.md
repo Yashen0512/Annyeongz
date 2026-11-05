@@ -71,6 +71,7 @@ _build/                    建置工具(Python,只用標準庫;build_pages.py �
   checkers/                各平台「還在不在」檢查器(postype / lofter / ao3 / aff;共用介面 check(url);urllib)
   browser_checker.py       瀏覽器巡檢模式(check_links.py --browser,只在站長本機):Playwright 真瀏覽器抓 lofter / ao3 / aff,判斷純函式 classify();見「瀏覽器巡檢模式」
   cookies/                 Lofter 登入 cookie 匯出檔 lofter.json(git 忽略整個目錄;瀏覽器巡檢用)
+  browser_profile/         瀏覽器巡檢的固定設定檔(Chrome user data dir,保留 AFF 的 cf_clearance 與登入;git 忽略;--setup-profile 建立)
   check_links.py           每日巡檢:所有原文連結 + 作者庫平台網址 → link_status.json、check_report.json(不寫 Notion);--browser / --probe 見「瀏覽器巡檢模式」
   notion_writeback.py      把巡檢結果寫回 Notion(❌ 標記 / 作者改名 + 曾用名);預設 dry-run,--go 才寫
   link_status.json         每個連結的上次狀態、連續天數、上次檢查時間(commit 進 repo;巡檢排程每天更新)
@@ -334,6 +335,16 @@ Lofter(1300 多筆,最大平台)、AO3、Asianfanfics 用 urllib 從任何 IP �
   啟動時讀 `LOFTER_SESS` 的到期日(`COOKIE_WARN_DAYS` = 3):正常時印「到期 X(剩 N 天,剩不到 3 天會警告)」,**剩不到 3 天每次執行都印 🚨 警告、已過期就略過 Lofter**;
   帶了 cookie 仍被導到 `www.lofter.com/front/login`
   = cookie 失效 → 該平台 `login_required`(不算死)並略過其餘。處理方式都一樣:重新登入 Lofter、重新匯出覆蓋 `lofter.json`。
+- **固定設定檔(AFF 預設啟用)**:2026-11-05 實測 AFF 第二筆起同頁等滿 20 秒仍停在「驗證成功。正在等待 … 回應」,但站長平常的 Chrome 開同一網址直接是 404 頁
+  → Cloudflare 認出自動化瀏覽器。所以 AFF 改用 `launch_persistent_context(user_data_dir=_build/browser_profile/)` + 系統 Chrome(`channel chrome`),
+  保留 `cf_clearance` 與 AFF 登入狀態。**不改 UA**(cf_clearance 綁 UA)、**預設有頭**(headless 容易被認出;`--profile-headless` 可改無頭)。
+  - **第一次(與被擋時)**:`python check_links.py --setup-profile`(或 `更新網站.bat 設定檔`)→ 開有頭 Chrome 到 AFF 首頁,手動通過驗證、登入 AFF、
+    點開一篇確認看得到,回黑窗按 Enter 關閉並存檔,結束時印 cf_clearance 有沒有拿到。要裝 Google Chrome;同一個設定檔一次只能一個 Chrome 開,跑巡檢前把那個視窗關掉。
+  - 參數:`--profile aff,lofter`(改走設定檔的平台,預設 `aff`)、`--no-profile`(全部走一般無頭瀏覽器)、`--profile-headless`;`--browser-channel` / `AZ_BROWSER_EXE` 也套用到設定檔。
+    啟動時沒有設定檔會印「還沒有固定設定檔…請先跑 --setup-profile」但仍會嘗試;瀏覽器開不起來(沒裝 Chrome / 設定檔被佔用)→ 該平台略過、note「瀏覽器開不起來」。
+  - 用了設定檔仍是 `cf_challenge_wait` → 照舊 `unknown`(不改計數),第一筆就印「AFF 被 Cloudflare 擋，請重跑 --setup-profile 或手動檢查」,連續 5 筆略過時 note 也帶這句。
+  - **基本反偵測**(一般瀏覽器與設定檔都套,`STEALTH_ARGS` / `STEALTH_IGNORE` / `STEALTH_JS`):`--disable-blink-features=AutomationControlled`、
+    拿掉 Playwright 預設的 `--enable-automation`、init script 讓 `navigator.webdriver` = undefined。一般無頭瀏覽器(Lofter / AO3)仍把 UA 的 HeadlessChrome 換成 Chrome。
 - **WARP 要關**:啟動時 GET `https://www.cloudflare.com/cdn-cgi/trace`,回應有 `warp=on` 就印「偵測到 Cloudflare WARP 開啟…」並略過三個平台
   (WARP 的出口 IP 會被這幾站擋)。其他 VPN 不會被偵測到,被 Cloudflare 擋時先想到這個。
 - **判斷規則**(純函式 `classify(platform, final_url, status, html, url, error)`,`tests/py/test_browser_checker.py` 用合成樣本測。
@@ -347,14 +358,15 @@ Lofter(1300 多筆,最大平台)、AO3、Asianfanfics 用 urllib 從任何 IP �
     log 印「AO3 停機中，略過」、報告 note「AO3 停機中」;404 或「Sorry, we couldn't find the work」→ `deleted`;「only available to registered users」→ `login_required`;
     另外解析 `Chapters: 5/10`(或 `5/?`)、`Completed` / `Updated` 日期、字數,放進結果 `extra`,`advance()` 存到 `link_status.json` 該筆的 `extra`
     (`{chapters, chapter_current, chapter_total, complete, status, status_date, words}`),**先只記錄、不寫回 Notion 的文章狀態**。
-  - Asianfanfics:正常、或「SUBSCRIBERS ONLY / Please subscribe to read」都算 `ok`(文還在);404 / Page Not Found → `deleted`。
+  - Asianfanfics:正常、或「SUBSCRIBERS ONLY / Please subscribe to read」都算 `ok`(文還在);404 頁(大字 404、標題「Page Not Found」、
+    內文「The page you were looking for doesn't exist or has moved.」、「Back to Home」鈕,2026-11-05 站長用平常的 Chrome 實看)→ `deleted`(狀態碼 404 或這些字樣;彎引號也認)。
     連續請求第二筆起就是 403 Cloudflare 驗證頁,所以 AFF 每筆間隔拉長到 **6~10 秒**(`GAP_PLAT`)。
   - Cloudflare 挑戰頁**只看頁面內容、不看狀態碼**(實測 AFF 是 403 繁中版):`<title>` 是 Just a moment / 請稍候 / 请稍候,或內文有 Ray ID /
     Performance and Security by Cloudflare / Enable JavaScript and cookies to continue / 正在執行安全驗證 / cf-chl 等(`CF_TITLES` / `CF_MARKERS`;
     「請稍候」只看 `<title>`,文章內文出現不算)→ 在**同一頁等驗證自己跑完**(`wait_challenge`:每秒看標題 / 網址有沒有變、頁面是不是還是挑戰頁,
     最多 `CF_SOLVE_S` = 20 秒;「驗證成功。正在等待回應」這種中間頁繼續等),跑完就用那頁的內容判斷(狀態碼取自 `page.on('response')` 記下的最後一次主框架導覽);
     等完仍是挑戰頁 → `unknown`(reason `cf_challenge_wait`)並計數,**同平台連續 5 筆挑戰頁就略過該平台**並印警告。
-    還過不了的下一步才是 `launch_persistent_context` 固定設定檔(`browser_profile/`,要加進 .gitignore),這次沒做。
+    AFF 走固定設定檔後若仍過不了,見上面「固定設定檔」的處理方式。
   - 共用:同平台順序跑、每筆隨機間隔 2~4 秒(AFF 6~10)、每個平台一個 browser context 重用;逾時 20 秒 → `unknown`;
     三個平台在同一條執行緒依序跑(Playwright sync API 綁執行緒),Postype 的執行緒並行。
 - **`--probe`(驗判斷規則用)**:`python check_links.py --browser --probe` 每個平台只抓 3 筆(1 筆預期正常、1 筆 Notion 已標 ❌、1 筆捏造的不存在網址;
@@ -511,7 +523,8 @@ pip install -r requirements-dev.txt   # 只需一次(pytest + Pillow)
 python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆分與 ID、日期、精簡格式 round-trip、sw 版本號、水印 / _origin / canary 埋入、30 篇 fixture 完整建置比對)、fetch_data(No 三種型別、token 來源)、canary(hash / 挑選 / 比對 / CLI)、
                                   #          build_pages(描述 / 標題折行 / 字型回退 / sitemap / RSS、30 篇產頁與 hash 跳過重產)
                                   #          checkers(各平台 HTML 樣本)、check_links(連續兩天狀態機、到期、改名判斷、平台被擋短路、重試)、notion_writeback(❌ 加 / 移除、PATCH 格式、曾用名合併)、build_site 曾用名、fetch_data block 位置與 merge_links 清舊標題、notion_writeback 只信記錄的 block、collect_targets 略過舊標題、
-                                  #          browser_checker(classify 各平台合成樣本、AO3 章節進度、cookie 三種格式與到期、WARP、--probe 樣本挑選、挑戰頁連續 5 筆 / 登入牆短路、preflight、--browser / --probe 接進 main)
+                                  #          browser_checker(classify 各平台合成樣本、AO3 章節進度、cookie 三種格式與到期、WARP、--probe 樣本挑選、挑戰頁連續 5 筆 / 登入牆短路、preflight、--browser / --probe 接進 main、
+                                  #          固定設定檔與反偵測的啟動參數(假 Playwright)、--setup-profile、設定檔被擋提示、--profile / --no-profile 接線)
 ```
 
 - `.github/workflows/test.yml` 在 PR 時兩組都自動跑,不需要 Notion token。

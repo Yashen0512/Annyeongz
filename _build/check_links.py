@@ -19,8 +19,11 @@
    - --browser(只在站長本機):lofter / ao3 / aff 改走 browser_checker.py(Playwright 真瀏覽器),postype 照舊 urllib;
      結果形狀相同、進同一套 advance() 與 link_status.json。沒裝 Playwright / WARP 開著 / 沒有 Lofter cookie 時印提示並略過該平台。
      --browser --probe:每個平台只抓 3 筆(正常 / 已知 ❌ / 不存在)印出最終網址、狀態碼、判定、頁面前 300 字,不寫任何檔案(驗判斷規則用)。
+     固定設定檔:AFF 預設用 _build/browser_profile/(有頭系統 Chrome,保留 cf_clearance 與登入);--profile aff,lofter 改平台、--no-profile 關掉、
+     --profile-headless 改無頭;第一次先跑 --setup-profile(開 AFF 首頁讓站長手動登入、通過驗證,按 Enter 存檔)。
    用法:python check_links.py [--platforms postype,lofter,ao3,aff] [--no 1352,1255] [--limit N] [--verbose]
-                              [--browser [--probe] [--headed] [--browser-channel chrome]]
+                              [--browser [--probe] [--headed] [--browser-channel chrome] [--profile aff | --no-profile] [--profile-headless]]
+                             [--setup-profile]
 """
 import argparse, io, json, os, random, re, sys, threading, time
 from collections import OrderedDict, defaultdict
@@ -379,17 +382,29 @@ def main(argv=None):
     ap.add_argument('--browser', action='store_true', help='lofter / ao3 / aff 改用 Playwright 真瀏覽器抓(只在本機;需 pip install playwright)')
     ap.add_argument('--probe', action='store_true', help='搭配 --browser:每平台只抓 3 筆樣本印出判斷依據,不寫任何檔案')
     ap.add_argument('--headed', action='store_true', help='搭配 --browser:開有頭的瀏覽器視窗(除錯用)')
-    ap.add_argument('--browser-channel', default='', help="搭配 --browser:Playwright 的 channel,例如 chrome(用系統 Chrome)或留空用內建 Chromium")
+    ap.add_argument('--browser-channel', default='', help="搭配 --browser:Playwright 的 channel,例如 chrome(用系統 Chrome)或留空用內建 Chromium;也套用到固定設定檔")
+    ap.add_argument('--profile', default='aff', help='搭配 --browser:走固定設定檔 _build/browser_profile/ 的平台(逗號分隔,預設 aff)')
+    ap.add_argument('--no-profile', action='store_true', help='搭配 --browser:不用固定設定檔(AFF 也走一般的無頭瀏覽器)')
+    ap.add_argument('--profile-headless', action='store_true', help='搭配 --browser:固定設定檔改用無頭模式(預設有頭,無頭容易被 Cloudflare 認出來)')
+    ap.add_argument('--setup-profile', action='store_true', help='開有頭 Chrome 到 AFF 首頁,手動登入、通過驗證後按 Enter 存成固定設定檔,然後結束')
     args = ap.parse_args(argv)
     if args.probe and not args.browser:
         ap.error('--probe 要搭配 --browser')
+    if args.setup_profile:
+        import browser_checker as BC
+        ok = BC.setup_profile(args.src, channel=args.browser_channel)
+        if not ok:
+            raise SystemExit(1)
+        return None
 
     platforms = [p.strip() for p in args.platforms.split(',') if p.strip() in checkers.PLATFORMS]
     BC, pre, browser_plats = None, None, []
     if args.browser:
         import browser_checker as BC
         browser_plats = [p for p in platforms if p in BC.PLATFORMS]
-        pre = BC.preflight(args.src, browser_plats)
+        prof_plats = () if args.no_profile else tuple(p.strip() for p in args.profile.split(',') if p.strip())
+        pre = BC.preflight(args.src, browser_plats, profile_platforms=prof_plats,
+                           profile_headless=args.profile_headless, profile_channel=args.browser_channel)
     http_plats = [p for p in platforms if p not in browser_plats]
     only = set(x.strip() for x in args.no.split(',') if x.strip()) or None
     today = today_str()

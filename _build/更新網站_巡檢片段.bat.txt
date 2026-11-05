@@ -5,9 +5,23 @@ rem       更新網站.bat 巡檢         → fetch_data.py 之後多跑 check_l
 rem       更新網站.bat 巡檢 瀏覽器   → check_links.py --browser:Lofter / AO3 / Asianfanfics 用 Playwright 真瀏覽器抓
 rem                                   (要先 pip install playwright && playwright install chromium,Lofter 要放 _build\cookies\lofter.json;
 rem                                    WARP 要關;見 CLAUDE.md「瀏覽器巡檢模式」)
+rem                                   AFF 預設用固定設定檔 _build\browser_profile\(有頭 Chrome 視窗會跳出來,跑完自動關;要裝 Google Chrome)
 rem       更新網站.bat 巡檢 dry      → 只巡檢並印出將寫回的清單,不寫 Notion(「瀏覽器」與「dry」可以同時給,順序不拘)
+rem       更新網站.bat 設定檔        → 只跑 check_links.py --setup-profile 然後結束(不更新網站):開有頭 Chrome 到 AFF 首頁,
+rem                                   手動登入 AFF、通過 Cloudflare 驗證、點開一篇文確認看得到,回到黑窗按 Enter 存檔。
+rem                                   第一次用瀏覽器巡檢前跑一次;之後巡檢出現「AFF 被 Cloudflare 擋，請重跑 --setup-profile」時再跑。
+rem                                   跑之前把其他用同一個設定檔的 Chrome 視窗關掉(一次只能一個)。也可直接在 _build 下:python check_links.py --setup-profile
+rem 「設定檔」那段要放在 bat 最前面(cd 到 _build 之後、fetch_data.py 之前),其餘放在下面說的位置。
 rem 放在「python fetch_data.py」那行之後、「python build_site.py」之前(check_links 需要 fetch 產出的 CSV 與 article_links.json)。
 rem ============================================================================
+if /I "%~1"=="設定檔" (
+    python check_links.py --setup-profile
+    goto :eof
+)
+if /I "%~1"=="setup" (
+    python check_links.py --setup-profile
+    goto :eof
+)
 set AZ_CHECK=
 set AZ_BROWSER=
 set AZ_DRY=

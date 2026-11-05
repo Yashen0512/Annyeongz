@@ -22,16 +22,27 @@
        → unknown,reason = ao3_down(不是 Cloudflare、不改任何計數),第一筆遇到就略過整個 AO3、本次不再打(印「AO3 停機中，略過」)。
        404 或「Sorry, we couldn't find the work you were looking for」→ deleted;「This work is only available to registered users」→ login_required(不算死)。
        另外解析章節進度(Chapters: 5/10、5/?)與 Completed 日期,放在結果的 extra 欄位(check_links.advance 會存進 link_status.json),先只記錄、不寫回 Notion。
-   - Asianfanfics:正常、或顯示 SUBSCRIBERS ONLY / Please subscribe to read 都算 ok(文還在,只是要訂閱);404 Page Not Found → deleted。
+   - Asianfanfics:正常、或顯示 SUBSCRIBERS ONLY / Please subscribe to read 都算 ok(文還在,只是要訂閱);
+       404 頁(標題「Page Not Found」、內文「The page you were looking for doesn't exist or has moved.」,2026-11-05 站長用平常的 Chrome 實看)→ deleted。
        連續請求會被 Cloudflare 擋(第二筆起 403 驗證頁),所以 AFF 每筆間隔拉長到 GAP_PLAT['aff'] = 6~10 秒。
+       2026-11-05 實測:同頁等滿 20 秒仍停在「驗證成功。正在等待 … 回應」= Cloudflare 認出自動化瀏覽器(平常的 Chrome 開同一網址直接是 404 頁),
+       所以 AFF 預設改走**固定設定檔**(見下方「固定設定檔」)。
    - 共用:同平台順序跑、每筆間隔 GAP 隨機 2~4 秒(AFF 另計);每個平台一個 browser context 重用(不每筆開新瀏覽器);逾時 TIMEOUT_MS = 20 秒 → unknown;
        Cloudflare 挑戰頁用**頁面內容**判斷、不看狀態碼(標題 Just a moment / 請稍候 / 请稍候,或內文 Ray ID / Performance and Security by Cloudflare /
        Enable JavaScript and cookies to continue / 正在執行安全驗證…):在**同一頁**等驗證自己跑完(標題或網址變了、頁面不再是挑戰頁),
        最多 CF_SOLVE_S = 20 秒,過了就用那頁的內容判斷;等完仍是挑戰頁 → unknown(cf_challenge_wait)並計數,同平台連續 CF_MAX_STREAK = 5 筆
-       就略過該平台並印警告(還過不了的話,下一步才考慮 launch_persistent_context 固定設定檔)。
+       就略過該平台並印警告。
        啟動時 GET https://www.cloudflare.com/cdn-cgi/trace,回應含 warp=on 就印提示並略過三個平台(WARP 的出口 IP 會被擋)。
    瀏覽器:預設 Playwright 內建的 Chromium(無頭;UA 裡的 HeadlessChrome 會換成 Chrome);--browser-channel chrome 改用系統 Chrome、
        --headed 開視窗看畫面、環境變數 AZ_BROWSER_EXE 直接指定執行檔。
+   基本反偵測(所有瀏覽器都套):--disable-blink-features=AutomationControlled、拿掉 Playwright 預設的 --enable-automation、
+       init script 把 navigator.webdriver 改成 undefined(STEALTH_ARGS / STEALTH_IGNORE / STEALTH_JS)。
+   固定設定檔(PROFILE_PLATFORMS,預設只有 AFF;check_links.py --profile aff,lofter 可改、--no-profile 關掉):
+       用 launch_persistent_context(user_data_dir = _build/browser_profile/,git 忽略)+ 系統 Chrome(channel chrome),
+       保留 cf_clearance 與 AFF 登入狀態;**不改 UA**(cf_clearance 綁 UA,換了 UA 就失效)、預設**有頭**(headless 容易被認出來;--profile-headless 可改)。
+       設定檔要先用 `python check_links.py --setup-profile` 建:開有頭 Chrome 到 AFF 首頁,站長手動登入、通過驗證,按 Enter 關閉並存檔(setup_profile)。
+       用了設定檔仍是 cf_challenge_wait → AFF 維持 unknown(不改計數),log 提示「AFF 被 Cloudflare 擋，請重跑 --setup-profile 或手動檢查」。
+       同一個設定檔一次只能被一個 Chrome 開:跑巡檢前把 --setup-profile 的視窗關掉。
    用法:由 check_links.py 呼叫(--browser / --probe);本檔不自己當 main。"""
 import io, json, os, random, re, time, urllib.request
 from datetime import datetime, timezone, timedelta
@@ -55,6 +66,15 @@ COOKIE_WARN_DAYS = 3
 WARP_TRACE = 'https://www.cloudflare.com/cdn-cgi/trace'
 TZ = timezone(timedelta(hours=8))
 INSTALL_HINT = 'pip install playwright && playwright install chromium'
+PROFILE_DIR = 'browser_profile'          # 固定設定檔(相對 _build;git 忽略)
+PROFILE_PLATFORMS = ('aff',)             # 預設走固定設定檔的平台
+PROFILE_CHANNEL = 'chrome'               # 固定設定檔用系統 Chrome
+AFF_HOME = 'https://www.asianfanfics.com/'
+LABEL = {'lofter': 'Lofter', 'ao3': 'AO3', 'aff': 'AFF'}
+STEALTH_ARGS = ('--disable-blink-features=AutomationControlled',)
+STEALTH_IGNORE = ('--enable-automation',)
+STEALTH_JS = "Object.defineProperty(Navigator.prototype, 'webdriver', {get: () => undefined, configurable: true});"
+VIEWPORT = {'width': 1280, 'height': 900}
 
 CF_TITLES = ('Just a moment', '請稍候', '请稍候', 'Attention Required! | Cloudflare')     # 挑戰頁的 <title>(多語系)
 CF_MARKERS = ('cf-challenge', 'cf-chl-', '_cf_chl_opt', 'Ray ID', 'Performance and Security by Cloudflare',
@@ -67,7 +87,7 @@ LOFTER_BLOG_GONE = ('博客不存在', '该博客不存在', '博客已注销', 
 LOFTER_GONE = _lofter.GONE_TEXT + ('文章不存在', '该文章不存在', '该文章已被删除', '内容不存在', '404',
                                    '页面走丢了', '页面已被移除', '链接可能已损毁')     # 後三個是 2026-11-04 實測的 404 頁字樣
 AFF_SUBSCRIBE = ('subscribers only', 'please subscribe to read', 'subscribe to read', 'subscribe to this story to read')
-AFF_GONE = tuple(k for k in _aff.GONE_TEXT if k != 'the page you requested') + ('404 page not found',)
+AFF_GONE = tuple(k for k in _aff.GONE_TEXT if k != 'the page you requested') + ('404 page not found',)   # _aff.GONE_TEXT 已含 2026-11-05 實看的 404 頁字樣
 AO3_GONE = (_ao3.NOT_FOUND, 'this work has been deleted', 'work could not be found')
 NET_GONE = ('net::ERR_NAME_NOT_RESOLVED', 'net::ERR_CONNECTION_REFUSED', 'net::ERR_CONNECTION_CLOSED',
             'net::ERR_CONNECTION_RESET', 'net::ERR_CERT_COMMON_NAME_INVALID', 'net::ERR_SSL_PROTOCOL_ERROR')
@@ -294,7 +314,7 @@ def _classify_ao3(final, status, body, url):
     return H.result('unknown', reason='no_markers', code=status, final=final)
 
 def _classify_aff(final, status, body, url):
-    low = H.text_of(body[:300000]).lower()
+    low = H.text_of(body[:300000]).lower().replace('\u2019', "'")      # doesn’t → doesn't
     if status == 404 or any(k in low for k in AFF_GONE):
         return H.result('deleted', reason='404' if status == 404 else 'gone_text', code=status, final=final)
     if status is not None and status != 200:
@@ -340,59 +360,179 @@ def pick_probe_samples(targets, state, platform):
         out.append(('整個部落格不存在(預期 deleted / blog_gone)', 'https://annyeongz-no-such-blog-0512.lofter.com/'))
     return out
 
+# ---------- 固定設定檔 / 反偵測(純函式部分可測) ----------
+
+def profile_dir(src_dir):
+    return os.path.join(src_dir, PROFILE_DIR)
+
+def profile_exists(src_dir):
+    """設定檔資料夾在而且不是空的(Chrome 第一次開就會寫進 Default/ 等檔案)。"""
+    d = profile_dir(src_dir)
+    return os.path.isdir(d) and bool(os.listdir(d))
+
+def launch_kwargs(headless, channel='', executable=''):
+    """chromium.launch / launch_persistent_context 共用的參數:有頭與否、channel / 執行檔、基本反偵測旗標。不給 user_agent。"""
+    kw = {'headless': bool(headless), 'args': list(STEALTH_ARGS), 'ignore_default_args': list(STEALTH_IGNORE)}
+    if channel:
+        kw['channel'] = channel
+    if executable:
+        kw['executable_path'] = executable
+    return kw
+
+def profile_launch_kwargs(profile, executable=''):
+    """固定設定檔:預設有頭、系統 Chrome,不改 UA(cf_clearance 綁 UA)。"""
+    kw = launch_kwargs(bool(profile.get('headless')), profile.get('channel') or PROFILE_CHANNEL, executable)
+    kw.update(locale='zh-TW', viewport=dict(VIEWPORT))
+    return kw
+
+def profile_config(src_dir, platforms=PROFILE_PLATFORMS, headless=False, channel=''):
+    """→ preflight / BrowserSession 用的 {'dir', 'platforms', 'headless', 'channel', 'exists'};platforms 空 = 不用設定檔(回 None)。"""
+    plats = tuple(p for p in (platforms or ()) if p in PLATFORMS)
+    if not plats:
+        return None
+    return {'dir': profile_dir(src_dir), 'platforms': plats, 'headless': bool(headless),
+            'channel': channel or PROFILE_CHANNEL, 'exists': profile_exists(src_dir)}
+
+def cf_profile_hint(plat):
+    return '%s 被 Cloudflare 擋，請重跑 --setup-profile 或手動檢查' % LABEL.get(plat, plat)
+
+def _uses_profile(session, plat):
+    f = getattr(session, 'uses_profile', None)
+    return bool(f and f(plat))
+
+def setup_profile(src_dir, url=AFF_HOME, channel='', log=print, input_fn=input, playwright_factory=None, executable=''):
+    """--setup-profile:用固定設定檔開有頭 Chrome 到 AFF 首頁,讓站長手動登入、通過 Cloudflare 驗證,按 Enter 後關閉(設定檔自動存檔)。
+    回傳 True / False(沒裝 Playwright 或瀏覽器開不起來)。playwright_factory 給測試換成假的。"""
+    if playwright_factory is None:
+        if not is_available():
+            log('⚠️ 沒有安裝 Playwright,請先:%s' % INSTALL_HINT)
+            return False
+        from playwright.sync_api import sync_playwright as playwright_factory
+    d = profile_dir(src_dir)
+    os.makedirs(d, exist_ok=True)
+    prof = {'headless': False, 'channel': channel or PROFILE_CHANNEL}
+    executable = executable or os.environ.get('AZ_BROWSER_EXE', '')
+    with playwright_factory() as pw:
+        try:
+            ctx = pw.chromium.launch_persistent_context(d, **profile_launch_kwargs(prof, executable))
+        except Exception as e:
+            log('⚠️ 開不了瀏覽器:%s' % str(e).splitlines()[0][:200])
+            log('   (沒裝 Google Chrome?或設定檔正被別的 Chrome 視窗使用,先把它關掉;也可用 --browser-channel 改用別的瀏覽器)')
+            return False
+        try:
+            ctx.add_init_script(STEALTH_JS)
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            try:
+                page.goto(url, wait_until='domcontentloaded', timeout=60000)
+            except Exception as e:
+                log('⚠️ 打開 %s 時出錯(%s),可以在視窗裡自己重新整理' % (url, str(e).splitlines()[0][:120]))
+            log('已用固定設定檔開啟 %s(設定檔:%s)' % (url, d))
+            log('請在瀏覽器視窗裡:① 通過 Cloudflare 驗證(看到 AFF 首頁)② 登入 AFF ③ 隨便點開一篇文確認看得到。')
+            input_fn('完成後回到這裡按 Enter,會關閉瀏覽器並存檔…')
+            try:
+                names = {c.get('name') for c in ctx.cookies(url)}
+            except Exception:
+                names = set()
+            log('cf_clearance:%s;AFF cookie %d 個' % ('✅ 有' if 'cf_clearance' in names else '⚠️ 沒有(可能還沒通過驗證,可再跑一次)', len(names)))
+        finally:
+            try:
+                ctx.close()
+            except Exception:
+                pass
+    log('設定檔已存到 %s;之後 --browser 的 AFF 會用它(有頭 Chrome 視窗會跳出來,跑完自動關)。' % d)
+    return True
+
 # ---------- 瀏覽器 ----------
 
 class BrowserSession:
-    """一個 Playwright + 一個 Chromium;每個平台一個 context(Lofter 的帶 cookie)與一個 page 重用。
+    """一個 Playwright;一般平台共用一個 Chromium、每個平台一個 context(Lofter 的帶 cookie)與一個 page 重用;
+    走固定設定檔的平台(profile['platforms'],預設 AFF)用 launch_persistent_context(有頭系統 Chrome、不改 UA)。
+    兩種瀏覽器都是第一次用到才開(prepare / page_for)。
     sync API 只能在建立它的那條執行緒用,所以 start / check / close 都要在同一條執行緒(check_links.py 用一條執行緒跑三個平台)。"""
-    def __init__(self, cookies=None, headed=False, channel='', log=print, sleep=time.sleep, executable=''):
+    def __init__(self, cookies=None, headed=False, channel='', log=print, sleep=time.sleep, executable='', profile=None, playwright_factory=None):
         self.cookies, self.headed, self.channel, self.log, self.sleep = (cookies or {}), headed, channel, log, sleep
         self.executable = executable or os.environ.get('AZ_BROWSER_EXE', '')   # 指定瀏覽器執行檔(例如系統 Chrome 的 chrome.exe);留空用 Playwright 內建 Chromium
-        self._pw = self._browser = self._ua = None
+        self.profile = profile or {}
+        self._factory = playwright_factory
+        self._pw = self._browser = self._ua = self._pctx = None
         self._ctx = {}
         self._reach = {}
         self._status = {}    # id(page) → 該頁最後一次主框架導覽的狀態碼(Cloudflare 驗證完自動重載時,page.goto 的回應已經過時)
         self.last = None     # 最後一次 fetch 的 (status, final, html, error),--probe 印頁面文字用
 
     def start(self):
-        from playwright.sync_api import sync_playwright
-        self._pw = sync_playwright().start()
-        kw = {'headless': not self.headed}
-        if self.channel:
-            kw['channel'] = self.channel
-        if self.executable:
-            kw['executable_path'] = self.executable
-        self._browser = self._pw.chromium.launch(**kw)
-        tmp = self._browser.new_context()
-        try:
-            ua = tmp.new_page().evaluate('navigator.userAgent')
-        finally:
-            tmp.close()
-        self._ua = (ua or H.UA).replace('HeadlessChrome', 'Chrome')   # 無頭模式預設 UA 帶 HeadlessChrome,會被當機器人
-        self.log('瀏覽器:%s %s%s' % (self._browser.browser_type.name, self._browser.version, '(有頭)' if self.headed else ''))
+        if self._factory is None:
+            from playwright.sync_api import sync_playwright
+            self._factory = sync_playwright
+        self._pw = self._factory().start()
         return self
+
+    def uses_profile(self, plat):
+        return plat in (self.profile.get('platforms') or ())
+
+    def _ensure_browser(self):
+        """一般平台共用的 Chromium(第一次用到才開)。無頭時把 UA 裡的 HeadlessChrome 換成 Chrome(這個 context 不用 cf_clearance)。"""
+        if self._browser is None:
+            self._browser = self._pw.chromium.launch(**launch_kwargs(not self.headed, self.channel, self.executable))
+            tmp = self._browser.new_context()
+            try:
+                ua = tmp.new_page().evaluate('navigator.userAgent')
+            finally:
+                tmp.close()
+            self._ua = (ua or H.UA).replace('HeadlessChrome', 'Chrome')   # 無頭模式預設 UA 帶 HeadlessChrome,會被當機器人
+            self.log('瀏覽器:%s %s%s' % (self._browser.browser_type.name, self._browser.version, '(有頭)' if self.headed else ''))
+        return self._browser
+
+    def _ensure_profile(self):
+        """固定設定檔的 persistent context(第一次用到才開):有頭系統 Chrome、不改 UA、保留 cf_clearance 與登入狀態。"""
+        if self._pctx is None:
+            d = self.profile['dir']
+            os.makedirs(d, exist_ok=True)
+            kw = profile_launch_kwargs(self.profile, self.executable)
+            self._pctx = self._pw.chromium.launch_persistent_context(d, **kw)
+            self._pctx.add_init_script(STEALTH_JS)
+            self.log('瀏覽器(固定設定檔):%s%s,設定檔 %s' % (kw.get('executable_path') or kw.get('channel') or 'chromium',
+                                                       '(無頭)' if kw['headless'] else '(有頭)', d))
+        return self._pctx
+
+    def prepare(self, plat):
+        """開好該平台要用的瀏覽器(run_all / probe 先呼叫,開不起來在這裡就丟例外,呼叫端略過該平台)。"""
+        self.page_for(plat)
 
     def close(self):
         for ctx, _ in self._ctx.values():
+            if ctx is self._pctx:
+                continue
             try:
                 ctx.close()
             except Exception:
                 pass
         self._ctx = {}
-        for obj in (self._browser, self._pw):
+        for obj in (self._pctx, self._browser):
             try:
                 if obj:
-                    obj.close() if obj is self._browser else obj.stop()
+                    obj.close()
             except Exception:
                 pass
-        self._browser = self._pw = None
+        try:
+            if self._pw:
+                self._pw.stop()
+        except Exception:
+            pass
+        self._pctx = self._browser = self._pw = None
 
     def page_for(self, plat):
         if plat not in self._ctx:
-            ctx = self._browser.new_context(user_agent=self._ua, locale='zh-TW', viewport={'width': 1280, 'height': 900})
+            if self.uses_profile(plat):
+                ctx = self._ensure_profile()
+                used = any(c is ctx for c, _ in self._ctx.values())
+                page = ctx.pages[0] if (ctx.pages and not used) else ctx.new_page()   # persistent context 開起來就有一頁,先用它
+            else:
+                ctx = self._ensure_browser().new_context(user_agent=self._ua, locale='zh-TW', viewport=dict(VIEWPORT))
+                ctx.add_init_script(STEALTH_JS)
+                page = ctx.new_page()
             if self.cookies.get(plat):
                 ctx.add_cookies(self.cookies[plat])
-            page = ctx.new_page()
             self._track_status(page)
             self._ctx[plat] = (ctx, page)
         return self._ctx[plat][1]
@@ -508,10 +648,12 @@ class BrowserSession:
 
 # ---------- 跟 check_links.py 接的部分 ----------
 
-def preflight(src_dir, platforms, log=print, now=None, trace=None):
-    """啟動前檢查,不開瀏覽器:Playwright 有沒有裝、WARP 有沒有開、Lofter cookie 在不在 / 過期沒。
-    回傳 {'available', 'warp', 'usable': [可跑的平台], 'notes': {平台: 略過原因}, 'cookies': {平台: cookie 清單}}。"""
-    pre = {'available': is_available(), 'warp': False, 'usable': [], 'notes': {}, 'cookies': {}}
+def preflight(src_dir, platforms, log=print, now=None, trace=None, profile_platforms=PROFILE_PLATFORMS, profile_headless=False, profile_channel=''):
+    """啟動前檢查,不開瀏覽器:Playwright 有沒有裝、WARP 有沒有開、Lofter cookie 在不在 / 過期沒、固定設定檔建了沒。
+    回傳 {'available', 'warp', 'usable': [可跑的平台], 'notes': {平台: 略過原因}, 'cookies': {平台: cookie 清單},
+    'profile': profile_config(…) 或 None}。"""
+    pre = {'available': is_available(), 'warp': False, 'usable': [], 'notes': {}, 'cookies': {},
+           'profile': profile_config(src_dir, [p for p in (profile_platforms or ()) if p in platforms], profile_headless, profile_channel)}
     plats = [p for p in platforms if p in PLATFORMS]
     if not pre['available']:
         log('⚠️ 沒有安裝 Playwright,--browser 模式無法使用;請先:%s。本次略過 %s。' % (INSTALL_HINT, '、'.join(plats)))
@@ -552,6 +694,14 @@ def preflight(src_dir, platforms, log=print, now=None, trace=None):
                                                    '到期 %s(剩 %.1f 天,剩不到 %d 天會警告)' % (fmt_dt(exp), left, COOKIE_WARN_DAYS) if exp else '(session cookie,無到期日)'))
             pre['cookies'][p] = cookies
         pre['usable'].append(p)
+    prof = pre['profile']
+    pplats = [p for p in (prof or {}).get('platforms', ()) if p in pre['usable']]
+    if pplats:
+        names = '、'.join(LABEL[p] for p in pplats)
+        if prof['exists']:
+            log('%s 使用固定設定檔 %s(%s Chrome%s)' % (names, prof['dir'], '無頭' if prof['headless'] else '有頭', '' if prof['headless'] else ',會跳出視窗,跑完自動關'))
+        else:
+            log('⚠️ 還沒有固定設定檔 %s:%s 很可能被 Cloudflare 擋。請先跑 python check_links.py --setup-profile(手動登入、通過驗證)。本次仍會嘗試。' % (prof['dir'], names))
     return pre
 
 def skip_stat(n, note):
@@ -563,7 +713,7 @@ def run_platform(plat, targets, session, results, lock, verbose=False, log=print
     - Cloudflare 挑戰頁連續 CF_MAX_STREAK 筆 → 略過其餘並印警告
     - Lofter 登入牆(blocked 且不是挑戰頁)→ cookie 過期,略過其餘(狀態 login_required,不算死)"""
     stat = {'checked': 0, 'blocked': False, 'skipped': 0, 'challenges': 0}
-    streak = 0
+    streak, hinted, prof = 0, False, _uses_profile(session, plat)
     for i, t in enumerate(targets):
         res = session.check(plat, t['url'])
         with lock:
@@ -580,10 +730,14 @@ def run_platform(plat, targets, session, results, lock, verbose=False, log=print
         if res.get('challenge'):
             stat['challenges'] += 1
             streak += 1
+            if prof and not hinted:
+                log('  ⚠️ [%s] %s(仍記 unknown,不改計數)' % (plat, cf_profile_hint(plat)))
+                hinted = True
             if streak >= CF_MAX_STREAK:
                 stat['blocked'], stat['skipped'] = True, len(targets) - stat['checked']
-                stat['note'] = 'Cloudflare 挑戰頁連續 %d 筆' % streak
-                log('  ⚠️ [%s] Cloudflare 挑戰頁連續 %d 筆 → 本次略過此平台其餘 %d 筆(請確認 WARP / VPN 已關、或改用 --headed 看看畫面)' % (plat, streak, stat['skipped']))
+                stat['note'] = 'Cloudflare 挑戰頁連續 %d 筆' % streak + (';' + cf_profile_hint(plat) if prof else '')
+                log('  ⚠️ [%s] Cloudflare 挑戰頁連續 %d 筆 → 本次略過此平台其餘 %d 筆(%s)' % (
+                    plat, streak, stat['skipped'], cf_profile_hint(plat) if prof else '請確認 WARP / VPN 已關、或改用 --headed 看看畫面'))
                 break
         else:
             streak = 0
@@ -595,6 +749,21 @@ def run_platform(plat, targets, session, results, lock, verbose=False, log=print
         if i < len(targets) - 1:
             sleep(random.uniform(*gap_for(plat)))
     return stat
+
+def _prepare(session, plat, log=print):
+    """開好該平台的瀏覽器;開不起來回略過原因字串(並印提示),成功回 ''。"""
+    f = getattr(session, 'prepare', None)
+    if not f:
+        return ''
+    try:
+        f(plat)
+        return ''
+    except Exception as e:
+        msg = str(e).splitlines()[0][:200] if str(e) else repr(e)
+        log('  ⚠️ [%s] 瀏覽器開不起來:%s' % (plat, msg))
+        if _uses_profile(session, plat):
+            log('     (固定設定檔要系統 Google Chrome;設定檔正被別的 Chrome 視窗使用時也會失敗,先把 --setup-profile 的視窗關掉)')
+        return '瀏覽器開不起來'
 
 def run_all(pre, by_plat, platforms, results, lock, verbose=False, log=print, headed=False, channel='', session=None):
     """在同一條執行緒上開瀏覽器、依序跑 platforms 裡可用的平台;不可用的回 skip_stat。回傳 {平台: stat}。"""
@@ -608,7 +777,7 @@ def run_all(pre, by_plat, platforms, results, lock, verbose=False, log=print, he
         return stats
     own = session is None
     if own:
-        session = BrowserSession(cookies=pre['cookies'], headed=headed, channel=channel, log=log)
+        session = BrowserSession(cookies=pre['cookies'], headed=headed, channel=channel, log=log, profile=pre.get('profile'))
         try:
             session.start()
         except Exception as e:
@@ -621,6 +790,10 @@ def run_all(pre, by_plat, platforms, results, lock, verbose=False, log=print, he
             ts = by_plat.get(p) or []
             if not ts:
                 stats[p] = {'checked': 0, 'blocked': False, 'skipped': 0, 'challenges': 0}
+                continue
+            err = _prepare(session, p, log)
+            if err:
+                stats[p] = skip_stat(len(ts), err)
                 continue
             stats[p] = run_platform(p, ts, session, results, lock, verbose, log)
     finally:
@@ -639,12 +812,16 @@ def probe(targets, state, platforms, pre, log=print, headed=False, channel='', s
         return
     own = session is None
     if own:
-        session = BrowserSession(cookies=pre['cookies'], headed=headed, channel=channel, log=log).start()
+        session = BrowserSession(cookies=pre['cookies'], headed=headed, channel=channel, log=log, profile=pre.get('profile')).start()
     try:
         for p in todo:
             samples = pick_probe_samples(targets, state, p)
             log('')
-            log('===== %s(%d 筆)=====' % (p, len(samples)))
+            log('===== %s(%d 筆%s)=====' % (p, len(samples), ',固定設定檔' if _uses_profile(session, p) else ''))
+            err = _prepare(session, p, log)
+            if err:
+                log('[%s] 略過:%s' % (p, err))
+                continue
             for label, url in samples:
                 t0 = time.time()
                 res = session.check(p, url)
@@ -660,6 +837,8 @@ def probe(targets, state, platforms, pre, log=print, headed=False, channel='', s
                 if res.get('down'):
                     log('    ⚠️ AO3 停機中，略過(其餘樣本本次不再打)')
                     break
+                if res.get('challenge') and _uses_profile(session, p):
+                    log('    ⚠️ %s' % cf_profile_hint(p))
                 session.sleep(random.uniform(*gap_for(p)))
     finally:
         if own:

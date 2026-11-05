@@ -12,7 +12,8 @@ import re
 from . import _http as H
 
 GONE_TEXT = ('story does not exist', 'story has been deleted', 'this story has been removed',
-             'story not found', 'page not found', 'the page you requested')
+             'story not found', 'page not found', 'the page you requested',
+             "the page you were looking for doesn't exist or has moved")   # 2026-11-05 站長用平常的 Chrome 實看的 404 頁
 LOGIN_TEXT = ('subscribers only', 'members only', 'log in to view', 'login to view', 'must be logged in')
 CF = ('Just a moment', '_cf_chl_opt', 'cf-chl', 'challenge-platform')
 
@@ -35,7 +36,7 @@ def parse(code, final, html, url=''):
     fp = H.path_of(final).rstrip('/')
     if '/story/view/' in H.path_of(url) and fp in ('', '/home'):
         return H.result('deleted', reason='redirect_home', code=code, final=final)
-    low = H.text_of(body[:300000]).lower()
+    low = H.text_of(body[:300000]).lower().replace('\u2019', "'")      # doesn’t → doesn't
     if any(k in low for k in GONE_TEXT):
         return H.result('deleted', reason='gone_text', code=code, final=final)
     if any(k in low for k in LOGIN_TEXT):
