@@ -30,6 +30,19 @@ def test_split_links_marks_dead_by_x():
     # ❌ 在連結文字前(舊版 notion_writeback)或後(站長手標「LFT-01-06❌」、新版寫回)都算失效,去掉後名稱相同
     assert B.split_links([['❌LFT-01-06', 'https://l']]) == B.split_links([['LFT-01-06❌', 'https://l']]) == [['LFT-01-06', 'https://l', 1]]
 
+def test_split_links_marks_dead_from_all_three_positions():
+    """站長手標(連結後純文字 ❌ → 標籤「LFT❌」)、舊格式(連結文字內「LFT❌」「❌ LFT」、連結前「❌LFT」)經 fetch_data.block_links
+    進來的標籤都含 ❌ → 一律失效,去掉 ❌ 後名稱還原;只剩 ❌ 的用網址當名稱。樣本:tests/fixtures/notion_rich_text.json。"""
+    import io, json, os
+    fx = json.load(io.open(os.path.join(os.path.dirname(__file__), '..', 'fixtures', 'notion_rich_text.json'), encoding='utf-8'))
+    for c in fx['cases']:
+        urls = [u for _, u in c['rich_text'] if u]
+        out = B.split_links([[c['label'], u] for u in urls])
+        assert [len(l) > 2 for l in out] == [any(c['marked'])] * len(urls), c['name']
+        assert all('❌' not in l[0] and l[0] for l in out), c['name']
+    assert B.split_links([['LFT❌', 'https://l']]) == B.split_links([['❌ LFT', 'https://l']]) == [['LFT', 'https://l', 1]]
+    assert B.split_links([['❌', 'https://l']]) == [['https://l', 'https://l', 1]]
+
 def test_split_links_dedupes_same_url_and_keeps_dead_state():
     # 同一篇底下網址相同只留一條(第一條的位置);任一條有 ❌ 就算失效
     out = B.split_links([['PT', 'https://p'], ['PT ❌', 'https://p'], ['LFT ❌', 'https://l'], ['LFT', 'https://l'], ['X', 'https://x']])

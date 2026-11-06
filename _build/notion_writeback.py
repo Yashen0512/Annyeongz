@@ -2,12 +2,16 @@
 """巡檢 ②:把 check_links.py 的結果寫回 Notion(資料的唯一源頭;網站下次 sync 自然更新)。
    預設 dry-run 只印將變更的清單,加 --go 才真的寫(與 notion_fill.py 的習慣一致)。只用標準庫。
 
-   死連結:更新該作品頁面內文裡那個連結 block 的 rich_text,把「❌」接在連結文字**結尾**(「LFT」→「LFT❌」,
-           與站長手標的習慣一致,例如 No.276 的「LFT-01-06❌」);復活就移除 ❌(連結文字本身、緊鄰前一段結尾、緊鄰後一段開頭,
-           前後兩種位置都認得、都拿掉;2026-11-06 以前本腳本是加在前面的)。「已標」的判定也前後都算(is_marked)。
-           這樣 build_site.py / check_links.py 既有的 dead 判定(連結名稱含 ❌ 就算,不分位置)自動接手,不用改判定邏輯。
-   --normalize-x:一次性整理,掃 article_links.json __blocks__ 記錄的所有連結 block,把連結前面(前一段結尾、或連結文字開頭)的 ❌
-           搬到連結文字結尾,印出改了幾筆;預設 dry-run、--go 才寫。bookmark / embed 的 caption 也比照(開頭的 ❌ 搬到結尾)。
+   死連結:更新該作品頁面內文裡那個連結 block 的 rich_text,在連結段**之後插入一段獨立的純文字「❌」**(不帶連結、連結文字維持原樣:
+           [LFT](url)❌,與站長手標的慣例一致;2026-11-06 以前本腳本先是插在連結前面、後來改寫進連結文字結尾「LFT❌」,都是舊格式);
+           復活就移除 ❌:連結後緊鄰的純文字 ❌,也相容兩種舊格式(連結文字內的、連結前緊鄰純文字段結尾的)都拿掉。
+           「已標」的判定(is_marked)三種位置都算。build_site.py / check_links.py 看的是 fetch_data.block_links 給的標籤
+           (整個 block 的文字),三種位置的 ❌ 都在裡面,所以既有的 dead 判定不用改。
+   --normalize-x:一次性整理,掃 article_links.json __blocks__ 記錄的所有連結 block,把所有舊格式(連結前的純文字 ❌、連結文字內的 ❌)
+           統一成「連結後緊鄰一個純文字 ❌」,連結文字還原成不含 ❌、一條連結只留一個 ❌;印出改了幾筆;預設 dry-run、--go 才寫。
+           bookmark / embed 的 caption 統一成結尾一段「❌」、只留一個。
+   --audit-x:只讀不寫,列出 ❌ 的異常:同一連結超過一個 ❌、❌ 在連結文字內、連結文字只剩 ❌(audit_marks / audit_caption),
+           給站長在 --normalize-x 之前 / 之後核對用。
            block 位置**只用** article_links.json 的 __blocks__(fetch_data.py 記錄),而且 block 的父頁面、網址都要對得上;
            對不上就跳過、附到 Issue 內文「需人工確認」段,絕不拿網址去別的頁面搜尋後亂寫(article_links.json 曾經把別篇的連結留在錯的 No 底下)。
    作者改名:作者庫該頁「作者名稱」title 改成新名字;「曾用名」multi_select(不存在就用 database update API 建立)
@@ -17,6 +21,7 @@
            新名字含標題片段(上- / 下- / 番外 / 第N章…)、或同一位作者報告裡有兩個以上不同新名字 → 不寫,附到 Issue「需人工確認」。
    用法:python notion_writeback.py [--go] [--report check_report.json] [--no 1352] [--limit N]
          python notion_writeback.py --normalize-x [--go] [--no 276,1352](不讀報告;只掃 __blocks__)
+         python notion_writeback.py --audit-x [--no 276,1352](只讀不寫;列出 ❌ 異常)
          token 來源同 fetch_data.py(NOTION_TOKEN → notion_token.txt → 交給代理)。"""
 import argparse, copy, io, json, os, re, sys, time
 
@@ -84,6 +89,38 @@ def _strip_lead(s):
 def _strip_trail(s):
     return _TRAIL.sub(lambda m: m.group(0).replace(DEAD_MARK, ''), s or '', count=1)
 
+def _count_lead(s):
+    """開頭連續段(只隔空白)裡有幾個 ❌。"""
+    m = _LEAD.match(s or '')
+    return m.group(0).count(DEAD_MARK) if m else 0
+
+def _count_trail(s):
+    m = _TRAIL.search(s or '')
+    return m.group(0).count(DEAD_MARK) if m else 0
+
+def _strip_all(s):
+    """拿掉文字裡所有 ❌;開頭 / 結尾那段連帶的空白也去掉(「❌ LFT」→「LFT」),中間的空白照舊。"""
+    s = s or ''
+    if _has_lead(s):
+        s = _strip_lead(s).lstrip()
+    if _has_trail(s):
+        s = _strip_trail(s).rstrip()
+    return s.replace(DEAD_MARK, '')
+
+def _dedupe_lead(s):
+    """開頭連續段裡只留第一個 ❌(空白照舊、其餘的 ❌ 拿掉)。"""
+    m = _LEAD.match(s or '')
+    if not m:
+        return s
+    keep, seen = [], False
+    for ch in m.group(0):
+        if ch == DEAD_MARK:
+            if seen:
+                continue
+            seen = True
+        keep.append(ch)
+    return ''.join(keep) + s[m.end():]
+
 def _plain_at(rts, j):
     """rts[j] 存在且是純文字段(沒有連結)才回傳它,否則 None。"""
     return rts[j] if 0 <= j < len(rts) and not _href(rts[j]) else None
@@ -95,33 +132,52 @@ def _editable(seg):
         return True
     return (seg.get('mention') or {}).get('type') not in ('page', 'database', 'user', 'date')
 
-def is_marked(rts, idx):
-    """這條連結已標 ❌:連結文字本身含 ❌(「LFT❌」「❌LFT」都算)、緊鄰前一段純文字的**結尾**是 ❌(舊寫法「❌」+ 連結)、
-    或緊鄰後一段純文字的**開頭**是 ❌(站長手標在連結後面)。前後兩種位置都算;鄰段中間的 ❌(例如屬於另一條連結的)不算。"""
-    if DEAD_MARK in _seg_text(rts[idx]):
-        return True
+def _prev_owned_by_link(rts, idx):
+    """緊鄰前一段純文字整段只有 ❌ / 空白、而它前面又是另一條連結([A](a)❌[B](b) 的 B):那個 ❌ 是 A 後面的(現行格式),不算 B 的。"""
+    prev = _plain_at(rts, idx - 1)
+    if prev is None or idx - 2 < 0 or not _href(rts[idx - 2]):
+        return False
+    s = _seg_text(prev)
+    m = _LEAD.match(s)
+    return bool(m and m.end() == len(s) and DEAD_MARK in s)
+
+def _mark_counts(rts, idx):
+    """這條連結三種位置各有幾個 ❌:(緊鄰前一段純文字結尾, 連結文字內, 緊鄰後一段純文字開頭);
+    前一段的 ❌ 若屬於再前一條連結(_prev_owned_by_link)就不算。"""
     prev, nxt = _plain_at(rts, idx - 1), _plain_at(rts, idx + 1)
-    return bool(prev and _has_trail(_seg_text(prev)) or nxt and _has_lead(_seg_text(nxt)))
+    return (_count_trail(_seg_text(prev)) if prev and not _prev_owned_by_link(rts, idx) else 0,
+            _seg_text(rts[idx]).count(DEAD_MARK),
+            _count_lead(_seg_text(nxt)) if nxt else 0)
+
+def is_marked(rts, idx):
+    """這條連結已標 ❌,三種位置都算:緊鄰後一段純文字的**開頭**是 ❌(站長手標慣例 [LFT](url)❌、本腳本現在的寫法)、
+    連結文字本身含 ❌(舊格式「LFT❌」「❌LFT」)、緊鄰前一段純文字的**結尾**是 ❌(更舊的寫法「❌」+ 連結)。
+    鄰段中間的 ❌(例如屬於另一條連結的)不算;[A](a)❌[B](b) 中間那個是 A 的、B 沒標。"""
+    return any(_mark_counts(rts, idx))
 
 def mark_dead(rts, idx):
-    """把「❌」接在連結文字結尾(「LFT」→「LFT❌」);已標過(不分位置)就原樣回傳。回傳 (新 rich_text, 是否有改)。"""
+    """在連結段之後插入一段獨立的純文字「❌」(不帶連結;連結文字維持原樣:[LFT](url)❌);已標過(不分位置)就原樣回傳。
+    回傳 (新 rich_text, 是否有改)。"""
     if is_marked(rts, idx):
         return rts, False
     out = copy.deepcopy(rts)
-    _set_seg_text(out[idx], _seg_text(out[idx]).rstrip() + DEAD_MARK)
+    out.insert(idx + 1, _plain_seg(DEAD_MARK))
     return out, True
 
 def unmark_dead(rts, idx, url=''):
-    """移除這條連結的 ❌:連結文字裡的全部、緊鄰前一段結尾的、緊鄰後一段開頭的(前後兩種位置都拿掉;鄰段被清空就整段拿掉)。
-    連結文字被清空時改用網址當文字(Notion 不收空的連結段)。回傳 (新 rich_text, 是否有改)。"""
+    """移除這條連結的 ❌:連結後緊鄰純文字開頭的(現行格式),也相容舊格式:連結文字裡的全部、緊鄰前一段結尾的
+    (鄰段被清空就整段拿掉;前一段的 ❌ 屬於再前一條連結的不動)。連結文字被清空時改用網址當文字(Notion 不收空的連結段)。
+    回傳 (新 rich_text, 是否有改)。"""
     out, changed, drop = copy.deepcopy(rts), False, set()
     s = _seg_text(out[idx])
     if DEAD_MARK in s:
-        s2 = s.replace(DEAD_MARK, '')
+        s2 = _strip_all(s)
         _set_seg_text(out[idx], s2 if s2.strip() else (url or _href(out[idx]) or s2))
         changed = True
     for j, strip, has in ((idx - 1, _strip_trail, _has_trail), (idx + 1, _strip_lead, _has_lead)):
         seg = _plain_at(out, j)
+        if j < idx and _prev_owned_by_link(out, idx):
+            continue
         if seg is not None and has(_seg_text(seg)):
             s2 = strip(_seg_text(seg))
             _set_seg_text(seg, s2)
@@ -131,34 +187,64 @@ def unmark_dead(rts, idx, url=''):
     return [seg for j, seg in enumerate(out) if j not in drop], changed
 
 def normalize_marks(rts):
-    """--normalize-x 用:把每條連結**前面**的 ❌(緊鄰前一段結尾的、或連結文字開頭的)搬到連結文字結尾;
-    結尾已經有(連結文字結尾或緊鄰後一段開頭)就只拿掉前面的、不重複加。從後往前處理,索引才不會被刪段影響。
-    回傳 (新 rich_text, 搬了幾條連結)。純函式。"""
+    """--normalize-x 用:把每條連結的 ❌ 統一成「連結後緊鄰一個純文字 ❌」:連結前(緊鄰前一段結尾)的、連結文字內的(任何位置)都拿掉,
+    連結文字還原成不含 ❌(只剩 ❌ 的用網址當文字),連結後已有的只留一個、沒有就插入一段「❌」。
+    已經是「後面剛好一個、其他位置沒有」的不動。有沒有標以**原本**的 rich_text 為準([A](a)❌[B](b) 中間那個是 A 的、B 不算,
+    所以統一後的結果再跑一次是 0 筆);從後往前處理,插入 / 清空的段用物件身分追蹤。
+    回傳 (新 rich_text, 改了幾條連結)。純函式。"""
     out, moved, drop = copy.deepcopy(rts), 0, set()
+    orig = {id(seg): _mark_counts(out, i) for i, seg in enumerate(out) if _href(seg)}
     for i in range(len(out) - 1, -1, -1):
         seg = out[i]
         if not _href(seg) or not _editable(seg):
             continue
-        s = _seg_text(seg)
-        prev = _plain_at(out, i - 1)
-        lead_self, lead_prev = _has_lead(s), bool(prev and _has_trail(_seg_text(prev)))
-        if not (lead_self or lead_prev):
+        n_prev, n_in, _ = orig[id(seg)]
+        if not any(orig[id(seg)]):
             continue
-        if lead_self:
-            s = _strip_lead(s).lstrip()
-        if lead_prev:
+        changed = False
+        prev = _plain_at(out, i - 1)
+        if n_prev and prev is not None and _has_trail(_seg_text(prev)):
             p2 = _strip_trail(_seg_text(prev))
             _set_seg_text(prev, p2)
             if p2.strip() == '':
-                drop.add(i - 1)
-        if not s.strip():                  # 連結文字只有 ❌ → 用網址當文字
-            s = _href(seg)
+                drop.add(id(prev))
+            changed = True
+        if n_in:
+            s2 = _strip_all(_seg_text(seg))
+            _set_seg_text(seg, s2 if s2.strip() else _href(seg))
+            changed = True
         nxt = _plain_at(out, i + 1)
-        if not (_has_trail(s) or nxt and _has_lead(_seg_text(nxt))):
-            s = s.rstrip() + DEAD_MARK
-        _set_seg_text(seg, s)
-        moved += 1
-    return [seg for j, seg in enumerate(out) if j not in drop], moved
+        live_next = _count_lead(_seg_text(nxt)) if nxt is not None else 0
+        if live_next > 1:
+            _set_seg_text(nxt, _dedupe_lead(_seg_text(nxt)))
+            changed = True
+        elif live_next == 0:
+            out.insert(i + 1, _plain_seg(DEAD_MARK))
+            changed = True
+        if changed:
+            moved += 1
+    return [seg for seg in out if id(seg) not in drop], moved
+
+AUDIT_KINDS = (('multi', '同一連結超過一個 ❌'), ('inside', '❌ 在連結文字內'), ('only_x', '連結文字只剩 ❌'))
+
+def audit_marks(rts):
+    """--audit-x 用:這段 rich_text 裡每條連結的 ❌ 異常 → [{kind, url, text, count}, ...];kind 見 AUDIT_KINDS
+    (multi = 三種位置加起來超過一個;inside = 連結文字內有 ❌;only_x = 連結文字去掉 ❌ 與空白後是空的)。純函式、不改資料。"""
+    found = []
+    for i, seg in enumerate(rts or []):
+        if not _href(seg):
+            continue
+        s = _seg_text(seg)
+        n = sum(_mark_counts(rts, i))
+        kinds = []
+        if n > 1:
+            kinds.append('multi')
+        if DEAD_MARK in s:
+            kinds.append('inside')
+            if not s.replace(DEAD_MARK, '').strip():
+                kinds.append('only_x')
+        found.extend({'kind': k, 'url': _href(seg), 'text': s, 'count': n} for k in kinds)
+    return found
 
 # bookmark / embed 沒有 rich_text,❌ 放在 caption(整段文字就是連結名稱)
 def caption_marked(rts):
@@ -185,17 +271,19 @@ def unmark_caption(rts):
     return out, changed
 
 def normalize_caption(rts):
-    """caption 開頭的 ❌ 搬到結尾(結尾已有就只拿掉開頭的)。回傳 (新 caption, 0 或 1)。"""
-    if not rts or not _has_lead(_seg_text(rts[0])):
+    """caption 裡的 ❌ 統一成結尾一段獨立的「❌」、只留一個(其餘位置的拿掉,清空的段整段拿掉)。回傳 (新 caption, 0 或 1)。"""
+    if not caption_marked(rts):
         return rts, 0
-    out = copy.deepcopy(rts)
-    s = _strip_lead(_seg_text(out[0])).lstrip()
-    _set_seg_text(out[0], s)
-    if s.strip() == '':
-        out.pop(0)
-    if not (out and _has_trail(_seg_text(out[-1]))):
-        out.append(_plain_seg(DEAD_MARK))
+    out, _ = unmark_caption(rts)
+    out.append(_plain_seg(DEAD_MARK))
+    if [_seg_text(x) for x in out] == [_seg_text(x) for x in rts]:
+        return rts, 0
     return out, 1
+
+def audit_caption(rts):
+    """--audit-x 用:caption 裡超過一個 ❌ → [{kind:'multi', …}];bookmark / embed 沒有連結文字,其他兩種異常不適用。"""
+    n = sum(_seg_text(x).count(DEAD_MARK) for x in rts or [])
+    return [{'kind': 'multi', 'url': '', 'text': ''.join(_seg_text(x) for x in rts or []), 'count': n}] if n > 1 else []
 
 def to_api_rich_text(rts):
     """GET 回來的 rich_text → 可以 PATCH 回去的格式(拿掉唯讀欄位 plain_text / href)。"""
@@ -379,18 +467,22 @@ def apply_rename(r, has_alias_prop, go):
         print('   ⚠️ 改名寫入失敗:%s' % e)
         return 'fail'
 
-def normalize_all(blocks, go, only=None, sleep=lambda s: None):
-    """--normalize-x:掃 article_links.json __blocks__ 記錄的每個連結 block(同一 block 只讀一次),
-    把連結前面的 ❌ 搬到連結文字結尾(normalize_marks / normalize_caption);go=False 只印。
-    回傳 {'blocks': 看過的 block 數, 'changed': 改了的 block 數, 'links': 搬了的連結數, 'fail': 讀 / 寫失敗數}。"""
-    order = []   # [(no, block_id)],依編號、不重複
-    seen = set()
+def recorded_blocks(blocks, only=None):
+    """article_links.json __blocks__ → [(no, block_id)]:依編號、同一 block 只列一次(--normalize-x / --audit-x 共用)。"""
+    order, seen = [], set()
     for no in sorted((n for n in blocks if not n.startswith('__')), key=lambda n: (len(n), n)):
         if only and no not in only:
             continue
         for url, pos in ((blocks.get(no) or {}).get('links') or {}).items():
             if pos and pos[0] not in seen:
                 seen.add(pos[0]); order.append((no, pos[0]))
+    return order
+
+def normalize_all(blocks, go, only=None, sleep=lambda s: None):
+    """--normalize-x:掃 article_links.json __blocks__ 記錄的每個連結 block(同一 block 只讀一次),
+    把每條連結的 ❌ 統一成「連結後緊鄰一個純文字 ❌」(normalize_marks / normalize_caption);go=False 只印。
+    回傳 {'blocks': 看過的 block 數, 'changed': 改了的 block 數, 'links': 改了的連結數, 'fail': 讀 / 寫失敗數}。"""
+    order = recorded_blocks(blocks, only)
     tally = {'blocks': 0, 'changed': 0, 'links': 0, 'fail': 0}
     print('--normalize-x:%s;%d 個 block 要看' % ('寫入 Notion(--go)' if go else 'dry-run(只印;加 --go 才寫)', len(order)))
     for k, (no, bid) in enumerate(order, 1):
@@ -415,15 +507,40 @@ def normalize_all(blocks, go, only=None, sleep=lambda s: None):
                 print('   ⚠️ 寫入失敗:No.%s block %s:%s' % (no, bid, e)); tally['fail'] += 1; continue
         tally['changed'] += 1; tally['links'] += n
         sleep(0.34)
-    print('完成:%s %d 個 block(%d 條連結的 ❌ 搬到結尾),看過 %d 個 block,失敗 %d'
+    print('完成:%s %d 個 block(%d 條連結的 ❌ 統一成連結後一個純文字 ❌),看過 %d 個 block,失敗 %d'
           % ('已改' if go else '將改', tally['changed'], tally['links'], tally['blocks'], tally['fail']))
+    return tally
+
+def audit_all(blocks, only=None):
+    """--audit-x:只讀不寫。掃 __blocks__ 記錄的每個連結 block,列出 ❌ 異常(audit_marks / audit_caption),最後依種類統計。
+    回傳 {'blocks': 看過的 block 數, 'issues': 異常筆數, 'fail': 讀失敗數, 'by_kind': {kind: 筆數}}。"""
+    order = recorded_blocks(blocks, only)
+    labels = dict(AUDIT_KINDS)
+    tally = {'blocks': 0, 'issues': 0, 'fail': 0, 'by_kind': {k: 0 for k, _ in AUDIT_KINDS}}
+    print('--audit-x:只讀不寫;%d 個 block 要看(%s)' % (len(order), ' / '.join(v for _, v in AUDIT_KINDS)))
+    for no, bid in order:
+        try:
+            blk = get_block(bid)
+        except Exception as e:
+            print('   ⚠️ No.%s block %s 讀不到:%s' % (no, bid, e)); tally['fail'] += 1; continue
+        tally['blocks'] += 1
+        if blk.get('archived') or blk.get('in_trash'):
+            continue
+        field, rts = rich_text_of(blk)
+        for x in (audit_caption(rts) if field == 'caption' else audit_marks(rts)):
+            tally['issues'] += 1; tally['by_kind'][x['kind']] += 1
+            print('   ⚠️ No.%s %s:「%s」%s(❌ ×%d;block %s)' % (
+                no, labels[x['kind']], ''.join(_seg_text(s) for s in rts), (' ' + x['url']) if x['url'] else '', x['count'], bid))
+    print('完成:看過 %d 個 block,異常 %d 筆(%s),讀不到 %d' % (
+        tally['blocks'], tally['issues'], '、'.join('%s %d' % (labels[k], tally['by_kind'][k]) for k, _ in AUDIT_KINDS), tally['fail']))
     return tally
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description='把巡檢結果寫回 Notion(預設 dry-run)')
     ap.add_argument('--go', action='store_true', help='真的寫入 Notion(不加 = 只印清單)')
-    ap.add_argument('--normalize-x', action='store_true', help='一次性整理:掃所有連結 block,把連結前面的 ❌ 搬到連結文字結尾(不讀報告)')
-    ap.add_argument('--links', default='article_links.json', help='--normalize-x 讀的 article_links.json(用它的 __blocks__)')
+    ap.add_argument('--normalize-x', action='store_true', help='一次性整理:掃所有連結 block,把舊格式的 ❌ 統一成連結後一個純文字 ❌(不讀報告)')
+    ap.add_argument('--audit-x', action='store_true', help='只讀不寫:列出 ❌ 異常(同一連結超過一個 / 在連結文字內 / 連結文字只剩 ❌)')
+    ap.add_argument('--links', default='article_links.json', help='--normalize-x / --audit-x 讀的 article_links.json(用它的 __blocks__)')
     ap.add_argument('--report', default='check_report.json')
     ap.add_argument('--no', default='', help='只處理這些編號(逗號分隔;測試用)')
     ap.add_argument('--exclude', default='', help='跳過這些編號的 ❌ 標記 / 移除(逗號分隔;誤判時用。作者改名是作者層級,不受影響)')
@@ -431,11 +548,13 @@ def main(argv=None):
     ap.add_argument('--skip-renames', action='store_true')
     args = ap.parse_args(argv)
     only = set(x.strip() for x in args.no.split(',') if x.strip())
-    if args.normalize_x:
+    if args.normalize_x or args.audit_x:
         try:
             blocks = json.load(io.open(args.links, encoding='utf-8')).get('__blocks__') or {}
         except Exception as e:
             raise SystemExit('讀不到 %s(先跑 fetch_data.py):%s' % (args.links, e))
+        if args.audit_x:
+            return audit_all(blocks, only)
         return normalize_all(blocks, args.go, only, sleep=time.sleep)
     try:
         rep = json.load(io.open(args.report, encoding='utf-8'))
