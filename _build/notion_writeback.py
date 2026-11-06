@@ -280,6 +280,7 @@ def main(argv=None):
     ap.add_argument('--go', action='store_true', help='真的寫入 Notion(不加 = 只印清單)')
     ap.add_argument('--report', default='check_report.json')
     ap.add_argument('--no', default='', help='只處理這些編號(逗號分隔;測試用)')
+    ap.add_argument('--exclude', default='', help='跳過這些編號的 ❌ 標記 / 移除(逗號分隔;誤判時用。作者改名是作者層級,不受影響)')
     ap.add_argument('--limit', type=int, default=0, help='死 / 復活各最多處理幾筆(測試用)')
     ap.add_argument('--skip-renames', action='store_true')
     args = ap.parse_args(argv)
@@ -288,11 +289,15 @@ def main(argv=None):
     except Exception as e:
         raise SystemExit('讀不到 %s(先跑 check_links.py):%s' % (args.report, e))
     only = set(x.strip() for x in args.no.split(',') if x.strip())
-    pick = lambda lst: [x for x in lst if not only or x['no'] in only][:args.limit or None]
+    exclude = set(x.strip() for x in args.exclude.split(',') if x.strip())
+    pick = lambda lst: [x for x in lst if (not only or x['no'] in only) and x['no'] not in exclude][:args.limit or None]
     dead, revived = pick(rep.get('new_dead', [])), pick(rep.get('revived', []))
     renames = [] if args.skip_renames or only else rep.get('renames', [])
     mode = '寫入 Notion(--go)' if args.go else 'dry-run(只印清單;加 --go 才寫)'
     print('notion_writeback %s:%s' % (rep.get('date', ''), mode))
+    skipped = [x['no'] for lst in (rep.get('new_dead', []), rep.get('revived', [])) for x in lst if x['no'] in exclude]
+    if skipped:
+        print('— --exclude 跳過 %d 筆:No.%s' % (len(skipped), '、'.join(skipped)))
     if not (dead or revived or renames):
         print('沒有要寫回的變更。')
         return {'done': 0, 'skip': 0, 'fail': 0}

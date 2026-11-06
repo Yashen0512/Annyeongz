@@ -165,6 +165,34 @@ def test_lofter_blog_name_prefers_header_over_title_dash():
     assert lofter.header_names(html, 'www.lofter.com') == []
     assert lofter.title_suffix('雨季 - 上-一只大鹅') == '一只大鹅' and lofter.title_suffix('沒有連字號') == ''
 
+def test_lofter_post_with_notfound_title_is_ok():
+    """2026-11-06 誤判:No.1347 篇名《페이지를 찾을 수 없습니다(找不到頁面)》、內文又寫了 404 / 页面不存在,但它是 HTTP 200 的正常文章。"""
+    html = load('lofter_post_notfound_title.html')
+    assert lofter.has_post(html, 'testblog.lofter.com') and not lofter.is_error_page(html, 'testblog.lofter.com')
+    r = lofter.parse(200, LF, html, LF)
+    assert r['status'] == 'ok' and r['reason'] == '200' and r['author_name'] == '測試博客'
+    # 篇名就叫「404 Not Found」的正常文章也一樣 ok(有文章結構就不看標題)
+    t404 = html.replace('페이지를 찾을 수 없습니다(找不到頁面)-測試博客', '404 Not Found-測試博客')
+    assert lofter.parse(200, LF, t404, LF)['status'] == 'ok'
+    # 同樣的內文字樣、但沒有任何文章結構(只剩錯誤模板)→ 才是 gone_text
+    bare = '<html><head><title>LOFTER</title></head><body><p>哎呀，页面走丢了...</p><p>页面不存在</p></body></html>'
+    assert not lofter.has_post(bare, 'testblog.lofter.com') and lofter.is_error_page(bare, 'testblog.lofter.com')
+    assert lofter.parse(200, LF, bare, LF)['reason'] == 'gone_text'
+
+def test_lofter_error_page_structure():
+    """錯誤頁的判定看結構:<title> 整個是「404 Not Found」(真 404 頁)、或沒有文章結構且內文有 GONE_TEXT;現有兩個錯誤頁樣本都要認得。"""
+    for f in ('lofter_404.html', 'lofter_gone.html'):
+        assert lofter.is_error_page(load(f), 'testblog.lofter.com') and not lofter.has_post(load(f), 'testblog.lofter.com'), f
+    assert lofter.ERROR_TITLE_RE.match('404 Not Found') and not lofter.ERROR_TITLE_RE.match('404 Not Found-測試博客')
+    # 現有的正常樣本都有文章結構;只剩標題、沒有關鍵字的頁面不是錯誤頁(維持 ok)
+    for f in ('lofter_ok.html', 'lofter_post_js.html', 'lofter_post_header.html'):
+        assert lofter.has_post(load(f), 'testblog.lofter.com'), f
+    assert not lofter.is_error_page('<html><head><title>某主題</title></head><body><p>內文</p></body></html>', 'testblog.lofter.com')
+    # header 有博客名、<title> 是「文章標題-博客名」也算文章結構;只有博客名(首頁)不算
+    hdr = '<html><head><title>文章-某博客</title></head><body><a href="//testblog.lofter.com/">某博客</a></body></html>'
+    assert lofter.has_post(hdr, 'testblog.lofter.com')
+    assert not lofter.has_post(hdr.replace('<title>文章-某博客</title>', '<title>某博客</title>'), 'testblog.lofter.com')
+
 def test_lofter_collection_rules():
     C = 'https://www.lofter.com/front/blog/collection/share?collectionId=22232844&incantation=hjTWr10sOl21'
     assert lofter.is_collection(C) and not lofter.is_collection(LF)

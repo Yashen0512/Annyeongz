@@ -101,6 +101,29 @@ def advance(entry, res, today):
         e['extra'] = res['extra']      # 瀏覽器模式解析到的附加資訊(AO3 章節進度 / 完結);先記錄、不寫回 Notion
     return e
 
+def reset_entry(entry, today, reason='reset'):
+    """站長手動重設一個連結的狀態(check_links.py --reset-link <網址>):status 回 ok、streak 歸零、dead 解除、
+    dead_since / counted 清掉,其餘欄位(author_name、platform、first、extra…)保留。回傳新的 entry(不改原物件)。
+    之後巡檢再看到 deleted 會從 streak 1 重新數,連續兩天才會再死。"""
+    e = dict(entry or {})
+    e['status'], e['streak'], e['dead'] = 'ok', 0, False
+    e['last'], e['reason'] = today, reason
+    e.setdefault('first', today)
+    for k in ('dead_since', 'counted'):
+        e.pop(k, None)
+    return e
+
+def reset_links(state, urls, today):
+    """把 urls 裡每個網址在 state(不含 __meta__)的紀錄重設(reset_entry);不在 state 的略過。回傳 (重設的網址, 找不到的網址)。"""
+    done, missing = [], []
+    for u in urls:
+        if u in state:
+            state[u] = reset_entry(state[u], today)
+            done.append(u)
+        else:
+            missing.append(u)
+    return done, missing
+
 def events_for(entry, marked, today):
     """這個連結今天該產生什麼事件:'new_dead'(該標 ❌ 但 Notion 還沒標)、'revived'(Notion 有 ❌ 但今天看到 ok)。"""
     if not entry:
@@ -456,6 +479,30 @@ def report_markdown(rep):
 
 # ---------- 主流程 ----------
 
+def write_state(state_path, state, meta):
+    """link_status.json 的寫法(__meta__ 在最前面、其餘依網址排序),main 與 --reset-link 共用。"""
+    out = OrderedDict([('__meta__', meta)])
+    for url in sorted(state):
+        out[url] = state[url]
+    io.open(state_path, 'w', encoding='utf-8').write(json.dumps(out, ensure_ascii=False, indent=0, sort_keys=False))
+
+def reset_links_cli(state_path, urls, today=None):
+    """--reset-link:讀 link_status.json、重設指定網址、寫回。找不到任何一個網址 → 不寫檔、回傳 1;否則 0。"""
+    today = today or today_str()
+    state = load_json(state_path, {})
+    if not state:
+        print('讀不到 %s' % state_path)
+        return 1
+    meta = state.pop('__meta__', {})
+    done, missing = reset_links(state, urls, today)
+    for u in missing:
+        print('⚠️ link_status.json 裡沒有這個連結,略過:%s' % u)
+    if done:
+        write_state(state_path, state, meta)
+        for u in done:
+            print('✅ 已重設為 ok(streak 0、dead 解除):%s' % u)
+    return 0 if done else 1
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description='原文連結巡檢(不寫 Notion)')
     ap.add_argument('--platforms', default='postype,lofter,ao3,aff', help='要檢查的平台,逗號分隔')
@@ -473,9 +520,13 @@ def main(argv=None):
     ap.add_argument('--no-profile', action='store_true', help='搭配 --browser:不用固定設定檔(AFF 也走一般的無頭瀏覽器)')
     ap.add_argument('--profile-headless', action='store_true', help='搭配 --browser:固定設定檔改用無頭模式(預設有頭,無頭容易被 Cloudflare 認出來)')
     ap.add_argument('--setup-profile', action='store_true', help='開有頭 Chrome 到 AFF 首頁,手動登入、通過驗證後按 Enter 存成固定設定檔,然後結束')
+    ap.add_argument('--reset-link', action='append', default=[], metavar='網址',
+                    help='把這個連結在 link_status.json 的狀態重設為 ok、streak 歸零、解除 dead(可重複給多個),然後結束、不巡檢;誤判時用')
     args = ap.parse_args(argv)
     if args.probe and not args.browser:
         ap.error('--probe 要搭配 --browser')
+    if args.reset_link:
+        return reset_links_cli(os.path.join(args.src, args.state), args.reset_link)
     if args.setup_profile:
         import browser_checker as BC
         ok = BC.setup_profile(args.src, channel=args.browser_channel)
@@ -542,11 +593,8 @@ def main(argv=None):
         state[url]['platform'] = checkers.platform_of(url)
     rep = build_report(today, targets, results, state, articles, people, plat_stats)
 
-    out = OrderedDict([('__meta__', {'updated': rep['generated'], 'date': today, 'platforms': plat_stats,
-                                     'runs': int(meta.get('runs', 0)) + 1})])
-    for url in sorted(state):
-        out[url] = state[url]
-    io.open(state_path, 'w', encoding='utf-8').write(json.dumps(out, ensure_ascii=False, indent=0, sort_keys=False))
+    write_state(state_path, state, {'updated': rep['generated'], 'date': today, 'platforms': plat_stats,
+                                    'runs': int(meta.get('runs', 0)) + 1})
     io.open(os.path.join(args.src, args.report), 'w', encoding='utf-8').write(json.dumps(rep, ensure_ascii=False, indent=1))
     md_path = os.path.join(args.src, REPORT_MD)
     if rep['has_changes']:

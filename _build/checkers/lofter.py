@@ -5,7 +5,10 @@
    以下規則依已知行為寫成、尚未實測,站長在能看到 Lofter 的網路環境執行時才會用到:
    - 404 → deleted
    - 原網址是 /post/…,最終網址被導回該部落格首頁(路徑 /)或 www.lofter.com 首頁 → deleted(刪文常見導向)
-   - 200 且內文含「页面不存在」「该页面不存在」「博客不存在」「内容已删除」「页面走丢了」等 → deleted(真的 404 頁標題是「404 Not Found」,2026-11-04 瀏覽器實測)
+   - 200 且**頁面結構是 Lofter 的錯誤頁**(is_error_page)→ deleted(reason gone_text):<title> 是「404 Not Found」(2026-11-04 瀏覽器實測的真 404 頁),
+     或頁面沒有文章結構、只剩錯誤模板且內文含「页面不存在」「该页面不存在」「博客不存在」「内容已删除」「页面走丢了」等(GONE_TEXT)。
+     **只要頁面有正常的文章結構(has_post:博客名 header、文章容器 / og:title、發文日期)就一律 ok,不管標題或內文寫什麼**
+     — 2026-11-06 誤判:No.1347 篇名是《페이지를 찾을 수 없습니다(找不到頁面)》,HTTP 200 的正常文章,舊版只看內文關鍵字就判成 gone_text。
    - 最終網址是 www.lofter.com/front/login 或頁面是登入表單 → login_required
    - 其餘 200 → ok;author_name 見 blog_name()
    - **合集分享頁**(www.lofter.com/front/blog/collection/share?collectionId=…,is_collection)規則跟文章頁不同:
@@ -24,8 +27,13 @@ import re
 from . import _http as H
 
 GONE_TEXT = ('该页面不存在', '頁面不存在', '页面不存在', '博客不存在', '内容已删除', '该内容已被删除', '抱歉，你访问的页面',
-             '页面走丢了', '页面已被移除', '链接可能已损毁')     # 後三個:2026-11-04 瀏覽器實測的 404 頁「哎呀，页面走丢了...」「你查找的链接可能已损毁，或页面已被移除」
+             '页面走丢了', '页面已被移除', '链接可能已损毁',     # 這三個:2026-11-04 瀏覽器實測的 404 頁「哎呀，页面走丢了...」「你查找的链接可能已损毁，或页面已被移除」
+             '文章不存在', '该文章不存在', '该文章已被删除', '内容不存在')   # 原本只在 browser_checker 用;錯誤頁的判斷統一在 is_error_page
+ERROR_TITLE_RE = re.compile(r'^\s*404\s+not\s+found\s*$', re.I)       # 真 404 頁的 <title>(整個標題就是它,沒有「-博客名」)
 LOGIN_PATH = '/front/login'
+# 文章頁的結構(任一命中 = 這是一篇還在的文章):Lofter 各主題的文章容器 / 標題 / 內文 class、發文日期元素、og:title
+POST_CLASS_RE = re.compile(r'class=["\'][^"\']*\b(?:m-post|post|posts|postwrap|txtcont|ttl|m-article|article|entry|postbody|post-body|post-title)\b', re.I)
+POST_DATE_RE = re.compile(r'(?:<time\b[^>]*>|datetime\s*=\s*["\']|class=["\'][^"\']*\b(?:date|time|pubtime|publishtime|post-date|posttime)\b)', re.I)
 
 COLLECTION_GONE = ('合集不存在', '该合集不存在', '該合集不存在', '合集已被删除', '合集已删除', '该合集已被删除',
                    '合集已被刪除', '合集已刪除', '合集已失效')
@@ -85,6 +93,31 @@ def blog_name(html, host=''):
 def _blog_name(html, host=''):
     return blog_name(html, host)[0]
 
+def has_post(html, host=''):
+    """頁面有沒有正常文章頁的結構:文章容器 / 標題 / 內文 class、發文日期元素、og:title,
+    或 header 有博客名且 <title> 是「文章標題-博客名」。有 = 文章還在,標題 / 內文寫什麼都不算錯誤頁。
+    Lofter 真的錯誤頁(404 Not Found / 「页面走丢了」)只有錯誤模板:沒有這些。"""
+    h = html or ''
+    if POST_CLASS_RE.search(h) or POST_DATE_RE.search(h) or H.meta(h, 'og:title'):
+        return True
+    title = H.title_of(h)
+    for n in header_names(h, host):
+        for d in DASHES:
+            if title.endswith(d + n) and title[:-len(d + n)].strip():
+                return True
+    return False
+
+def is_error_page(html, host=''):
+    """HTTP 200 的頁面是不是 Lofter 的錯誤頁(文已刪):先看結構,有文章結構一律 False;
+    沒有的話 <title> 是「404 Not Found」、或內文含 GONE_TEXT 的字樣 → True。只看關鍵字會把篇名 /
+    內文剛好寫「找不到頁面」「404」的正常文章誤判(No.1347)。"""
+    if has_post(html, host):
+        return False
+    if ERROR_TITLE_RE.match(H.title_of(html)):
+        return True
+    txt = H.text_of((html or '')[:200000])
+    return any(k in txt for k in GONE_TEXT)
+
 def classify_collection(code, final, html, url=''):
     """合集頁:只有頁面明講合集不存在才算 deleted;404 狀態碼本身不算(實測還在的合集也會回 404)。"""
     txt = H.text_of((html or '')[:200000])
@@ -114,9 +147,9 @@ def parse(code, final, html, url=''):
         return H.result('unknown', reason='http_%s' % code, code=code, final=final)
     if '/post/' in H.path_of(url) and (fp in ('', '/') or fh in ('www.lofter.com', 'lofter.com')):
         return H.result('deleted', reason='redirect_home', code=code, final=final)
-    txt = H.text_of(html[:200000])
-    if any(k in txt for k in GONE_TEXT):
+    if is_error_page(html, fh):          # 200 但頁面是錯誤模板(沒有文章結構);有文章結構的不管內文寫什麼都往下走 ok
         return H.result('deleted', reason='gone_text', code=code, final=final)
+    txt = H.text_of(html[:200000])
     if re.search(r'(登录|登錄)\s*LOFTER', txt) and 'post' not in H.path_of(final):
         return H.result('login_required', reason='login_form', code=code, final=final)
     name, src = blog_name(html, fh)

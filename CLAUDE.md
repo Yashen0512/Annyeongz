@@ -303,6 +303,9 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
   `{status, streak, last, counted, dead, dead_since, author_name, platform, …}`),commit 進 repo。
   輸出 `check_report.json`(新死 / 復活 / 改名 / 改名候選 / 作者頁失效 / 各平台統計)與有變更時的 `check_report.md`(Issue 內文)。
   報告以「該是什麼狀態」為準:**新死 = dead 且 Notion 連結名稱還沒有 ❌;復活 = Notion 有 ❌ 但今天看到 ok**,所以寫回失敗隔天會再列。
+- **誤判的善後**:`python check_links.py --reset-link <網址>`(可重複給多個)把該連結在 `link_status.json` 的紀錄重設為 `ok`、`streak` 0、解除 `dead`
+  (`reset_entry` 純函式;其餘欄位保留,`__meta__` 不動,然後結束、不巡檢);`python notion_writeback.py --go --exclude 1347,20` 寫回時跳過這些編號的 ❌ 標記 / 移除
+  (作者改名是作者層級,不受 `--exclude` 影響)。
 - **`notion_writeback.py`**:預設 dry-run 只印清單,`--go` 才寫。
   - 死連結:用 `article_links.json` 的 `__blocks__`(`{No: {page: 頁面ID, links: {網址: [blockID, rich_text 位置]}}}`,
     `fetch_data.py` 記錄)找到該連結的 block,在連結文字**前**插入一段純文字「❌」;復活就把連結段落與緊鄰前後純文字段裡的 ❌
@@ -367,7 +370,11 @@ Lofter(1300 多筆,最大平台)、AO3、Asianfanfics 用 urllib 從任何 IP �
   - Lofter **合集分享頁**(`www.lofter.com/front/blog/collection/share?collectionId=…`,`is_collection`)規則跟文章頁不同:
     JS 單頁,實測還在的合集也會回 HTTP 404 → **404 狀態碼只算 `unknown`(`collection_404`)**,只有頁面寫「合集不存在 / 已被删除」(`COLLECTION_GONE`)才是 `deleted`;
     合集頁的 `<title>` 是合集名,`author_name` 一律 None。`--probe` 有合集連結時會多抓一筆合集。
-  - Lofter:404(真的 404 頁:`<title>404 Not Found`、「哎呀，页面走丢了...」「你查找的链接可能已损毁，或页面已被移除」)/ 頁面「页面不存在」→ `deleted`;
+  - Lofter:HTTP 404 → `deleted`;**200 只在「頁面結構是 Lofter 的錯誤頁」才算 `gone_text`**(`checkers/lofter.py` `is_error_page`:`<title>` 整個是「404 Not Found」,
+    或頁面**沒有文章結構**且內文有「页面不存在 / 哎呀，页面走丢了... / 你查找的链接可能已损毁，或页面已被移除」等 `GONE_TEXT` 字樣)。
+    **有正常文章結構(`has_post`:文章容器 / og:title / 發文日期、或 header 博客名 + `<title>`「文章標題-博客名」)一律 `ok`,不看標題與內文的關鍵字**
+    (2026-11-06 誤判:No.1347 篇名《페이지를 찾을 수 없습니다(找不到頁面)》、HTTP 200 的正常文章,舊版只看關鍵字與「`<title>` 含 404」就判死;樣本 `lofter_post_notfound_title.html`);
+    urllib 的 `checkers/lofter.py` 與瀏覽器的 `browser_checker` 都走同一個 `is_error_page`;
     整個部落格打不開(子網域 DNS 不存在 / 連線被拒,且 `www.lofter.com` 連得上)、首頁 404 或頁面「博客不存在」→ `deleted`(reason `blog_gone`;
     某篇 404 時會再看一次部落格首頁,首頁也 404 就改成 `blog_gone`);導到登入頁 → `login_required`(blocked);其餘 200 → `ok`,作者名取 og:site_name / `<title>`。
   - AO3:自動加 `?view_adult=true`;**全站停機**(狀態碼 418、`<title>` 含「Request temporarily denied」、或內文「down for maintenance」;
@@ -539,7 +546,7 @@ npm test                          # vitest run:tests/filter.test.js、sort.test.
 pip install -r requirements-dev.txt   # 只需一次(pytest + Pillow)
 python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆分與 ID、日期、精簡格式 round-trip、sw 版本號、水印 / _origin / canary 埋入、30 篇 fixture 完整建置比對)、fetch_data(No 三種型別、token 來源)、canary(hash / 挑選 / 比對 / CLI)、
                                   #          build_pages(描述 / 標題折行 / 字型回退 / sitemap / RSS、30 篇產頁與 hash 跳過重產)
-                                  #          checkers(各平台 HTML 樣本)、check_links(連續兩天狀態機、到期、改名判斷、平台被擋短路、重試)、notion_writeback(❌ 加 / 移除、PATCH 格式、曾用名合併)、build_site 曾用名、fetch_data block 位置與 merge_links 清舊標題、notion_writeback 只信記錄的 block、collect_targets 略過舊標題、
+                                  #          checkers(各平台 HTML 樣本;Lofter 錯誤頁看結構、篇名「找不到頁面」的正常文章是 ok)、check_links(連續兩天狀態機、到期、改名判斷、平台被擋短路、重試、--reset-link)、notion_writeback(❌ 加 / 移除、PATCH 格式、曾用名合併、--exclude)、build_site 曾用名、fetch_data block 位置與 merge_links 清舊標題、notion_writeback 只信記錄的 block、collect_targets 略過舊標題、
                                   #          browser_checker(classify 各平台合成樣本、AO3 章節進度、cookie 三種格式與到期、WARP、--probe 樣本挑選、挑戰頁連續 5 筆 / 登入牆短路、preflight、--browser / --probe 接進 main、
                                   #          固定設定檔與反偵測的啟動參數(假 Playwright)、--setup-profile、設定檔被擋提示、--profile / --no-profile 接線、
                                   #          --no-sandbox 只在 Linux、Lofter 博客名來源與首頁退路、合集頁判定)

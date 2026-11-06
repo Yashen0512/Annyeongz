@@ -35,6 +35,18 @@ def test_lofter_404_and_gone_text_are_deleted():
     assert r['status'] == 'deleted' and r['reason'] == 'gone_text'
     assert BC.classify('lofter', LF, 200, load('lofter_gone.html'), url=LF)['status'] == 'deleted'
 
+def test_lofter_post_with_notfound_title_is_ok():
+    """2026-11-06 誤判:No.1347 篇名《페이지를 찾을 수 없습니다(找不到頁面)》、內文有 404 / 页面不存在 / 博客不存在,是 HTTP 200 的正常文章 → ok。"""
+    html = load('lofter_post_notfound_title.html')
+    r = BC.classify('lofter', LF, 200, html, url=LF)
+    assert r['status'] == 'ok' and r['reason'] == '200' and r['author_name'] == '測試博客' and r['author_source'] == 'header_title'
+    assert BC.classify('lofter', LF, None, html, url=LF)['status'] == 'ok'          # 沒拿到狀態碼也一樣看結構
+    # 舊版會因「'404' in <title>」判死的篇名
+    t404 = html.replace('페이지를 찾을 수 없습니다(找不到頁面)-測試博客', '404 Not Found-測試博客')
+    assert BC.classify('lofter', LF, 200, t404, url=LF)['status'] == 'ok'
+    # 有文章結構時內文的「博客不存在」也不算 blog_gone
+    assert BC.classify('lofter', LF, 200, html, url=LF)['reason'] != 'blog_gone'
+
 def test_lofter_blog_gone():
     r = BC.classify('lofter', LF, 200, load('lofter_blog_gone.html'), url=LF)
     assert r['status'] == 'deleted' and r['reason'] == 'blog_gone'

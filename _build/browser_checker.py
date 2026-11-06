@@ -15,8 +15,10 @@
    各平台:
    - Lofter:啟動前載入 cookies/lofter.json(「Get cookies.txt LOCALLY」或 Cookie-Editor 匯出的 JSON;也吃 Netscape cookies.txt)。
        沒有 cookie 檔 → 印提示、略過 Lofter。帶了 cookie 仍被導到 www.lofter.com/front/login → cookie 過期:login_required(blocked,
-       不算死)並略過其餘 Lofter 連結。404 / 頁面顯示「页面不存在」→ deleted;整個部落格打不開(子網域 DNS 不存在 /
-       連線被拒,且 www.lofter.com 本身連得上)或頁面顯示「博客不存在」→ deleted,reason = blog_gone。
+       不算死)並略過其餘 Lofter 連結。404 / 200 但頁面是錯誤模板(checkers/lofter.py is_error_page:<title> 404 Not Found,
+       或沒有文章結構且內文顯示「页面不存在」)→ deleted;**有文章結構(has_post)的一律 ok,不看標題 / 內文關鍵字**
+       (2026-11-06 No.1347 篇名《페이지를 찾을 수 없습니다(找不到頁面)》被舊版誤判);整個部落格打不開(子網域 DNS 不存在 /
+       連線被拒,且 www.lofter.com 本身連得上)或沒有文章結構的頁面顯示「博客不存在」→ deleted,reason = blog_gone。
        啟動時看 LOFTER_SESS 的到期日:剩不到 COOKIE_WARN_DAYS 天印醒目警告,已過期就略過 Lofter。
        合集分享頁(www.lofter.com/front/blog/collection/share?collectionId=…)另一套規則:404 狀態碼不算已刪(unknown,collection_404),
        只認「合集不存在 / 已被删除」字樣;author_name 一律 None(見 checkers/lofter.py)。
@@ -90,8 +92,7 @@ CF_MARKERS = ('cf-challenge', 'cf-chl-', '_cf_chl_opt', 'Ray ID', 'Performance a
 AO3_DOWN_CODE = 418                                      # AO3 全站停機時 nginx 回的狀態碼(2026-11 資安事件)
 AO3_DOWN = ('Request temporarily denied', 'down for maintenance')   # 前者看 <title>,後者看內文
 LOFTER_BLOG_GONE = ('博客不存在', '该博客不存在', '博客已注销', '该博客已注销', '博主已注销', '博客已关闭', '该用户不存在')
-LOFTER_GONE = _lofter.GONE_TEXT + ('文章不存在', '该文章不存在', '该文章已被删除', '内容不存在', '404',
-                                   '页面走丢了', '页面已被移除', '链接可能已损毁')     # 後三個是 2026-11-04 實測的 404 頁字樣
+LOFTER_GONE = _lofter.GONE_TEXT          # 錯誤頁字樣統一放 checkers/lofter.py;判斷走 _lofter.is_error_page(先看結構)
 AFF_SUBSCRIBE = ('subscribers only', 'please subscribe to read', 'subscribe to read', 'subscribe to this story to read')
 AFF_GONE = tuple(k for k in _aff.GONE_TEXT if k != 'the page you requested') + ('404 page not found',)   # _aff.GONE_TEXT 已含 2026-11-05 實看的 404 頁字樣
 AO3_GONE = (_ao3.NOT_FOUND, 'this work has been deleted', 'work could not be found')
@@ -295,7 +296,8 @@ def _classify_lofter(final, status, body, url):
             return H.result('unknown', reason='http_%s' % status, code=status, final=final)
         return _lofter.classify_collection(status, final, body, url)
     txt = H.text_of(body[:200000])
-    if any(k in txt for k in LOFTER_BLOG_GONE):
+    post = _lofter.has_post(body, fh)       # 有正常文章結構 → 不看任何關鍵字(篇名 / 內文剛好是「找不到頁面」「博客不存在」的正常文章)
+    if not post and any(k in txt for k in LOFTER_BLOG_GONE):
         return H.result('deleted', reason='blog_gone', code=status, final=final)
     if status == 404:
         root = H.path_of(url) in ('', '/')      # 查的是部落格首頁本身(作者庫的平台網址)而不是某篇
@@ -306,7 +308,7 @@ def _classify_lofter(final, status, body, url):
         return H.result('unknown', reason='http_%s' % status, code=status, final=final)
     if '/post/' in H.path_of(url) and (fp in ('', '/') or fh in ('www.lofter.com', 'lofter.com')):
         return H.result('deleted', reason='redirect_home', code=status, final=final)
-    if any(k in txt for k in LOFTER_GONE if k != '404') or '404' in H.title_of(body) or txt.lstrip().startswith('404'):
+    if not post and _lofter.is_error_page(body, fh):     # 200(或沒拿到狀態碼)但頁面是錯誤模板:<title> 404 Not Found 或 GONE_TEXT 字樣
         return H.result('deleted', reason='gone_text', code=status, final=final)
     if re.search(r'(登录|登錄)\s*LOFTER', txt) and '/post/' not in fp:
         return H.result('login_required', reason='login_form', code=status, final=final, blocked=True)
