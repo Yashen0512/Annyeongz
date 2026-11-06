@@ -108,6 +108,24 @@ def test_append_rename_manual(tmp_path):
     t = md.read_text(encoding='utf-8')
     assert t.startswith('## 改名\n') and '需人工確認' in t and '「上-一只大鹅」(No.1、2)' in t
 
+def test_main_exclude_skips_listed_nos(tmp_path, monkeypatch, capsys):
+    import json
+    rep = {'date': '2026-11-06', 'renames': [],
+           'new_dead': [{'no': '1347', 'url': 'https://a.lofter.com/post/1', 'name': 'x'}, {'no': '20', 'url': 'https://a.lofter.com/post/2', 'name': 'y'}],
+           'revived': [{'no': '30', 'url': 'https://a.lofter.com/post/3', 'name': 'z'}]}
+    p = tmp_path / 'check_report.json'
+    p.write_text(json.dumps(rep, ensure_ascii=False), encoding='utf-8')
+    seen = []
+    monkeypatch.setattr(W, 'apply_link', lambda x, mode, go, manual: (seen.append((x['no'], mode, go)), 'done')[1])
+    t = W.main(['--report', str(p), '--exclude', '1347, 30', '--go'])
+    assert seen == [('20', 'mark', True)] and t == {'done': 1, 'skip': 0, 'fail': 0}
+    assert '--exclude 跳過 2 筆:No.1347、30' in capsys.readouterr().out
+    # 全部被排除 → 沒有要寫回的變更;--no 與 --exclude 同時給時取交集後再排除
+    seen.clear()
+    assert W.main(['--report', str(p), '--exclude', '1347,20,30'])['done'] == 0 and seen == []
+    assert W.main(['--report', str(p), '--no', '1347,20', '--exclude', '1347']) == {'done': 1, 'skip': 0, 'fail': 0}
+    assert seen == [('20', 'mark', False)]
+
 def test_main_holds_bad_renames_without_touching_notion(tmp_path, monkeypatch, capsys):
     rep = {'date': '2026-11-05', 'new_dead': [], 'revived': [],
            'renames': [{'pid': 'c', 'old': '咸魚', 'new': '咸鱼', 'platform': 'lofter', 'nos': ['1', '2']}]}

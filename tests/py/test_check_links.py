@@ -44,6 +44,46 @@ def test_ok_then_deleted_restarts_streak():
     e = CL.advance(e, dead(), D2)
     assert e['streak'] == 1 and not e.get('dead')
 
+def test_reset_entry_clears_dead_and_streak():
+    e = CL.advance(CL.advance(None, dead(), D1), dead(), D2)
+    e['author_name'], e['platform'] = '某博客', 'lofter'
+    r = CL.reset_entry(e, D3)
+    assert r['status'] == 'ok' and r['streak'] == 0 and r['dead'] is False and r['last'] == D3 and r['reason'] == 'reset'
+    assert 'dead_since' not in r and 'counted' not in r
+    assert r['author_name'] == '某博客' and r['platform'] == 'lofter' and r['first'] == D1     # 其餘欄位保留
+    assert e['dead'] is True                                                                  # 不改原物件
+    # 重設後再看到 deleted 從 1 重新數,要再連續兩天才死
+    e2 = CL.advance(r, dead(), D3)
+    assert e2['streak'] == 1 and not e2.get('dead')
+    assert CL.reset_entry(None, D1)['status'] == 'ok' and CL.reset_entry(None, D1)['first'] == D1
+
+def test_reset_links_cli_rewrites_state_file(tmp_path, capsys):
+    import json
+    u, v = 'https://a.lofter.com/post/1_2', 'https://b.lofter.com/post/3_4'
+    st = {'__meta__': {'runs': 3, 'date': D2}, u: CL.advance(CL.advance(None, dead(), D1), dead(), D2), v: CL.advance(None, ok(), D2)}
+    p = tmp_path / 'link_status.json'
+    p.write_text(json.dumps(st, ensure_ascii=False), encoding='utf-8')
+    assert CL.reset_links_cli(str(p), [u, 'https://nope.lofter.com/post/9'], today=D3) == 0
+    out = json.loads(p.read_text(encoding='utf-8'))
+    assert list(out)[0] == '__meta__' and out['__meta__'] == {'runs': 3, 'date': D2}        # __meta__ 保留、排最前
+    assert out[u]['status'] == 'ok' and out[u]['streak'] == 0 and out[u]['dead'] is False and out[u]['last'] == D3
+    assert out[v] == st[v]                                                                  # 別的連結不動
+    msg = capsys.readouterr().out
+    assert '已重設' in msg and 'nope.lofter.com' in msg and '略過' in msg
+    # 全部找不到 → 不寫檔、回傳 1
+    before = p.read_text(encoding='utf-8')
+    assert CL.reset_links_cli(str(p), ['https://nope.lofter.com/post/9'], today=D3) == 1
+    assert p.read_text(encoding='utf-8') == before
+    assert CL.reset_links_cli(str(tmp_path / 'missing.json'), [u], today=D3) == 1
+
+def test_main_reset_link_does_not_need_article_links(tmp_path, capsys):
+    import json
+    u = 'https://a.lofter.com/post/1_2'
+    p = tmp_path / 'link_status.json'
+    p.write_text(json.dumps({'__meta__': {}, u: CL.advance(CL.advance(None, dead(), D1), dead(), D2)}), encoding='utf-8')
+    assert CL.main(['--src', str(tmp_path), '--reset-link', u]) == 0        # 沒有 article_links.json 也能跑
+    assert json.loads(p.read_text(encoding='utf-8'))[u]['dead'] is False
+
 def test_is_due_dead_rechecked_every_30_days():
     assert CL.is_due(None, D1) is True
     assert CL.is_due({'dead': True, 'last': '2026-10-20'}, D1) is False      # 10 天前,不用
