@@ -1,17 +1,17 @@
 {
 "__meta__": {
-"updated": "2026-11-06T08:23:47+08:00",
+"updated": "2026-11-06T12:58:39+08:00",
 "date": "2026-11-06",
 "platforms": {
-"ao3": {
-"checked": 3,
-"blocked": true,
-"skipped": 32
-},
 "aff": {
 "checked": 3,
 "blocked": true,
 "skipped": 602
+},
+"ao3": {
+"checked": 3,
+"blocked": true,
+"skipped": 32
 },
 "lofter": {
 "checked": 3,
@@ -24,7 +24,7 @@
 "skipped": 0
 }
 },
-"runs": 16
+"runs": 17
 },
 "https://02756053.lofter.com/": {
 "last": "2026-11-05",
