@@ -27,6 +27,8 @@ def test_is_dead_ignores_internal_links():
 def test_split_links_marks_dead_by_x():
     out = B.split_links([['Postype-原文 ❌', 'https://p'], ['LFT', 'https://l'], ['❌', 'https://only']])
     assert out == [['Postype-原文', 'https://p', 1], ['LFT', 'https://l'], ['https://only', 'https://only', 1]]
+    # ❌ 在連結文字前(舊版 notion_writeback)或後(站長手標「LFT-01-06❌」、新版寫回)都算失效,去掉後名稱相同
+    assert B.split_links([['❌LFT-01-06', 'https://l']]) == B.split_links([['LFT-01-06❌', 'https://l']]) == [['LFT-01-06', 'https://l', 1]]
 
 def test_split_links_dedupes_same_url_and_keeps_dead_state():
     # 同一篇底下網址相同只留一條(第一條的位置);任一條有 ❌ 就算失效

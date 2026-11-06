@@ -155,6 +155,9 @@ def test_collect_targets_dedupes_and_marks():
     assert [t['url'] for t in ts] == ['https://www.postype.com/@b/post/1', 'https://foo.lofter.com/']
     refs = ts[0]['refs']
     assert [r['marked'] for r in refs] == [False, True] and refs[0]['block'] == ['blk1', 0] and refs[0]['page'] == 'p1'
+    # 「已標 ❌」前後都算(與 build_site.split_links 一致):「❌ PT」「PT❌」都是 marked
+    ts2 = CL.collect_targets({'2': {'B': [['PT❌', 'https://www.postype.com/@b/post/1']]}, '__blocks__': {}}, {}, {}, ['postype'])
+    assert ts2[0]['refs'][0]['marked'] is True
     assert ts[1]['refs'][0]['kind'] == 'author'
     assert len(CL.collect_targets(links, {}, ppl, ['postype', 'lofter'], only_nos={'2'})) == 1   # --no 不查作者頁
 
