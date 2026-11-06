@@ -314,10 +314,18 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
     曾用名、該名字 / 帳號沒出現在別的作者名下(合集帳號)、**且作者庫該平台網址的帳號與頁面作者帳號相符** → 把作者庫「作者名稱」
     改成新名字,並把舊名加進「曾用名」multi_select(不存在就用 database update API 建立;不刪、不重複;半形逗號換全形)。
     作者庫沒有該平台網址、無法核對的只列為「候選」,不寫回。寫之前再讀一次作者頁,title 已不是報告的舊名就跳過。
+    **名字比對一律先經 `stmap.txt` 簡繁折算**(`check_links.fold_zh` / `norm_name`,與站內搜尋同一套「繁→簡」逐字對應),
+    所以「咸魚 / 咸鱼」「百憂解 / 百忧解」是同名(2026-11-05 實測差點把 26 篇的作者改成簡體)。
+    以下**不寫回、列進 Issue「需人工確認:作者改名」**(`rename_manual`;`has_changes` 會因此開 Issue):
+    同一作者同平台在不同篇抓到兩個以上不同的新名字(「上-一只大鹅 / 下-一只大鹅」= 抓到文章標題;在別人帳號上看到的轉載名不算)、
+    新名字含標題片段(`title_fragment`:上- / 下- / 番外 / 第N章 / (上)/ 上篇 / Chapter N…)。
+    `notion_writeback.py` 寫回前再過一次同樣的保險(`screen_renames`),擋下的附到 `check_report.md`。
 - **排程 `check_links.yml`**:每天 UTC 19:00(台灣 03:00)與 `workflow_dispatch`(可選 dry-run、平台);讀 secret `NOTION_TOKEN`;
   commit `_build/link_status.json`;`check_report.md` 存在(有新死 / 復活 / 改名)就用 `gh issue create` 開 Issue。
 - **本機**:`更新網站.bat` 預設不巡檢;帶參數(`更新網站.bat 巡檢`)才在 fetch 之後跑 `check_links.py` + `notion_writeback.py --go`,
   `更新網站.bat 巡檢 瀏覽器` 改跑 `check_links.py --browser`(三個海外平台走真瀏覽器,見下一節),片段在 `_build/更新網站_巡檢片段.bat.txt`。
+  沒帶參數只印「[巡檢] 略過」。片段**不用 `( )` 區塊、一律 goto 標籤分流**(2026-11-05 修:舊版 `if defined AZ_CHECK (` 裡的
+  `echo …(check_links.py …)` 半形「)」把區塊提早關掉,沒帶參數也跑了巡檢 + 寫回);`tests/py/test_bat_snippet.py` 用小直譯器跑各種參數組合。
 - 手動測試:`python check_links.py --platforms postype --no 1352,1255`(只查這幾篇)→ `python notion_writeback.py --no 1352`(dry-run)
   → 加 `--go`。`article_links.json` 的保留鍵一律以 `__` 開頭,迭代時要跳過。
 
@@ -345,11 +353,20 @@ Lofter(1300 多筆,最大平台)、AO3、Asianfanfics 用 urllib 從任何 IP �
   - 用了設定檔仍是 `cf_challenge_wait` → 照舊 `unknown`(不改計數),第一筆就印「AFF 被 Cloudflare 擋，請重跑 --setup-profile 或手動檢查」,連續 5 筆略過時 note 也帶這句。
   - **基本反偵測**(一般瀏覽器與設定檔都套,`STEALTH_ARGS` / `STEALTH_IGNORE` / `STEALTH_JS`):`--disable-blink-features=AutomationControlled`、
     拿掉 Playwright 預設的 `--enable-automation`、init script 讓 `navigator.webdriver` = undefined。一般無頭瀏覽器(Lofter / AO3)仍把 UA 的 HeadlessChrome 換成 Chrome。
+  - **`--no-sandbox` 只在 Linux**(`needs_no_sandbox`):Playwright 預設會幫 Chromium 加 `--no-sandbox`,Windows / macOS 一律傳 `chromium_sandbox=True` 不加
+    (有頭 Chrome 才不會跳黃色「不受支援的命令列標記」警告條);Linux 容器維持預設。
 - **WARP 要關**:啟動時 GET `https://www.cloudflare.com/cdn-cgi/trace`,回應有 `warp=on` 就印「偵測到 Cloudflare WARP 開啟…」並略過三個平台
   (WARP 的出口 IP 會被這幾站擋)。其他 VPN 不會被偵測到,被 Cloudflare 擋時先想到這個。
 - **判斷規則**(純函式 `classify(platform, final_url, status, html, url, error)`,`tests/py/test_browser_checker.py` 用合成樣本測。
   **2026-11-04 站長本機 `--probe` 實測**(headless Chromium 與 `--headed --browser-channel chrome` 結果相同,headed 沒有幫助):
   Lofter 四筆全對;AFF 第一筆正常、第二筆起被 Cloudflare 擋;AO3 全站停機。AO3 正常 / 已刪頁的真實字樣等恢復後再 `--probe` 補):
+  - Lofter 作者名(`checkers/lofter.py` `blog_name`):文章頁 `<title>` 是「文章標題-博客名」(連字號**沒有空白**),
+    舊版先切「 - 」,文章標題含「 - 上」時得到「上-一只大鹅」。現在依序取 header 連回部落格首頁的連結文字(`<title>` 以「-該名」結尾互相印證 = `header_title`)
+    → 只有 header(`header`)→ `<title>` 最後一個連字號之後(`title`)→ og:site_name(`og`);瀏覽器巡檢在後兩者時改抓**部落格首頁**的名字
+    (`lofter_home_name`,同 host 只抓一次,`blog_home`)。`--probe` 會印「來源」。
+  - Lofter **合集分享頁**(`www.lofter.com/front/blog/collection/share?collectionId=…`,`is_collection`)規則跟文章頁不同:
+    JS 單頁,實測還在的合集也會回 HTTP 404 → **404 狀態碼只算 `unknown`(`collection_404`)**,只有頁面寫「合集不存在 / 已被删除」(`COLLECTION_GONE`)才是 `deleted`;
+    合集頁的 `<title>` 是合集名,`author_name` 一律 None。`--probe` 有合集連結時會多抓一筆合集。
   - Lofter:404(真的 404 頁:`<title>404 Not Found`、「哎呀，页面走丢了...」「你查找的链接可能已损毁，或页面已被移除」)/ 頁面「页面不存在」→ `deleted`;
     整個部落格打不開(子網域 DNS 不存在 / 連線被拒,且 `www.lofter.com` 連得上)、首頁 404 或頁面「博客不存在」→ `deleted`(reason `blog_gone`;
     某篇 404 時會再看一次部落格首頁,首頁也 404 就改成 `blog_gone`);導到登入頁 → `login_required`(blocked);其餘 200 → `ok`,作者名取 og:site_name / `<title>`。
@@ -524,7 +541,9 @@ python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆�
                                   #          build_pages(描述 / 標題折行 / 字型回退 / sitemap / RSS、30 篇產頁與 hash 跳過重產)
                                   #          checkers(各平台 HTML 樣本)、check_links(連續兩天狀態機、到期、改名判斷、平台被擋短路、重試)、notion_writeback(❌ 加 / 移除、PATCH 格式、曾用名合併)、build_site 曾用名、fetch_data block 位置與 merge_links 清舊標題、notion_writeback 只信記錄的 block、collect_targets 略過舊標題、
                                   #          browser_checker(classify 各平台合成樣本、AO3 章節進度、cookie 三種格式與到期、WARP、--probe 樣本挑選、挑戰頁連續 5 筆 / 登入牆短路、preflight、--browser / --probe 接進 main、
-                                  #          固定設定檔與反偵測的啟動參數(假 Playwright)、--setup-profile、設定檔被擋提示、--profile / --no-profile 接線)
+                                  #          固定設定檔與反偵測的啟動參數(假 Playwright)、--setup-profile、設定檔被擋提示、--profile / --no-profile 接線、
+                                  #          --no-sandbox 只在 Linux、Lofter 博客名來源與首頁退路、合集頁判定)
+                                  #          改名的簡繁折算 / 多名字 / 標題片段 → 需人工確認、notion_writeback screen_renames;bat 片段分流(test_bat_snippet)
 ```
 
 - `.github/workflows/test.yml` 在 PR 時兩組都自動跑,不需要 Notion token。

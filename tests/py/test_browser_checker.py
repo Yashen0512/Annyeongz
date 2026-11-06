@@ -698,3 +698,60 @@ def test_main_passes_profile_options_to_preflight(tmp_path, monkeypatch, argv, e
 def test_gitignore_has_browser_profile():
     gi = io.open(os.path.join(ROOT, '.gitignore'), encoding='utf-8').read().split()
     assert '_build/browser_profile/' in gi and '_build/cookies/' in gi
+
+# ---- 2026-11-05:--no-sandbox 只在 Linux、Lofter 博客名來源、合集頁 ----
+def test_no_sandbox_only_on_linux():
+    assert BC.needs_no_sandbox('linux') and not BC.needs_no_sandbox('win32') and not BC.needs_no_sandbox('darwin')
+    assert BC.launch_kwargs(False, 'chrome', os_name='win32')['chromium_sandbox'] is True        # Windows 不加 --no-sandbox
+    assert 'chromium_sandbox' not in BC.launch_kwargs(True, os_name='linux')                    # Linux 容器維持 Playwright 預設
+    assert BC.profile_launch_kwargs({}, os_name='win32')['chromium_sandbox'] is True
+    assert 'chromium_sandbox' not in BC.profile_launch_kwargs({}, os_name='linux')
+
+LC = 'https://www.lofter.com/front/blog/collection/share?collectionId=22388853&incantation=hjAYkBwHkDb7'
+def test_lofter_collection_in_browser():
+    r = BC.classify('lofter', LC, 404, '<html><head><title>LOFTER</title></head><body><div id="app"></div></body></html>', url=LC)
+    assert r['status'] == 'unknown' and r['reason'] == 'collection_404'
+    r = BC.classify('lofter', LC, 200, load('lofter_collection_ok.html'), url=LC)
+    assert r['status'] == 'ok' and r['author_name'] is None
+    assert BC.classify('lofter', LC, 200, load('lofter_collection_gone.html'), url=LC)['reason'] == 'collection_gone'
+    assert BC.classify('lofter', 'https://www.lofter.com/front/login', 200, load('lofter_login.html'), url=LC)['status'] == 'login_required'
+
+def test_lofter_author_from_header_in_browser():
+    r = BC.classify('lofter', LF, 200, load('lofter_post_header.html'), url=LF)
+    assert r['status'] == 'ok' and r['author_name'] == '一只大鹅' and r['author_source'] == 'header_title'
+
+def test_check_uses_blog_home_name_when_no_header(monkeypatch):
+    """文章頁沒有 header 博客名(只能從 <title> 猜)→ 改抓部落格首頁的名字,同一個 host 只抓一次。"""
+    post = '<html><head><title>雨季 - 上-一只大鹅</title></head><body><p>內文</p></body></html>'
+    home = '<html><head><title>一只大鹅</title></head><body><p>首頁</p></body></html>'
+    LF2 = LF.replace('5e6f7a8b9', '000000000')
+    calls = []
+    def fetch(plat, url, page=None):
+        calls.append(url)
+        return (200, url, home if url == 'https://testblog.lofter.com/' else post, '')
+    s = BC.BrowserSession(sleep=lambda x: None, log=lambda *a: None)
+    monkeypatch.setattr(s, 'fetch', fetch)
+    r = s.check('lofter', LF)
+    assert r['author_name'] == '一只大鹅' and r['author_source'] == 'blog_home'
+    assert s.check('lofter', LF2)['author_name'] == '一只大鹅'
+    assert calls.count('https://testblog.lofter.com/') == 1
+    # header 有名字就不多抓首頁
+    calls.clear()
+    s2 = BC.BrowserSession(sleep=lambda x: None, log=lambda *a: None)
+    monkeypatch.setattr(s2, 'fetch', lambda plat, url, page=None: calls.append(url) or (200, url, load('lofter_post_header.html'), ''))
+    assert s2.check('lofter', LF)['author_source'] == 'header_title' and calls == [LF]
+    # 首頁抓不到 → 保留文章頁猜的名字
+    s3 = BC.BrowserSession(sleep=lambda x: None, log=lambda *a: None)
+    monkeypatch.setattr(s3, 'fetch', lambda plat, url, page=None: (None, url, '', 'timeout') if url.endswith('.com/') else (200, url, post, ''))
+    r = s3.check('lofter', LF)
+    assert r['author_name'] == '一只大鹅' and r['author_source'] == 'title'
+
+def test_home_blog_name():
+    assert BC.home_blog_name('<title>一只大鹅</title>', 'testblog.lofter.com') == '一只大鹅'
+    assert BC.home_blog_name(load('lofter_post_header.html'), 'testblog.lofter.com') == '一只大鹅'
+
+def test_probe_samples_include_lofter_collection():
+    tgs = [{'url': LF, 'platform': 'lofter', 'refs': [{'kind': 'article', 'marked': False}]},
+           {'url': LC, 'platform': 'lofter', 'refs': [{'kind': 'article', 'marked': False}]}]
+    s = BC.pick_probe_samples(tgs, {}, 'lofter')
+    assert s[-1] == ('合集分享頁(預期 ok;404 狀態碼只算 unknown)', LC)

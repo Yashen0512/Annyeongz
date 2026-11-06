@@ -90,3 +90,30 @@ def test_apply_link_skips_and_collects_manual_when_block_missing(monkeypatch, tm
     assert text.startswith('## 已刪\n- x\n\n### 需人工確認') and 'No.786《Passionate A&W》Postype-番外1-原文 — ' + URL in text
     W.append_manual_section(str(md), [])                                     # 沒有東西就不動
     assert md.read_text(encoding='utf-8') == text
+
+# ---- 改名寫回前的保險(2026-11-05) ----
+def test_screen_renames():
+    rn = lambda pid, old, new: {'pid': pid, 'old': old, 'new': new, 'platform': 'lofter', 'nos': ['1', '2']}
+    ok, held = W.screen_renames([rn('a', '咸魚', '咸鱼'), rn('b', '百憂解', '百忧解'), rn('c', '一只大鹅', '上-一只大鹅'),
+                                 rn('d', '舊', '新筆名'), rn('e', 'X', 'Y1'), rn('e', 'X', 'Y2')])
+    assert [r['pid'] for r in ok] == ['d']
+    assert sorted(r['pid'] for r in held) == ['a', 'b', 'c', 'e', 'e']
+    assert all(r['why'] for r in held)
+    assert '標題片段' in next(r for r in held if r['pid'] == 'c')['why']
+
+def test_append_rename_manual(tmp_path):
+    md = tmp_path / 'check_report.md'
+    md.write_text('## 改名\n', encoding='utf-8')
+    W.append_rename_manual(str(md), [{'pid': 'c', 'old': '一只大鹅', 'new': '上-一只大鹅', 'platform': 'lofter', 'nos': ['1', '2'], 'why': 'w'}])
+    t = md.read_text(encoding='utf-8')
+    assert t.startswith('## 改名\n') and '需人工確認' in t and '「上-一只大鹅」(No.1、2)' in t
+
+def test_main_holds_bad_renames_without_touching_notion(tmp_path, monkeypatch, capsys):
+    rep = {'date': '2026-11-05', 'new_dead': [], 'revived': [],
+           'renames': [{'pid': 'c', 'old': '咸魚', 'new': '咸鱼', 'platform': 'lofter', 'nos': ['1', '2']}]}
+    p = tmp_path / 'check_report.json'
+    p.write_text(__import__('json').dumps(rep, ensure_ascii=False), encoding='utf-8')
+    monkeypatch.setattr(W, 'api', lambda *a, **k: (_ for _ in ()).throw(AssertionError('不該打 Notion')))
+    t = W.main(['--report', str(p), '--go'])
+    assert t == {'done': 0, 'skip': 1, 'fail': 0}
+    assert '需人工確認' in (tmp_path / 'check_report.md').read_text(encoding='utf-8')

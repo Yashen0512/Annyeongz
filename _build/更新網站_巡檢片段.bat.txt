@@ -1,6 +1,6 @@
 rem ============================================================================
-rem 更新網站.bat 的可選巡檢片段(此檔只是範本;更新網站.bat 不在 repo 裡,請把下面這段貼進去)
-rem 用法:更新網站.bat               → 跟以前一樣,不巡檢(巡檢要打 1000 多個連結,會慢)
+rem 更新網站.bat 的可選巡檢片段(此檔只是範本;更新網站.bat 不在 repo 裡,請把下面兩段貼進去)
+rem 用法:更新網站.bat               → 跟以前一樣,不巡檢,只印「[巡檢] 略過」(巡檢要打 1000 多個連結,會慢)
 rem       更新網站.bat 巡檢         → fetch_data.py 之後多跑 check_links.py + notion_writeback.py --go(只有 Postype 查得到)
 rem       更新網站.bat 巡檢 瀏覽器   → check_links.py --browser:Lofter / AO3 / Asianfanfics 用 Playwright 真瀏覽器抓
 rem                                   (要先 pip install playwright && playwright install chromium,Lofter 要放 _build\cookies\lofter.json;
@@ -9,38 +9,54 @@ rem                                   AFF 預設用固定設定檔 _build\browse
 rem       更新網站.bat 巡檢 dry      → 只巡檢並印出將寫回的清單,不寫 Notion(「瀏覽器」與「dry」可以同時給,順序不拘)
 rem       更新網站.bat 設定檔        → 只跑 check_links.py --setup-profile 然後結束(不更新網站):開有頭 Chrome 到 AFF 首頁,
 rem                                   手動登入 AFF、通過 Cloudflare 驗證、點開一篇文確認看得到,回到黑窗按 Enter 存檔。
-rem                                   第一次用瀏覽器巡檢前跑一次;之後巡檢出現「AFF 被 Cloudflare 擋，請重跑 --setup-profile」時再跑。
 rem                                   跑之前把其他用同一個設定檔的 Chrome 視窗關掉(一次只能一個)。也可直接在 _build 下:python check_links.py --setup-profile
-rem 「設定檔」那段要放在 bat 最前面(cd 到 _build 之後、fetch_data.py 之前),其餘放在下面說的位置。
-rem 放在「python fetch_data.py」那行之後、「python build_site.py」之前(check_links 需要 fetch 產出的 CSV 與 article_links.json)。
+rem 英文別名:巡檢 = check、瀏覽器 = browser、設定檔 = setup。
+rem
+rem 注意(2026-11-05 修正「沒帶參數也跑了巡檢」):
+rem   舊版把 echo ===== 原文連結巡檢(check_links.py ...)===== 寫在 if defined AZ_CHECK ( ... ) 區塊裡,
+rem   echo 裡的半形「)」會被 cmd 當成區塊結尾,區塊後面的 python check_links.py 與 notion_writeback.py --go 就變成不論有沒有參數都會執行。
+rem   這版完全不用 ( ) 區塊,一律用 goto 標籤分流;**不要**把這兩段包進別的 if ( ... ) 或 for ( ... ) 區塊裡(goto 會跳出區塊)。
+rem   echo 文字裡要放括號請用全形「（）」,或在半形括號前加 ^。
+rem   bat 若存成 UTF-8,第一行要有 chcp 65001 >nul,否則「巡檢」「瀏覽器」這些中文參數比對不到(結果是一律略過,不會誤跑);
+rem   英文別名 check / browser / dry / setup 不受編碼影響。
+rem   標籤名都以 az_ 開頭,不要跟 bat 其他地方的標籤重複。
 rem ============================================================================
-if /I "%~1"=="設定檔" (
-    python check_links.py --setup-profile
-    goto :eof
-)
-if /I "%~1"=="setup" (
-    python check_links.py --setup-profile
-    goto :eof
-)
-set AZ_CHECK=
-set AZ_BROWSER=
-set AZ_DRY=
-if /I "%~1"=="巡檢" set AZ_CHECK=1
-if /I "%~1"=="check" set AZ_CHECK=1
-for %%A in (%2 %3) do (
-    if /I "%%~A"=="瀏覽器" set AZ_BROWSER=--browser
-    if /I "%%~A"=="browser" set AZ_BROWSER=--browser
-    if /I "%%~A"=="dry" set AZ_DRY=1
-)
-if defined AZ_CHECK (
-    echo.
-    echo ===== 原文連結巡檢(check_links.py %AZ_BROWSER%)=====
-    python check_links.py %AZ_BROWSER%
-    if defined AZ_DRY (
-        python notion_writeback.py
-    ) else (
-        python notion_writeback.py --go
-    )
-    echo ===== 巡檢完成;link_status.json 已更新,記得連同 _build\link_status.json 一起 deploy =====
-    echo.
-)
+
+rem ---------- 片段 A:設定檔(放在 bat 最前面:cd 到 _build 之後、python fetch_data.py 之前)----------
+if /I "%~1"=="設定檔" goto az_setup
+if /I "%~1"=="setup" goto az_setup
+goto az_setup_done
+:az_setup
+python check_links.py --setup-profile
+goto :eof
+:az_setup_done
+
+rem ---------- 片段 B:巡檢(放在 python fetch_data.py 那行之後、python build_site.py 之前;check_links 需要 fetch 產出的 CSV 與 article_links.json)----------
+set "AZ_CHECK="
+set "AZ_BROWSER="
+set "AZ_DRY="
+if "%~1"=="" goto az_check_skip
+if /I "%~1"=="巡檢" set "AZ_CHECK=1"
+if /I "%~1"=="check" set "AZ_CHECK=1"
+if not defined AZ_CHECK goto az_check_skip
+if /I "%~2"=="瀏覽器" set "AZ_BROWSER=--browser"
+if /I "%~3"=="瀏覽器" set "AZ_BROWSER=--browser"
+if /I "%~2"=="browser" set "AZ_BROWSER=--browser"
+if /I "%~3"=="browser" set "AZ_BROWSER=--browser"
+if /I "%~2"=="dry" set "AZ_DRY=1"
+if /I "%~3"=="dry" set "AZ_DRY=1"
+echo.
+echo ===== 原文連結巡檢：check_links.py %AZ_BROWSER% =====
+python check_links.py %AZ_BROWSER%
+if defined AZ_DRY goto az_check_dry
+python notion_writeback.py --go
+goto az_check_end
+:az_check_dry
+python notion_writeback.py
+:az_check_end
+echo ===== 巡檢完成；link_status.json 已更新，記得連同 _build\link_status.json 一起 deploy =====
+echo.
+goto az_check_done
+:az_check_skip
+echo [巡檢] 略過
+:az_check_done

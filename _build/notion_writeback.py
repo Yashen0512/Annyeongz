@@ -10,12 +10,15 @@
    作者改名:作者庫該頁「作者名稱」title 改成新名字;「曾用名」multi_select(不存在就用 database update API 建立)
            加入舊名字(不刪、不重複;Notion 選項名不能有半形逗號 → 換成全形)。只處理 check_links 列在 renames 的
            (作者庫平台網址核對過的),rename_candidates 不動。寫之前再讀一次作者頁,title 跟報告的舊名不同就跳過。
+           寫回前再過一道保險(screen_renames,與 check_links.rename_hold_reason 同一套):新舊名只差簡繁(stmap 折算後相同)、
+           新名字含標題片段(上- / 下- / 番外 / 第N章…)、或同一位作者報告裡有兩個以上不同新名字 → 不寫,附到 Issue「需人工確認」。
    用法:python notion_writeback.py [--go] [--report check_report.json] [--no 1352] [--limit N]
          token 來源同 fetch_data.py(NOTION_TOKEN → notion_token.txt → 交給代理)。"""
 import argparse, copy, io, json, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fetch_data as FD
+import check_links as CL
 
 DEAD_MARK = '❌'
 API = 'https://api.notion.com/v1/'
@@ -212,6 +215,25 @@ def append_manual_section(md_path, items):
     old = io.open(md_path, encoding='utf-8').read() if os.path.exists(md_path) else ''
     io.open(md_path, 'w', encoding='utf-8').write(old.rstrip('\n') + '\n' + manual_markdown(items))
 
+def screen_renames(renames):
+    """改名寫回前的保險 → (可以寫的, 擋下的);擋下的元素多一個 why。純函式。"""
+    news = {}
+    for r in renames:
+        news.setdefault(r['pid'], set()).add(CL.norm_name(r['new']))
+    ok, held = [], []
+    for r in renames:
+        why = ('同一位作者有 %d 個不同的新名字,可能抓錯來源' % len(news[r['pid']]) if len(news[r['pid']]) > 1
+               else CL.rename_hold_reason(r['old'], r['new']))
+        (held if why else ok).append(dict(r, why=why) if why else r)
+    return ok, held
+
+def append_rename_manual(md_path, items):
+    """把擋下的改名附到 Issue 內文(check_report.md)末尾。"""
+    if not items:
+        return
+    old = io.open(md_path, encoding='utf-8').read() if os.path.exists(md_path) else ''
+    io.open(md_path, 'w', encoding='utf-8').write(old.rstrip('\n') + '\n' + '\n'.join(CL.rename_manual_lines(items)) + '\n')
+
 def find_authors_db():
     dbs = api('POST', 'search', {'filter': {'property': 'object', 'value': 'database'}, 'page_size': 50})['results']
     for db in dbs:
@@ -287,6 +309,14 @@ def main(argv=None):
         md_path = os.path.join(os.path.dirname(args.report) or '.', 'check_report.md')
         append_manual_section(md_path, manual)
         print('   ↳ %d 筆找不到 block,已附到 %s「需人工確認」' % (len(manual), md_path))
+    renames, held = screen_renames(renames)
+    for r in held:
+        print('   ✋ 不寫回(需人工確認):%s → %s(%s)— %s' % (r['old'], r['new'], r['platform'], r['why']))
+        tally['skip'] += 1
+    if held and args.go:
+        md_path = os.path.join(os.path.dirname(args.report) or '.', 'check_report.md')
+        append_rename_manual(md_path, held)
+        print('   ↳ %d 筆改名已附到 %s「需人工確認」' % (len(held), md_path))
     if renames:
         print('— 作者改名(%d 位)' % len(renames))
         db = find_authors_db()

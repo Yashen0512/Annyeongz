@@ -170,3 +170,86 @@ def test_collect_targets_ignores_stale_title_under_a_no():
     assert len(CL.collect_targets(links, {}, {}, ['postype'])) == 2            # 沒有文章資料時照舊全查
     one = {'786': {'舊標題': [['PT', 'https://www.postype.com/@n/post/6308988']]}, '__edited__': {}, '__blocks__': {}}
     assert len(CL.collect_targets(one, arts, {}, ['postype'])) == 1          # 只有一組標題就沿用(build_site 也是)
+
+# ---- 2026-11-05 實測誤判:簡繁差異、同作者多個新名字、標題片段 ----
+LFT_PID = 'd' * 32
+def lft_people(name='咸魚', url='https://xianyu.lofter.com/', aliases=()):
+    return {LFT_PID: {'name': name, 'urls': {'Lofter': url} if url else {}, 'aliases': list(aliases), 'dead': False}}
+def lob(no, name, host='xianyu.lofter.com'):
+    return {'no': no, 'platform': 'lofter', 'name': name, 'author_url': host,
+            'url': 'https://%s/post/1a2b_%s' % (host, no)}
+
+def test_fold_zh_uses_stmap():
+    assert CL.fold_zh('咸魚') == CL.fold_zh('咸鱼') == CL.fold_zh('鹹魚')
+    assert CL.same_name('百憂解', '百忧解') and CL.same_name('一隻大鵝', '一只大鹅')
+    assert not CL.same_name('百憂解', '百憂')
+
+def test_rename_ignores_simplified_traditional_difference():
+    a = arts('1', '2', '3', pid=LFT_PID)
+    assert CL.detect_renames([lob(n, '咸鱼') for n in ('1', '2', '3')], lft_people(), a) == ([], [])
+    p = lft_people('百憂解', 'https://baiyoujie.lofter.com/')
+    obs = [lob(n, '百忧解', 'baiyoujie.lofter.com') for n in ('1', '2')]
+    manual = []
+    assert CL.detect_renames(obs, p, a, manual) == ([], []) and manual == []
+    # 曾用名也一樣折算
+    assert CL.detect_renames([lob(n, '舊名字') for n in ('1', '2')], lft_people(aliases=['旧名字']), a) == ([], [])
+
+def test_rename_conflicting_new_names_go_to_manual():
+    a = arts('1', '2', '3', '4', pid=LFT_PID)
+    p = lft_people('一只大鹅', 'https://dae.lofter.com/')
+    obs = [lob('1', '上-一只大鹅', 'dae.lofter.com'), lob('2', '上-一只大鹅', 'dae.lofter.com'),
+           lob('3', '下-一只大鹅', 'dae.lofter.com'), lob('4', '下-一只大鹅', 'dae.lofter.com')]
+    manual = []
+    assert CL.detect_renames(obs, p, a, manual) == ([], [])
+    assert len(manual) == 1 and manual[0]['old'] == '一只大鹅' and manual[0]['platform'] == 'lofter'
+    assert [x['new'] for x in manual[0]['names']] == ['上-一只大鹅', '下-一只大鹅'] and '不同的新名字' in manual[0]['why']
+    # 一篇抓到別的名字也算衝突(就算另一個名字有兩篇)
+    obs = [lob('1', '新筆名', 'dae.lofter.com'), lob('2', '新筆名', 'dae.lofter.com'), lob('3', '雨季', 'dae.lofter.com')]
+    manual = []
+    assert CL.detect_renames(obs, p, a, manual) == ([], []) and len(manual) == 1
+    # 在別人帳號(轉載)上看到的名字不算衝突:真的改名照常寫回
+    obs = [lob('1', '新筆名', 'dae.lofter.com'), lob('2', '新筆名', 'dae.lofter.com'), lob('3', '轉載號', 'repost.lofter.com')]
+    manual = []
+    r, c = CL.detect_renames(obs, p, a, manual)
+    assert [x['new'] for x in r] == ['新筆名'] and manual == []
+
+def test_title_fragment():
+    for bad in ('上-一只大鹅', '下-一只大鹅', '一只大鹅-下', '雨季番外', '第3章', '第 十二 話', '雨季（上）', '【下】雨季',
+                '雨季 上篇', '完結篇', 'Chapter 2', 'ch.3', 'Part 1'):
+        assert CL.title_fragment(bad), bad
+    for good in ('一只大鹅', '天上人間', '上官', '下雨天', '노네임', 'noname', 'chapters', '百憂解', 'ep_writer'):
+        assert CL.title_fragment(good) == '', good
+
+def test_rename_title_fragment_goes_to_manual():
+    a = arts('1', '2', pid=LFT_PID)
+    p = lft_people('一只大鹅', 'https://dae.lofter.com/')
+    manual = []
+    assert CL.detect_renames([lob('1', '番外-一只大鹅', 'dae.lofter.com'), lob('2', '番外-一只大鹅', 'dae.lofter.com')],
+                             p, a, manual) == ([], [])
+    assert len(manual) == 1 and '標題片段「番外」' in manual[0]['why']
+
+def test_rename_hold_reason():
+    assert CL.rename_hold_reason('咸魚', '咸鱼') and CL.rename_hold_reason('一只大鹅', '上-一只大鹅')
+    assert CL.rename_hold_reason('A', '') and CL.rename_hold_reason('A', 'b', known={'b'})
+    assert CL.rename_hold_reason('노네임', '새이름') == ''
+
+def test_report_includes_rename_manual_and_opens_issue():
+    rep = {'date': D1, 'platforms': {}, 'new_dead': [], 'revived': [], 'renames': [], 'rename_candidates': [],
+           'rename_manual': [{'pid': LFT_PID, 'old': '一只大鹅', 'platform': 'lofter', 'why': '同一作者在不同篇抓到 2 個不同的新名字',
+                              'names': [{'new': '上-一只大鹅', 'nos': ['1', '2']}, {'new': '下-一只大鹅', 'nos': ['3']}]}],
+           'author_pages': {'deleted': [], 'revived': []}}
+    md = CL.report_markdown(rep)
+    assert CL.RENAME_MANUAL_HEAD in md
+    assert '- 一只大鹅(Lofter):抓到 「上-一只大鹅」(No.1、2) / 「下-一只大鹅」(No.3)' in md
+
+def test_build_report_has_changes_with_only_manual():
+    p = lft_people('一只大鹅', 'https://dae.lofter.com/')
+    a = arts('1', '2', pid=LFT_PID)
+    targets, results, state = [], {}, {}
+    for no, nm in (('1', '上-一只大鹅'), ('2', '下-一只大鹅')):
+        u = 'https://dae.lofter.com/post/1a2b_%s' % no
+        targets.append({'url': u, 'platform': 'lofter', 'refs': [{'kind': 'article', 'no': no, 'title': 'T', 'label': 'LFT', 'marked': False}]})
+        results[u] = {'status': 'ok', 'author_name': nm, 'author_url': 'dae.lofter.com', 'reason': '200', 'code': 200}
+        state[u] = CL.advance(None, results[u], D1)
+    rep = CL.build_report(D1, targets, results, state, a, p, {})
+    assert rep['renames'] == [] and len(rep['rename_manual']) == 1 and rep['has_changes'] is True
