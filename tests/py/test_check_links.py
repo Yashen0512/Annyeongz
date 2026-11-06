@@ -253,3 +253,50 @@ def test_build_report_has_changes_with_only_manual():
         state[u] = CL.advance(None, results[u], D1)
     rep = CL.build_report(D1, targets, results, state, a, p, {})
     assert rep['renames'] == [] and len(rep['rename_manual']) == 1 and rep['has_changes'] is True
+
+# ---- 2026-11-06:每次執行上限(AFF 150 筆),最久沒查的先 ----
+def test_prioritize_oldest_first_and_cap():
+    tg = lambda i: {'url': 'https://www.asianfanfics.com/story/view/%d/x' % i, 'platform': 'aff', 'refs': []}
+    targets = [tg(i) for i in range(6)]
+    state = {targets[0]['url']: {'last': '2026-11-05'}, targets[1]['url']: {'last': '2026-10-01'},
+             targets[2]['url']: {'last': '2026-11-05'}, targets[4]['url']: {'last': '2026-10-20'}}   # 3、5 沒查過
+    got, deferred = CL.prioritize(targets, state, 4)
+    assert [t['url'][-3] for t in got] == ['3', '5', '1', '4'] and deferred == 2      # 沒查過的最前面(維持原順序)、再依 last 由舊到新
+    got, deferred = CL.prioritize(targets, state, 0)
+    assert len(got) == 6 and deferred == 0 and [t['url'][-3] for t in got][-2:] == ['0', '2']   # 不截斷只排序;同日期維持原順序
+    assert CL.prioritize(targets, state, 10)[1] == 0
+    assert CL.PLAT_MAX_PER_RUN == {'aff': 150}
+
+def test_advance_skipped_result_keeps_last():
+    skipped = {'status': 'unknown', 'author_name': None, 'reason': 'rate_limited_skip', 'code': None, 'skipped': True}
+    e = CL.advance({'status': 'ok', 'streak': 2, 'counted': '2026-11-01', 'last': '2026-11-01', 'first': '2026-10-01'}, skipped, '2026-11-06')
+    assert e['last'] == '2026-11-01' and e['streak'] == 2 and e['status'] == 'ok' and e['reason'] == 'rate_limited_skip'
+    assert CL.is_due(e, '2026-11-07')
+    assert CL.advance({}, skipped, '2026-11-06').get('last') is None
+    assert CL.last_checked(None) == '' and CL.last_checked({'last': '2026-11-01'}) == '2026-11-01'
+
+def test_main_caps_aff_per_run_oldest_first(tmp_path, monkeypatch, capsys):
+    """main:AFF 到期超過上限時只查最久沒查的那幾筆,其餘下次;Postype 不受上限影響。"""
+    import browser_checker as BC
+    b = tmp_path / '_build'; b.mkdir()
+    import io as _io, os, json
+    from conftest import ROOT
+    (tmp_path / 'data.json').write_text(_io.open(os.path.join(ROOT, 'tests', 'fixtures', 'compact_30.json'), encoding='utf-8').read(), encoding='utf-8')
+    af = lambda i: 'https://www.asianfanfics.com/story/view/%d/x' % i
+    links = {str(i): {'T%d' % i: [['AF', af(i)]]} for i in range(1, 6)}
+    links['6'] = {'T6': [['PT', 'https://www.postype.com/@b/post/1']]}
+    (b / 'article_links.json').write_text(json.dumps(links, ensure_ascii=False), encoding='utf-8')
+    (b / 'link_status.json').write_text(json.dumps({af(1): {'last': '2026-11-05', 'status': 'ok'}, af(2): {'last': '2026-10-01', 'status': 'ok'},
+                                                    af(4): {'last': '2026-10-15', 'status': 'ok'}}), encoding='utf-8')
+    monkeypatch.setattr(CL, 'PLAT_MAX_PER_RUN', {'aff': 2})
+    monkeypatch.setattr(BC, 'preflight', lambda src, plats, **k: {'available': True, 'warp': False, 'usable': list(plats), 'notes': {}, 'cookies': {}})
+    got = {}
+    def fake_run_all(pre, by_plat, platforms, results, lock, *a, **k):
+        got.update({p: [t['url'] for t in ts] for p, ts in by_plat.items()})
+        return {p: {'checked': 0, 'blocked': False, 'skipped': 0, 'challenges': 0} for p in platforms}
+    monkeypatch.setattr(BC, 'run_all', fake_run_all)
+    monkeypatch.setattr(CL, 'run_platform', lambda p, ts, *a, **k: {'checked': len(ts), 'blocked': False, 'skipped': 0})
+    CL.main(['--browser', '--src', str(b), '--platforms', 'postype,aff', '--no', '1,2,3,4,5,6'])
+    assert got['aff'] == [af(3), af(5)]                                           # 沒查過的兩筆先(維持編號順序),其餘三筆下次
+    out = capsys.readouterr().out
+    assert 'Asianfanfics 今天到期 5 筆,每次最多查 2 筆(最久沒查的先),其餘 3 筆下次再查' in out and '今天要查 3 筆' in out

@@ -377,14 +377,20 @@ Lofter(1300 多筆,最大平台)、AO3、Asianfanfics 用 urllib 從任何 IP �
     (`{chapters, chapter_current, chapter_total, complete, status, status_date, words}`),**先只記錄、不寫回 Notion 的文章狀態**。
   - Asianfanfics:正常、或「SUBSCRIBERS ONLY / Please subscribe to read」都算 `ok`(文還在);404 頁(大字 404、標題「Page Not Found」、
     內文「The page you were looking for doesn't exist or has moved.」、「Back to Home」鈕,2026-11-05 站長用平常的 Chrome 實看)→ `deleted`(狀態碼 404 或這些字樣;彎引號也認)。
-    連續請求第二筆起就是 403 Cloudflare 驗證頁,所以 AFF 每筆間隔拉長到 **6~10 秒**(`GAP_PLAT`)。
+    連續請求第二筆起就是 403 Cloudflare 驗證頁,所以 AFF 每筆間隔拉長到 **15~25 秒**(`GAP_PLAT`)。
+    **AFF 限速**(2026-11-06 實測:6~10 秒間隔跑到約 100 筆後大量 `unknown(empty)`、後段 `http_429`):
+    每次執行最多 `check_links.PLAT_MAX_PER_RUN['aff']` = **150 筆**,到期的超過就依 `link_status.json` 的 `last` 排序、**最久沒查(含沒查過)的先**,
+    其餘下次再查(`prioritize`,啟動時印「今天到期 N 筆…其餘 M 筆下次再查」);一出現 **HTTP 429**(`classify` 不看頁面內容一律標 `rate_limited`,任何平台都是)
+    或 **連續 5 筆 `empty`**(`EMPTY_MAX_STREAK`,只套 AFF)→ `run_platform` **立刻停止該平台本次巡檢**,其餘連結記 `unknown`(reason `rate_limited_skip`、`skipped=True`:
+    `advance` 不動任何計數**也不動 `last`**,下次仍排最前面)並印 🚨 警告、報告 note「被限速(…),已停止」;第一個 429 **之前**的結果照常,**之後**同一個 `BrowserSession` 裡 AFF 的
+    `deleted` 一律改判 `unknown`(reason `404_rate_limited` 等,`demote_after_rate_limit`;限速期間的 404 不可信)。作者頁(`profile/u/…`)與作品頁同一個清單、同一套規則。
   - Cloudflare 挑戰頁**只看頁面內容、不看狀態碼**(實測 AFF 是 403 繁中版):`<title>` 是 Just a moment / 請稍候 / 请稍候,或內文有 Ray ID /
     Performance and Security by Cloudflare / Enable JavaScript and cookies to continue / 正在執行安全驗證 / cf-chl 等(`CF_TITLES` / `CF_MARKERS`;
     「請稍候」只看 `<title>`,文章內文出現不算)→ 在**同一頁等驗證自己跑完**(`wait_challenge`:每秒看標題 / 網址有沒有變、頁面是不是還是挑戰頁,
     最多 `CF_SOLVE_S` = 20 秒;「驗證成功。正在等待回應」這種中間頁繼續等),跑完就用那頁的內容判斷(狀態碼取自 `page.on('response')` 記下的最後一次主框架導覽);
     等完仍是挑戰頁 → `unknown`(reason `cf_challenge_wait`)並計數,**同平台連續 5 筆挑戰頁就略過該平台**並印警告。
     AFF 走固定設定檔後若仍過不了,見上面「固定設定檔」的處理方式。
-  - 共用:同平台順序跑、每筆隨機間隔 2~4 秒(AFF 6~10)、每個平台一個 browser context 重用;逾時 20 秒 → `unknown`;
+  - 共用:同平台順序跑、每筆隨機間隔 2~4 秒(AFF 15~25)、每個平台一個 browser context 重用;逾時 20 秒 → `unknown`;
     三個平台在同一條執行緒依序跑(Playwright sync API 綁執行緒),Postype 的執行緒並行。
 - **`--probe`(驗判斷規則用)**:`python check_links.py --browser --probe` 每個平台只抓 3 筆(1 筆預期正常、1 筆 Notion 已標 ❌、1 筆捏造的不存在網址;
   Lofter 多 1 筆不存在的部落格),印最終網址、狀態碼、導覽錯誤、判定(status / reason / author / extra)、`<title>` 與頁面前 300 字,**不寫任何檔案**。
@@ -542,6 +548,7 @@ python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆�
                                   #          checkers(各平台 HTML 樣本)、check_links(連續兩天狀態機、到期、改名判斷、平台被擋短路、重試)、notion_writeback(❌ 加 / 移除、PATCH 格式、曾用名合併)、build_site 曾用名、fetch_data block 位置與 merge_links 清舊標題、notion_writeback 只信記錄的 block、collect_targets 略過舊標題、
                                   #          browser_checker(classify 各平台合成樣本、AO3 章節進度、cookie 三種格式與到期、WARP、--probe 樣本挑選、挑戰頁連續 5 筆 / 登入牆短路、preflight、--browser / --probe 接進 main、
                                   #          固定設定檔與反偵測的啟動參數(假 Playwright)、--setup-profile、設定檔被擋提示、--profile / --no-profile 接線、
+                                  #          AFF 限速(429 / 連續 5 筆 empty 立刻停止、其餘記 skipped 不動 last、429 之後的 404 改判 unknown、每次最多 150 筆最久沒查的先),
                                   #          --no-sandbox 只在 Linux、Lofter 博客名來源與首頁退路、合集頁判定)
                                   #          改名的簡繁折算 / 多名字 / 標題片段 → 需人工確認、notion_writeback screen_renames;bat 片段分流(test_bat_snippet)
 ```

@@ -28,10 +28,17 @@
        另外解析章節進度(Chapters: 5/10、5/?)與 Completed 日期,放在結果的 extra 欄位(check_links.advance 會存進 link_status.json),先只記錄、不寫回 Notion。
    - Asianfanfics:正常、或顯示 SUBSCRIBERS ONLY / Please subscribe to read 都算 ok(文還在,只是要訂閱);
        404 頁(標題「Page Not Found」、內文「The page you were looking for doesn't exist or has moved.」,2026-11-05 站長用平常的 Chrome 實看)→ deleted。
-       連續請求會被 Cloudflare 擋(第二筆起 403 驗證頁),所以 AFF 每筆間隔拉長到 GAP_PLAT['aff'] = 6~10 秒。
+       連續請求會被 Cloudflare 擋(第二筆起 403 驗證頁),所以 AFF 每筆間隔拉長到 GAP_PLAT['aff'] = 15~25 秒。
+       **限速(2026-11-06 實測:約 100 筆後大量 unknown(empty),後段 http_429)**:
+         · 每次執行最多 check_links.PLAT_MAX_PER_RUN['aff'] = 150 筆,依 link_status.json 的 last 排序、最久沒查的先,剩下的下次再跑(check_links.prioritize);
+         · 一出現 HTTP 429(classify 標 rate_limited,不管頁面內容)或連續 EMPTY_MAX_STREAK = 5 筆 empty → 立刻停止該平台本次巡檢,
+           其餘連結記 unknown(reason rate_limited_skip、skipped=True:advance 不動任何計數也不動 last,下次仍排在前面)並印警告;
+         · 第一個 429 之前的結果照常;之後(同一個 session)AFF 的 deleted 一律改判 unknown(reason 原因_rate_limited,demote_after_rate_limit),
+           限速期間的 404 不可信;
+         · 作者頁(profile/u/…)跟作品頁在同一個清單、同一套規則。
        2026-11-05 實測:同頁等滿 20 秒仍停在「驗證成功。正在等待 … 回應」= Cloudflare 認出自動化瀏覽器(平常的 Chrome 開同一網址直接是 404 頁),
        所以 AFF 預設改走**固定設定檔**(見下方「固定設定檔」)。
-   - 共用:同平台順序跑、每筆間隔 GAP 隨機 2~4 秒(AFF 另計);每個平台一個 browser context 重用(不每筆開新瀏覽器);逾時 TIMEOUT_MS = 20 秒 → unknown;
+   - 共用:同平台順序跑、每筆間隔 GAP 隨機 2~4 秒(AFF 另計);任何平台拿到 HTTP 429 都標 rate_limited、該平台本次立刻停止;每個平台一個 browser context 重用(不每筆開新瀏覽器);逾時 TIMEOUT_MS = 20 秒 → unknown;
        Cloudflare 挑戰頁用**頁面內容**判斷、不看狀態碼(標題 Just a moment / 請稍候 / 请稍候,或內文 Ray ID / Performance and Security by Cloudflare /
        Enable JavaScript and cookies to continue / 正在執行安全驗證…):在**同一頁**等驗證自己跑完(標題或網址變了、頁面不再是挑戰頁),
        最多 CF_SOLVE_S = 20 秒,過了就用那頁的內容判斷;等完仍是挑戰頁 → unknown(cf_challenge_wait)並計數,同平台連續 CF_MAX_STREAK = 5 筆
@@ -59,12 +66,15 @@ from checkers import lofter as _lofter, ao3 as _ao3, aff as _aff
 
 PLATFORMS = ('lofter', 'ao3', 'aff')
 GAP = (2.0, 4.0)            # 同平台每筆間隔(秒,隨機)
-GAP_PLAT = {'aff': (6.0, 10.0)}   # 個別平台的間隔(AFF 連續請求第二筆起就被 Cloudflare 擋,拉長)
+GAP_PLAT = {'aff': (15.0, 25.0)}  # 個別平台的間隔(AFF 連續請求會被 Cloudflare 擋 / 限速,2026-11-06 實測 6~10 秒跑約 100 筆就 429,拉長)
 TIMEOUT_MS = 20000          # 單頁逾時 → unknown
 SETTLE_MS = 3000            # domcontentloaded 之後再等 networkidle 最多這麼久(讓 JS 把內容畫出來;逾時不算錯)
 CF_SOLVE_S = 20             # 遇到 Cloudflare 挑戰頁:在同一頁等驗證跑完,最多幾秒
 CF_POLL_S = 1.0             # 等驗證時每隔幾秒看一次標題 / 網址有沒有變
 CF_MAX_STREAK = 5           # 同平台連續幾筆挑戰頁就略過該平台
+RATE_LIMIT_CODE = 429       # 限速:拿到這個狀態碼(不管頁面內容)→ rate_limited,該平台本次立刻停止
+EMPTY_MAX_STREAK = 5        # 連續幾筆 unknown(empty)視同被限速,立刻停止(只套用在 EMPTY_STREAK_PLATFORMS)
+EMPTY_STREAK_PLATFORMS = ('aff',)   # 2026-11-06 實測 AFF 被限速時先是整頁空白、後段才 429
 COOKIE_DIR = 'cookies'
 COOKIE_FILE = os.path.join(COOKIE_DIR, 'lofter.json')
 COOKIE_SESS = 'LOFTER_SESS'
@@ -254,11 +264,14 @@ def _nav_error_result(platform, error, final, url):
 def classify(platform, final_url, status, html, url='', error=''):
     """瀏覽器抓到的東西 → checkers 同形狀的結果。status 是 HTTP 狀態碼(None = 沒拿到),error 是導覽錯誤
     ('timeout'、'net::ERR_NAME_NOT_RESOLVED'、'network'…;'' = 沒錯誤)。多出來的鍵:challenge(Cloudflare 挑戰頁,呼叫端據此等待重試 / 計數)、
-    blocked(平台層級被擋,呼叫端略過該平台其餘連結)、down(AO3 全站停機,呼叫端略過整個平台且不計挑戰頁)、extra(AO3 章節進度)。"""
+    blocked(平台層級被擋,呼叫端略過該平台其餘連結)、down(AO3 全站停機,呼叫端略過整個平台且不計挑戰頁)、
+    rate_limited(HTTP 429,呼叫端立刻停止該平台、之後的 deleted 不可信)、extra(AO3 章節進度)。"""
     final = final_url or url
     if error:
         return _nav_error_result(platform, error, final, url)
     body = html or ''
+    if status == RATE_LIMIT_CODE:       # 限速:不看頁面內容(Cloudflare 1015 也是 429 挑戰頁長相),呼叫端據 rate_limited 停止該平台
+        return H.result('unknown', reason='http_%d' % RATE_LIMIT_CODE, code=status, final=final, blocked=True, rate_limited=True)
     if platform == 'ao3' and is_ao3_down(status, body):
         return H.result('unknown', reason='ao3_down', code=status, final=final, blocked=True, down=True)
     if is_cf_challenge(status, body):
@@ -270,6 +283,20 @@ def classify(platform, final_url, status, html, url='', error=''):
     if platform == 'aff':
         return _classify_aff(final, status, body, url)
     return H.result('unknown', reason='unsupported', code=status, final=final)
+
+def demote_after_rate_limit(res):
+    """第一個 429 之後的結果:deleted(404 / gone_text / redirect_home…)一律改判 unknown,reason = 原因_rate_limited,
+    其他鍵(code / final / author…)照舊;不是 deleted 的原樣回傳。限速期間 AFF 的 404 不可信(2026-11-06 實測)。"""
+    if (res or {}).get('status') != 'deleted':
+        return res
+    out = dict(res)
+    out['status'] = 'unknown'
+    out['reason'] = '%s_rate_limited' % (res.get('reason') or 'deleted')
+    return out
+
+def rate_limited_skip(url, why):
+    """被限速而停止後,其餘連結記這個:unknown、不計數、skipped=True(check_links.advance 不動 last,下次仍排在最前面)。"""
+    return H.result('unknown', reason='rate_limited_skip', code=None, final=url, skipped=True, detail=why)
 
 def blog_root_gone(status, html, error=''):
     """Lofter 部落格首頁(https://xxx.lofter.com/)還在不在:DNS / 連線錯誤、404、或頁面說博客不存在 → True(整個部落格沒了)。"""
@@ -486,6 +513,7 @@ class BrowserSession:
         self._pw = self._browser = self._ua = self._pctx = None
         self._ctx = {}
         self._reach = {}
+        self.rate_limited = set()   # 這個 session 裡已經拿過 429 的平台:之後該平台的 deleted 一律改判 unknown(demote_after_rate_limit)
         self._status = {}    # id(page) → 該頁最後一次主框架導覽的狀態碼(Cloudflare 驗證完自動重載時,page.goto 的回應已經過時)
         self.last = None     # 最後一次 fetch 的 (status, final, html, error),--probe 印頁面文字用
 
@@ -691,6 +719,10 @@ class BrowserSession:
                 if name:
                     res['author_name'], res['author_source'] = name, 'blog_home'
         res.setdefault('final', final)
+        if plat in self.rate_limited:
+            res = demote_after_rate_limit(res)     # 第一個 429 之後:限速期間的 404 不可信
+        if res.get('rate_limited'):
+            self.rate_limited.add(plat)
         return res
 
 # ---------- 跟 check_links.py 接的部分 ----------
@@ -757,10 +789,20 @@ def skip_stat(n, note):
 def run_platform(plat, targets, session, results, lock, verbose=False, log=print, sleep=time.sleep):
     """一個平台順序跑完(呼叫端保證在 session 的執行緒上)。回傳 {'checked','blocked','skipped','challenges', 'note'?}。
     - AO3 全站停機(down)→ 第一筆遇到就略過整個 AO3,本次不再打(狀態 unknown,不改任何計數)
+    - 限速:HTTP 429(rate_limited)、或 EMPTY_STREAK_PLATFORMS 連續 EMPTY_MAX_STREAK 筆 unknown(empty)→ 立刻停止,
+      其餘連結記 rate_limited_skip(unknown、不計數、不動 last)並印警告;作者頁與作品頁同一套
     - Cloudflare 挑戰頁連續 CF_MAX_STREAK 筆 → 略過其餘並印警告
     - Lofter 登入牆(blocked 且不是挑戰頁)→ cookie 過期,略過其餘(狀態 login_required,不算死)"""
     stat = {'checked': 0, 'blocked': False, 'skipped': 0, 'challenges': 0}
-    streak, hinted, prof = 0, False, _uses_profile(session, plat)
+    streak, empties, hinted, prof = 0, 0, False, _uses_profile(session, plat)
+    def stop_rate_limited(i, why):
+        rest = targets[i + 1:]
+        with lock:
+            for r in rest:
+                results[r['url']] = rate_limited_skip(r['url'], why)
+        stat['blocked'], stat['skipped'] = True, len(rest)
+        stat['note'] = '被限速(%s),已停止' % why
+        log('  🚨 [%s] %s → 立刻停止本平台巡檢,其餘 %d 筆記 unknown(不計數,下次優先查);請隔久一點再跑,或把間隔拉長' % (plat, why, len(rest)))
     for i, t in enumerate(targets):
         res = session.check(plat, t['url'])
         with lock:
@@ -769,6 +811,16 @@ def run_platform(plat, targets, session, results, lock, verbose=False, log=print
         if verbose or res['status'] != 'ok':
             log('  [%s] %-14s %s  %s' % (plat, res['status'] + ('(' + str(res.get('reason')) + ')' if res.get('reason') else ''),
                                          t['url'], res.get('author_name') or ''))
+        if res.get('rate_limited'):
+            stop_rate_limited(i, 'HTTP %s' % (res.get('code') or RATE_LIMIT_CODE))
+            break
+        if plat in EMPTY_STREAK_PLATFORMS and res['status'] == 'unknown' and res.get('reason') == 'empty':
+            empties += 1
+            if empties >= EMPTY_MAX_STREAK:
+                stop_rate_limited(i, '連續 %d 筆空白頁' % empties)
+                break
+        else:
+            empties = 0
         if res.get('down'):
             stat['blocked'], stat['skipped'] = True, len(targets) - stat['checked']
             stat['note'] = 'AO3 停機中'

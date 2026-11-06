@@ -146,7 +146,7 @@ def test_cloudflare_detection_uses_content_not_status():
     assert BC.classify('aff', AF, 403, load('aff_empty.html'), url=AF)['reason'] == 'http_403'      # 真的只是 403、不是挑戰頁才算 http_403
 
 def test_gap_for_platform():
-    assert BC.gap_for('aff') == (6.0, 10.0) and BC.gap_for('aff')[0] > BC.GAP[1]     # AFF 連續請求第二筆就被擋,間隔拉長
+    assert BC.gap_for('aff') == (15.0, 25.0) and BC.gap_for('aff')[0] > BC.GAP[1]   # 2026-11-06 實測 6~10 秒跑約 100 筆就被限速,拉到 15~25
     assert BC.gap_for('lofter') == BC.GAP and BC.gap_for('ao3') == BC.GAP
 
 # ---- AO3 停機(2026-11 資安事件,全站 418) ----
@@ -755,3 +755,105 @@ def test_probe_samples_include_lofter_collection():
            {'url': LC, 'platform': 'lofter', 'refs': [{'kind': 'article', 'marked': False}]}]
     s = BC.pick_probe_samples(tgs, {}, 'lofter')
     assert s[-1] == ('合集分享頁(預期 ok;404 狀態碼只算 unknown)', LC)
+
+# ---- 2026-11-06:AFF 限速(約 100 筆後 unknown(empty)、後段 http_429) ----
+AFU = 'https://www.asianfanfics.com/profile/u/testauthor'     # 作者頁:跟作品頁同一套規則
+EMPTY = lambda: {'status': 'unknown', 'author_name': None, 'reason': 'empty', 'code': 200}
+R429 = lambda: BC.classify('aff', AF, 429, '', url=AF)
+D404 = lambda: {'status': 'deleted', 'author_name': None, 'reason': '404', 'code': 404}
+
+def test_classify_429_is_rate_limited_regardless_of_body():
+    r = BC.classify('aff', AF, 429, load('aff_empty.html'), url=AF)
+    assert r['status'] == 'unknown' and r['reason'] == 'http_429' and r['rate_limited'] and r['blocked'] and not r.get('challenge')
+    r = BC.classify('aff', AF, 429, load('cf_challenge.html'), url=AF)              # Cloudflare 1015 限速頁也是 429 + 挑戰頁長相
+    assert r['reason'] == 'http_429' and r['rate_limited']
+    assert BC.classify('aff', AFU, 429, '', url=AFU)['rate_limited']                  # 作者頁一樣
+    assert BC.classify('lofter', LF, 429, '', url=LF)['rate_limited']                 # 其他平台拿到 429 也標起來(呼叫端一樣停)
+    assert not BC.classify('aff', AF, 404, load('aff_404.html'), url=AF).get('rate_limited')
+    assert not BC.classify('aff', AF, 403, load('cf_challenge.html'), url=AF).get('rate_limited')   # 403 挑戰頁維持 cf_challenge
+
+def test_demote_after_rate_limit():
+    r = BC.demote_after_rate_limit(D404())
+    assert r['status'] == 'unknown' and r['reason'] == '404_rate_limited' and r['code'] == 404
+    r = BC.demote_after_rate_limit({'status': 'deleted', 'author_name': None, 'reason': 'gone_text', 'code': 200})
+    assert r['status'] == 'unknown' and r['reason'] == 'gone_text_rate_limited'
+    assert BC.demote_after_rate_limit(OK()) == OK() and BC.demote_after_rate_limit(EMPTY()) == EMPTY()   # 不是 deleted 的原樣
+    e = CL.advance({'status': 'ok', 'streak': 3, 'counted': '2026-11-05', 'last': '2026-11-05'}, r, '2026-11-06')
+    assert e['status'] == 'ok' and e['streak'] == 3 and not e.get('dead') and e['reason'] == 'gone_text_rate_limited'   # 走 advance 只是 unknown
+
+def test_session_demotes_404_after_first_429(monkeypatch):
+    """同一個 session:第一個 429 之前的 404 照常 deleted,之後 AFF 的 404(含作者頁)一律 unknown;其他平台不受影響。"""
+    pages = {'a': (404, AF, load('aff_404.html'), ''), 'b': (429, AF, '', ''), 'c': (404, AF, load('aff_404.html'), ''),
+             'd': (404, AFU, load('aff_404.html'), ''), 'e': (200, AF, load('aff_subscribers.html'), '')}
+    s = BC.BrowserSession(sleep=lambda x: None, log=lambda *a: None)
+    monkeypatch.setattr(s, 'fetch', lambda plat, url, page=None: pages[url.rsplit('/', 1)[-1]])
+    monkeypatch.setattr(s, 'lofter_blog_gone', lambda host: False)
+    assert s.check('aff', 'https://www.asianfanfics.com/story/view/1/a')['status'] == 'deleted'
+    r = s.check('aff', 'https://www.asianfanfics.com/story/view/2/b')
+    assert r['reason'] == 'http_429' and r['rate_limited'] and s.rate_limited == {'aff'}
+    r = s.check('aff', 'https://www.asianfanfics.com/story/view/3/c')
+    assert r['status'] == 'unknown' and r['reason'] == '404_rate_limited'
+    r = s.check('aff', 'https://www.asianfanfics.com/profile/u/d')
+    assert r['status'] == 'unknown' and r['reason'] == '404_rate_limited'
+    assert s.check('aff', 'https://www.asianfanfics.com/story/view/5/e')['status'] == 'ok'          # ok 照常
+    monkeypatch.setattr(s, 'fetch', lambda plat, url, page=None: (404, LF, load('lofter_404.html'), ''))
+    assert s.check('lofter', LF)['status'] == 'deleted'                                              # 別的平台不受 AFF 的 429 影響
+
+def test_run_platform_stops_at_first_429_and_marks_rest_unknown():
+    seq = iter([OK(), D404(), R429(), D404(), OK()])
+    tgs = tg('aff', 4) + [{'url': AFU, 'platform': 'aff', 'refs': []}]
+    s, results, lines = FakeSession(lambda p, u: next(seq)), {}, []
+    st = BC.run_platform('aff', tgs, s, results, threading.Lock(), log=lines.append, sleep=lambda x: None)
+    assert len(s.calls) == 3 and st['checked'] == 3 and st['blocked'] and st['skipped'] == 2 and 'HTTP 429' in st['note']
+    assert results['https://x/aff/1']['status'] == 'deleted'                     # 429 之前的照常
+    assert results['https://x/aff/2']['reason'] == 'http_429'
+    for u in ('https://x/aff/3', AFU):                                           # 其餘(含作者頁)記 unknown、skipped,不計數
+        r = results[u]
+        assert r['status'] == 'unknown' and r['reason'] == 'rate_limited_skip' and r['skipped'] and r['code'] is None
+    assert any('🚨' in l and '429' in l and '立刻停止' in l and '其餘 2 筆' in l for l in lines)
+    e = CL.advance({'status': 'deleted', 'streak': 1, 'counted': '2026-11-05', 'last': '2026-11-05'}, results[AFU], '2026-11-06')
+    assert e['last'] == '2026-11-05' and e['streak'] == 1 and e['status'] == 'deleted' and not e.get('dead')   # last 也不動
+    assert e['reason'] == 'rate_limited_skip'
+    assert CL.advance(None, results[AFU], '2026-11-06').get('last') is None       # 沒查過的也不會被記成今天查過
+
+def test_run_platform_stops_after_five_consecutive_empty():
+    seq = iter([OK()] + [EMPTY()] * 5 + [OK(), OK()])
+    s, results, lines = FakeSession(lambda p, u: next(seq)), {}, []
+    st = BC.run_platform('aff', tg('aff', 8), s, results, threading.Lock(), log=lines.append, sleep=lambda x: None)
+    assert len(s.calls) == 6 and st['checked'] == 6 and st['blocked'] and st['skipped'] == 2 and '連續 5 筆空白頁' in st['note']
+    assert results['https://x/aff/6']['reason'] == 'rate_limited_skip' and results['https://x/aff/7']['skipped']
+    assert any('🚨' in l and '連續 5 筆空白頁' in l for l in lines)
+
+def test_run_platform_empty_streak_resets_and_only_counts_on_aff():
+    seq = iter([EMPTY()] * 4 + [OK()] + [EMPTY()] * 4 + [D404()])
+    s = FakeSession(lambda p, u: next(seq))
+    st = BC.run_platform('aff', tg('aff', 10), s, {}, threading.Lock(), log=lambda *a: None, sleep=lambda x: None)
+    assert st['checked'] == 10 and st['blocked'] is False and 'note' not in st          # 中間有 ok 就重數
+    seq = iter([EMPTY()] * 7)
+    st = BC.run_platform('lofter', tg('lofter', 7), FakeSession(lambda p, u: next(seq)), {}, threading.Lock(), log=lambda *a: None, sleep=lambda x: None)
+    assert st['checked'] == 7 and st['blocked'] is False                                  # Lofter 的空白頁不是限速,照跑
+
+def test_run_platform_429_on_author_page_stops_too():
+    seq = iter([OK(), R429(), OK()])
+    tgs = [tg('aff', 1)[0], {'url': AFU, 'platform': 'aff', 'refs': [{'kind': 'author'}]}, tg('aff', 2)[1]]
+    s, results = FakeSession(lambda p, u: next(seq)), {}
+    st = BC.run_platform('aff', tgs, s, results, threading.Lock(), log=lambda *a: None, sleep=lambda x: None)
+    assert st['checked'] == 2 and st['skipped'] == 1 and results[AFU]['rate_limited'] and results['https://x/aff/1']['skipped']
+
+def test_main_browser_rate_limited_rest_not_marked_checked(tmp_path, monkeypatch):
+    """接到 main:AFF 第一筆 429 → 其餘記 unknown / rate_limited_skip,link_status 不記 last;報告平台狀態帶「被限速」。"""
+    b = _build_dir(tmp_path)
+    links = json.loads((b / 'article_links.json').read_text(encoding='utf-8'))
+    links['3'] = {'C': [['AF2', AF.replace('123', '456')]]}
+    (b / 'article_links.json').write_text(json.dumps(links, ensure_ascii=False), encoding='utf-8')
+    monkeypatch.setattr(BC, 'preflight', lambda src, plats, **k: {'available': True, 'warp': False, 'usable': list(plats), 'notes': {}, 'cookies': {}})
+    seq = iter([R429(), OK()])
+    monkeypatch.setattr(BC, 'BrowserSession', lambda **k: FakeSession(lambda p, u: next(seq)))
+    monkeypatch.setattr(BC, 'GAP_PLAT', {})
+    rep = CL.main(['--browser', '--src', str(b), '--platforms', 'aff', '--no', '2,3'])
+    assert rep['counts'] == {'unknown': 2} and rep['platforms']['aff']['blocked'] and '被限速(HTTP 429)' in rep['platforms']['aff']['note']
+    st = json.load(io.open(str(b / 'link_status.json'), encoding='utf-8'))
+    first = [u for u in st if u != '__meta__' and st[u]['reason'] == 'http_429'][0]
+    rest = [u for u in st if u != '__meta__' and u != first][0]
+    assert st[first]['last'] == CL.today_str() and st[rest].get('last') is None and st[rest]['reason'] == 'rate_limited_skip'
+    assert '被限速' in CL.report_markdown(rep)
