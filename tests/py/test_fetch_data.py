@@ -45,6 +45,18 @@ def test_block_links_returns_rich_text_index():
     assert FD.block_links(bm) == [['https://b/1', 'https://b/1', -1]]
     assert FD.block_links({'type': 'divider', 'divider': {}}) == []
 
+def test_block_links_label_carries_x_from_all_three_positions():
+    """標籤是整個 block 的文字,所以站長手標(連結後純文字 ❌)、舊格式(連結文字內、連結前)的 ❌ 都會進標籤,
+    build_site.split_links / check_links.collect_targets 看標籤含 ❌ 就算已標。樣本:tests/fixtures/notion_rich_text.json。"""
+    import io, json, os
+    fx = json.load(io.open(os.path.join(os.path.dirname(__file__), '..', 'fixtures', 'notion_rich_text.json'), encoding='utf-8'))
+    for c in fx['cases']:
+        rts = [{'plain_text': t, 'href': u} for t, u in c['rich_text']]
+        out = FD.block_links({'type': 'paragraph', 'paragraph': {'rich_text': rts}})
+        assert [l[1] for l in out] == [u for _, u in c['rich_text'] if u], c['name']
+        assert all(l[0] == (c['label'] or l[1]) for l in out), c['name']
+        assert all(('❌' in l[0]) == any(c['marked']) for l in out), c['name']   # block 層級:任一條已標,同 block 的標籤都含 ❌
+
 # ---- merge_links:增量重抓與清掉舊標題 / 舊編號 ----
 def _page(no, title, pid, edited):
     return {'id': pid, 'last_edited_time': edited,

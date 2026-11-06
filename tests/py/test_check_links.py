@@ -161,6 +161,18 @@ def test_collect_targets_dedupes_and_marks():
     assert ts[1]['refs'][0]['kind'] == 'author'
     assert len(CL.collect_targets(links, {}, ppl, ['postype', 'lofter'], only_nos={'2'})) == 1   # --no 不查作者頁
 
+def test_collect_targets_marked_from_all_three_positions():
+    """「已標 ❌」三種位置都算(與 build_site.split_links、notion_writeback.is_marked 一致):連結後純文字 ❌(站長手標)、
+    連結文字內、連結前,經 fetch_data.block_links 的標籤都含 ❌ → marked。樣本:tests/fixtures/notion_rich_text.json。"""
+    import io, json, os
+    fx = json.load(io.open(os.path.join(os.path.dirname(__file__), '..', 'fixtures', 'notion_rich_text.json'), encoding='utf-8'))
+    for c in fx['cases']:
+        urls = ['https://www.postype.com/@b/post/%d' % i for i, _ in enumerate(u for _, u in c['rich_text'] if u)]
+        ts = CL.collect_targets({'1': {'T': [[c['label'] or u, u] for u in urls]}, '__blocks__': {}}, {}, {}, ['postype'])
+        assert [t['refs'][0]['marked'] for t in ts] == [any(c['marked'])] * len(urls), c['name']
+    for lab in ('LFT❌', '❌ LFT', '❌LFT', 'LFT ❌ 備註'):
+        assert CL.collect_targets({'1': {'T': [[lab, 'https://www.postype.com/@b/post/1']]}, '__blocks__': {}}, {}, {}, ['postype'])[0]['refs'][0]['marked']
+
 def test_run_platform_stops_after_three_blocked():
     targets = [{'url': 'https://www.asianfanfics.com/story/view/%d/x' % i, 'platform': 'aff', 'refs': []} for i in range(10)]
     calls = []

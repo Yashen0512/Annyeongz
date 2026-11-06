@@ -49,6 +49,7 @@ tests/                     測試
                            browser_checker 的 classify / cookie 解析 / 挑戰頁計數(假 session,不開瀏覽器))
   fixtures/build_input/    30 篇的建置輸入(主表 / 作者 / 公告 CSV、article_links.json、expected.json),由 make_fixture.py 從 data.json 反推
   fixtures/compact_30.json 同 30 篇的精簡格式(vitest 與 pytest 的對照檔,make_fixture.py 一起重產)
+  fixtures/notion_rich_text.json   Notion 連結 block rich_text 的 ❌ 各種寫法樣本(站長手標 / 兩種舊格式 / 異常),notion_writeback、fetch_data、build_site、check_links 四邊對照
   fixtures/html/           各平台頁面的最小 HTML 樣本(正常 / 已刪 / 登入牆 / Cloudflare 挑戰頁英文版與 AFF 繁中版 / AO3 停機頁),給 checkers 與 browser_checker 測試用;
                            lofter_404、aff_cf_zh、ao3_down 依 2026-11-04 本機 --probe 的真實字樣寫成
   fixtures/cookies/        Lofter cookie 匯出檔的三種格式樣本(Get cookies.txt LOCALLY JSON / Cookie-Editor JSON / Netscape),給 browser_checker 測試用
@@ -308,15 +309,22 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
   (作者改名是作者層級,不受 `--exclude` 影響)。
 - **`notion_writeback.py`**:預設 dry-run 只印清單,`--go` 才寫。
   - 死連結:用 `article_links.json` 的 `__blocks__`(`{No: {page: 頁面ID, links: {網址: [blockID, rich_text 位置]}}}`,
-    `fetch_data.py` 記錄)找到該連結的 block,把「❌」接在**連結文字結尾**(「LFT」→「LFT❌」,`mark_dead`;與站長手標習慣一致,
-    例如 No.276「LFT-01-06❌」;2026-11-06 以前是插在前面);復活(`unmark_dead`)**前後兩種位置都認得、都拿掉**:
-    連結文字裡的、緊鄰前一段結尾的、緊鄰後一段開頭的(鄰段被清空就整段拿掉;鄰段中間的 ❌ 是別條連結的,不動)。
-    「已標」的判定(`is_marked`)同樣前後都算;`build_site.split_links` / `check_links.collect_targets` 只看連結名稱**含** ❌、不分位置,
-    三處一致。bookmark / embed 沒有 rich_text,❌ 放 caption 結尾(`mark_caption` / `unmark_caption`)。
+    `fetch_data.py` 記錄)找到該連結的 block,在連結段**之後插入一段獨立的純文字「❌」**(不帶連結、連結文字維持原樣:`[LFT](url)❌`,`mark_dead`;
+    這是站長手標的慣例;2026-11-06 以前本腳本先是插在連結前面、後來改寫進連結文字結尾「LFT❌」,都是**舊格式**);
+    復活(`unmark_dead`)移除連結後緊鄰的純文字 ❌,也相容兩種舊格式(連結文字內的、緊鄰前一段結尾的)都拿掉
+    (鄰段被清空就整段拿掉;鄰段中間的 ❌ 是別條連結的,不動;連結文字邊上連帶的空白也去掉)。
+    「已標」的判定(`is_marked`)三種位置都算;`build_site.split_links` / `check_links.collect_targets` 看的是 `fetch_data.block_links` 給的標籤
+    = **整個 block 的文字**,三種位置的 ❌ 都在裡面(所以是 block 層級:同一段裡任一條標了,同段的連結都算已標),三處一致,
+    `tests/fixtures/notion_rich_text.json` 是四個模組共用的樣本。bookmark / embed 沒有 rich_text,❌ 放 caption 結尾(`mark_caption` / `unmark_caption`;
+    注意 `block_links` 目前不讀 caption,bookmark 的標籤是網址,caption 的 ❌ 不會進 `build_site` 的判定)。
   - **一次性整理 `python notion_writeback.py --normalize-x`**(不讀報告;只掃 `article_links.json` `__blocks__` 記錄的連結 block,同一 block 只讀一次):
-    把連結前面的 ❌(前一段結尾、或連結文字開頭)搬到連結文字結尾(`normalize_marks` / `normalize_caption`,結尾已有就只拿掉前面的、不重複加),
-    印每筆「前→後」與改了幾個 block / 幾條連結;**預設 dry-run、`--go` 才寫**,可加 `--no 276,1352` 只看那幾篇、`--links` 指定檔案。
-    舊版 writeback 寫在前面的 ❌ 跑一次就全部搬到後面。
+    把所有舊格式(連結前的純文字 ❌、連結文字內的 ❌)統一成「連結後緊鄰一個純文字 ❌」,連結文字還原成不含 ❌(只剩 ❌ 的用網址當文字)、
+    一條連結只留一個 ❌(`normalize_marks`;有沒有標以原本的 rich_text 為準,兩條連結中間只有一個 ❌ 時兩條都算、各留一個;
+    caption 統一成結尾一段、只留一個,`normalize_caption`),印每筆「前→後」與改了幾個 block / 幾條連結;
+    **預設 dry-run、`--go` 才寫**,可加 `--no 276,1352` 只看那幾篇、`--links` 指定檔案。
+  - **`python notion_writeback.py --audit-x`**(只讀不寫,`--go` 也不寫;同樣掃 `__blocks__`,可加 `--no` / `--links`):列出 ❌ 的異常
+    (`audit_marks` / `audit_caption`,`AUDIT_KINDS`):同一連結超過一個 ❌、❌ 在連結文字內、連結文字只剩 ❌;最後依種類統計。
+    跑 `--normalize-x` 之前先看、之後再跑一次應該是 0 筆。
     **只信 `__blocks__` 記錄的 block**(父頁面要是記錄的頁面、block 裡要有這個網址),對不上就跳過並附到 Issue 內文
     「需人工確認」段(`append_manual_section` 接在 `check_report.md` 後面),**不會**拿網址去別的頁面搜尋後亂寫
     (2026-10-31 `article_links.json` 曾把 No.10047 改號前的連結留在 No.786 底下)。
@@ -559,7 +567,7 @@ npm test                          # vitest run:tests/filter.test.js、sort.test.
 pip install -r requirements-dev.txt   # 只需一次(pytest + Pillow)
 python3 -m pytest -q              # tests/py:build_site(dead 判定、作者拆分與 ID、日期、精簡格式 round-trip、sw 版本號、水印 / _origin / canary 埋入、30 篇 fixture 完整建置比對)、fetch_data(No 三種型別、token 來源)、canary(hash / 挑選 / 比對 / CLI)、
                                   #          build_pages(描述 / 標題折行 / 字型回退 / sitemap / RSS、30 篇產頁與 hash 跳過重產)
-                                  #          checkers(各平台 HTML 樣本;Lofter 錯誤頁看結構、篇名「找不到頁面」的正常文章是 ok)、check_links(連續兩天狀態機、到期、改名判斷、平台被擋短路、重試、--reset-link)、notion_writeback(❌ 接在連結結尾、已標 / 移除前後都認、--normalize-x 搬 ❌、caption、PATCH 格式、曾用名合併、--exclude)、build_site 曾用名、fetch_data block 位置與 merge_links 清舊標題、notion_writeback 只信記錄的 block、collect_targets 略過舊標題、
+                                  #          checkers(各平台 HTML 樣本;Lofter 錯誤頁看結構、篇名「找不到頁面」的正常文章是 ok)、check_links(連續兩天狀態機、到期、改名判斷、平台被擋短路、重試、--reset-link)、notion_writeback(❌ 是連結後一段純文字、已標 / 移除三種位置都認、--normalize-x 統一舊格式、--audit-x 列異常、notion_rich_text.json 樣本、caption、PATCH 格式、曾用名合併、--exclude)、build_site 曾用名、fetch_data block 位置與 merge_links 清舊標題、notion_writeback 只信記錄的 block、collect_targets 略過舊標題、
                                   #          browser_checker(classify 各平台合成樣本、AO3 章節進度、cookie 三種格式與到期、WARP、--probe 樣本挑選、挑戰頁連續 5 筆 / 登入牆短路、preflight、--browser / --probe 接進 main、
                                   #          固定設定檔與反偵測的啟動參數(假 Playwright)、--setup-profile、設定檔被擋提示、--profile / --no-profile 接線、
                                   #          AFF 限速(429 / 連續 5 筆 empty 立刻停止、其餘記 skipped 不動 last、429 之後的 404 改判 unknown、每次最多 150 筆最久沒查的先),
