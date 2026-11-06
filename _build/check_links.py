@@ -10,7 +10,10 @@
    - 逾時 / 5xx / 429 重試 2 次,仍失敗 = unknown,不算已刪
    - 某平台前 3 筆全是「被擋」(登入牆 / Cloudflare 挑戰頁)→ 該平台本次略過(其餘連結不打,狀態不動)
    - 狀態機(advance):只有「連續兩天都 deleted」才算真的死(dead);unknown 不改變任何計數;
-     已死的改為每 30 天複查一次(is_due);複查看到 ok 就復活(dead=False)
+     已死的改為每 30 天複查一次(is_due);複查看到 ok 就復活(dead=False);
+     結果帶 skipped(被限速而沒真的查:browser_checker.rate_limited_skip)連 last 都不動,下次仍排在最前面
+   - 每次執行的上限(PLAT_MAX_PER_RUN,目前只有 AFF 150 筆):超過就依 link_status.json 的 last 排序、最久沒查(含沒查過)的先,
+     剩下的下次再跑(prioritize;2026-11-06 實測 AFF 約 100 筆後被限速)。作者頁與作品頁同一個清單、同一套
    - 報告:新死 = dead 且 Notion 連結名稱還沒有 ❌;復活 = Notion 有 ❌ 但今天看到 ok
      (以「該是什麼狀態」為準,寫回失敗隔天會再列一次,不會漏)
    - 作者改名:同一作者(Notion 作者頁 ID)在同一平台有兩篇以上作品解析到同一個新名字、該名字不是目前名稱 /
@@ -46,6 +49,7 @@ RECHECK_DEAD_DAYS = 30   # 已死的每幾天複查一次
 RETRIES = 2              # 逾時 / 5xx 重試次數
 GAP = (1.5, 3.0)         # 同平台請求間隔(秒,隨機)
 BLOCK_PROBE = 3          # 前幾筆全被擋就略過該平台
+PLAT_MAX_PER_RUN = {'aff': 150}   # 每次執行每個平台最多查幾筆(沒列的不限);超過的下次再查,最久沒查的先(prioritize)
 DEAD_MARK = B.DEAD_MARK
 PLAT_URL_KEYS = {'postype': ('Postype',), 'lofter': ('Lofter', 'Lofter2'), 'ao3': ('AO3',), 'aff': ('AF',)}
 
@@ -68,14 +72,30 @@ def is_due(entry, today):
         return False
     return True
 
+def last_checked(entry):
+    """排序用:上次真的查過的日期('' = 沒查過,排最前面)。"""
+    return (entry or {}).get('last') or ''
+
+def prioritize(targets, state, cap):
+    """每次執行的上限:依 link_status.json 的 last 由舊到新排(沒查過的最前面、同日期維持原順序),只取前 cap 筆;
+    cap 是 0 / None 就只排序不截斷。回傳 (要查的清單, 延後的筆數)。"""
+    ordered = sorted(targets, key=lambda t: last_checked(state.get(t['url'])))
+    if cap and len(ordered) > cap:
+        return ordered[:cap], len(ordered) - cap
+    return ordered, 0
+
 def advance(entry, res, today):
     """把一次檢查結果併進紀錄。回傳新的 entry(不改原物件)。
+    - skipped(被限速而沒真的查):只記 reason / code,連 last 都不動(下次 prioritize 仍排在最前面)
     - unknown:只更新 last / code / reason,status / streak / dead 都不動
     - deleted:status 變成 deleted,streak = 連續觀測到 deleted 的「天數」(同一天重跑不重複計);streak ≥ 2 → dead
     - ok / login_required:streak 同樣按天數累計;ok 且原本 dead → 復活(dead=False);ok 時更新 author_name
     - 結果帶 extra(AO3 章節進度)就原樣存進 entry['extra']"""
     e = dict(entry or {})
     st = res.get('status', 'unknown')
+    if res.get('skipped'):
+        e['code'], e['reason'] = res.get('code'), res.get('reason')
+        return e
     e['last'], e['code'], e['reason'] = today, res.get('code'), res.get('reason')
     e.setdefault('first', today)
     if st == 'unknown':
@@ -511,12 +531,20 @@ def main(argv=None):
     by_plat = defaultdict(list)
     for t in due:
         by_plat[t['platform']].append(t)
+    deferred = {}
+    for p, cap in PLAT_MAX_PER_RUN.items():
+        if by_plat.get(p):
+            by_plat[p], deferred[p] = prioritize(by_plat[p], state, cap)
     if args.limit:
         for p in by_plat:
             by_plat[p] = by_plat[p][:args.limit]
     print('巡檢 %s:連結 %d 筆(今天要查 %d 筆:%s)' % (
         today, len(targets), sum(len(v) for v in by_plat.values()),
         '、'.join('%s %d' % (checkers.PLATFORM_LABEL[p], len(by_plat[p])) for p in platforms if by_plat.get(p))), flush=True)
+    for p, n in deferred.items():
+        if n:
+            print('  %s 今天到期 %d 筆,每次最多查 %d 筆(最久沒查的先),其餘 %d 筆下次再查' % (
+                checkers.PLATFORM_LABEL[p], len(by_plat[p]) + n, PLAT_MAX_PER_RUN[p], n), flush=True)
 
     results, lock, plat_stats, threads = {}, threading.Lock(), {}, []
     def worker(p):
