@@ -199,12 +199,55 @@ def load_people(src_dir):
     return people, name2id
 
 def load_links_map(src_dir):
-    """每篇閱讀連結(由 fetch_data.py 產生):No -> {標題: [[label, url], ...]}"""
-    try:
-        return json.load(io.open(os.path.join(src_dir, 'article_links.json'), encoding='utf-8'))
-    except Exception:
+    """每篇閱讀連結(由 fetch_data.py 產生):No -> {標題: [[label, url], ...]}
+    檔案不存在 → 第一次建置,連結留空並提示;檔案在但讀不了(JSON 壞掉 / 不是物件)→ 直接中止,
+    不然整站連結會被靜默清空後照常上線。"""
+    p = os.path.join(src_dir, 'article_links.json')
+    if not os.path.isfile(p):
         print('(尚無 article_links.json,連結先留空)')
         return {}
+    try:
+        m = json.load(io.open(p, encoding='utf-8'))
+    except Exception as e:
+        raise SystemExit('article_links.json 讀取失敗(%s):整站連結會被清空,中止建置。修好或刪掉該檔重抓(fetch_data.py)再跑。' % e)
+    if not isinstance(m, dict):
+        raise SystemExit('article_links.json 不是物件(JSON object),中止建置。')
+    return m
+
+
+# ---------- 驟減守衛:跟上一版 data.json 比,篇數或有連結篇數掉太多就擋下(防靜默壞資料上線)----------
+DROP_RATIO = 0.7          # 新 < 舊 × 0.7 就視為異常
+DROP_OVERRIDE_ENV = 'AZ_ALLOW_DROP'   # 真的要大量刪文時設這個環境變數 =1 強制通過
+
+def data_shape(articles, compact=False):
+    """三個健康指標:篇數、有外部連結的篇數、連結總數。compact=True 時 articles 是 data.json 精簡格式(l 鍵)。"""
+    n = len(articles)
+    lk = 'l' if compact else 'links'
+    linked = sum(1 for a in articles if (a.get(lk) or []))
+    total = sum(len(a.get(lk) or []) for a in articles)
+    return {'articles': n, 'linked': linked, 'links': total}
+
+def load_prev_shape(out_dir):
+    """上一版 data.json 的指標;沒有檔(第一次建置)或讀不了回 None(不擋)。要在 write_site() 覆寫之前呼叫。"""
+    p = os.path.join(out_dir, 'data.json')
+    if not os.path.isfile(p):
+        return None
+    try:
+        C = json.load(io.open(p, encoding='utf-8'))
+        return data_shape(C.get('articles') or [], compact=True)
+    except Exception:
+        return None
+
+def drop_guard(prev, cur):
+    """回傳致命問題清單(空 = 通過)。prev 為 None 時只做絕對檢查。"""
+    bad = []
+    if cur['articles'] and cur['linked'] == 0:
+        bad.append('全部 %d 篇都沒有閱讀連結(article_links.json 沒讀到?)' % cur['articles'])
+    if prev:
+        for k, label in (('articles', '篇數'), ('linked', '有連結篇數')):
+            if prev[k] and cur[k] < prev[k] * DROP_RATIO:
+                bad.append('%s驟減:上一版 %d → 這次 %d(少了 %d%%)' % (label, prev[k], cur[k], round(100 - cur[k] * 100.0 / prev[k])))
+    return bad
 
 def load_announcements(src_dir):
     anns = []
@@ -617,7 +660,23 @@ def self_check(tpl, H, out_dir):
 def main():
     # 輸出資料夾:本機預設 ../site;GitHub Action 設環境變數 SITE_OUT=.. 直接輸出到倉庫根目錄
     OUT = os.environ.get('SITE_OUT', '../site')
+    _prev = load_prev_shape(OUT)          # 先讀上一版指標,write_site 才會覆寫 data.json
     DATA, report = build_data('.')
+    _bad = drop_guard(_prev, data_shape(DATA['articles']))
+    if _bad:
+        print('')
+        print('==================== ⛔  驟減守衛:中止建置  ⛔ ====================')
+        for _b in _bad:
+            print('  ⛔ ' + _b)
+        print('  上一版:%s' % (_prev or '(無)'))
+        print('  這一版:%s' % data_shape(DATA['articles']))
+        if os.environ.get(DROP_OVERRIDE_ENV) == '1':
+            print('  (%s=1,強制繼續)' % DROP_OVERRIDE_ENV)
+        else:
+            print('  若是刻意大量刪文,設環境變數 %s=1 再跑;否則先查 article_links.json / Notion 欄位。' % DROP_OVERRIDE_ENV)
+            print('====================================================================')
+            raise SystemExit(2)
+        print('====================================================================')
     tpl, copied = write_site(DATA, '.', OUT)
     articles = DATA['articles']
     print('site built:', len(articles), 'articles,', len(DATA['facets']), 'facets →', OUT,
