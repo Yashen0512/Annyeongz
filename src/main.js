@@ -247,7 +247,7 @@ function openDetail(a, opener) {
   reactions.markView(a.no);
   const sheet = $('sheet');
   const L = navArticles();
-  keepSheetFocus(() => { sheet.innerHTML = R.detailHTML(a, ctx, { rel: relatedArticles(a, D.articles, 6), navIndex: L.findIndex((x) => x.no === a.no), navLen: L.length }); });
+  keepSheetFocus(() => { sheet.innerHTML = R.detailHTML(a, ctx, { rel: relatedArticles(a, D.articles, 6, { likeOf: reactions.likeNum }), navIndex: L.findIndex((x) => x.no === a.no), navLen: L.length }); });
   showSheet();
   if (changed) { sheet.scrollTop = 0; if (isDialog()) sheet.querySelector('.close')?.focus(); }   // 換篇時焦點回到最上面的關閉鈕
 }

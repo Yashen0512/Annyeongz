@@ -1,4 +1,4 @@
-// Annyeongz PWA service worker(樣板:build_site.py 會把 a14d8efca5b3 換成「靜態資源內容雜湊」(static_version:index.html、本樣板、src/ styles/ vendor/ assets/ 與 stats.html 等),輸出成 sw.js;
+// Annyeongz PWA service worker(樣板:build_site.py 會把 59f95157bc3d 換成「靜態資源內容雜湊」(static_version:index.html、本樣板、src/ styles/ vendor/ assets/ 與 stats.html 等),輸出成 sw.js;
 // 不要手改 sw.js、也不要手寫版本號。程式/樣式/圖沒變就不換版 → 讀者不會每班看到「🚀 網站有新版本」;只有資料變走 data.json 的 stale-while-revalidate)。
 //
 // 快取策略:
@@ -7,7 +7,7 @@
 //                                                           「篇數(total)或資料更新時間(updated)」有變才 postMessage {type:'data-updated'} 給所有分頁,頁面顯示「有新收錄」提示條
 //                                                           (不比 ETag:data.json 含每班建置時間 synced,ETag 每班必變,會把沒新文的班次也當成新收錄)。
 //   跨網域請求(Postype / Lofter / AO3 / AFF 等閱讀連結、Val Town 計數、GoatCounter) 一律不攔、不快取。
-const VERSION = 'a14d8efca5b3';
+const VERSION = '59f95157bc3d';
 const STATIC_CACHE = 'az-static-' + VERSION;
 const DATA_CACHE = 'az-data';           // 資料快取不分版(靠 stale-while-revalidate 自己換新)
 const DATA_FILE = 'data.json';
