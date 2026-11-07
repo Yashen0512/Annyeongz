@@ -3,7 +3,7 @@
    輸出 data.json(精簡格式)、index.html(樣板注入簡繁對照表)與 sw.js(帶入版本號),並把 src/、styles/、vendor/(Chart.js、lz-string、qrcode)、assets/
    與 stats.html(統計星圖)、manifest、橫幅 PNG 一起複製到輸出資料夾。
    只用標準庫。所有步驟都是函式,pytest 可以用 fixture 資料夾直接呼叫 build_data() / write_site()。"""
-import csv, glob, io, json, os, re, shutil
+import csv, glob, hashlib, io, json, os, re, shutil
 from collections import Counter, OrderedDict
 from datetime import datetime, timezone, timedelta
 import facets_def as F
@@ -523,8 +523,9 @@ def render_index(tpl, DATA, stmap):
                .replace(WATERMARK_PLACEHOLDER, watermark(build_year(DATA.get('synced', '')))))
 
 def sw_version(synced):
-    """synced 顯示字串『2026/10/30 2:05 PM』→ service worker 版本號 '20261030-1405'(24 時制,每次建置都不同)。
-    解析不了就退回去掉非英數的原字串,確保仍然每次不同。"""
+    """synced 顯示字串『2026/10/30 2:05 PM』→ 建置時間戳 '20261030-1405'(24 時制,每次建置都不同)。
+    現在只用在 data.json 的 `_origin` 版權標記;sw.js 版本號已改用 static_version()(內容雜湊),否則每班都會提示「網站有新版本」。
+    解析不了就退回去掉非英數的原字串。"""
     m = re.match(r'(\d+)/(\d+)/(\d+)\s+(\d+):(\d+)\s*(AM|PM)?', synced or '')
     if not m:
         return re.sub(r'[^0-9A-Za-z]', '', synced or '') or 'dev'
@@ -535,12 +536,42 @@ def sw_version(synced):
 
 SW_PLACEHOLDER = '__SW_VERSION__'
 
-def render_sw(sw_tpl, DATA):
-    """sw_template.js → sw.js:把版本號佔位符換成本次建置的 synced 時間戳(快取分版靠它,不要手寫)。"""
-    return sw_tpl.replace(SW_PLACEHOLDER, sw_version(DATA.get('synced', '')))
+def static_version(index_html, sw_tpl, repo_root):
+    """service worker 版本號 = 「靜態資源內容」的雜湊(前 12 碼):index.html(已注入水印/對照表)、sw_template.js 本身、
+    repo_root 的 STATIC_DIRS 每個檔與 SW_HASH_FILES(stats.html、manifest;不含根目錄舊版 banner PNG——SW 不快取它們,
+    而且本機鏡像沒有這兩張,納入會讓本機 .bat 與雲端 Actions 算出不同版本、每班來回跳)。前端程式/樣式/圖/樣板任何一個位元組變了版本就變;
+    只有資料(data.json)變或單純重跑建置,版本不變 → 讀者不會每班都看到「🚀 網站有新版本」(2026/11/07 前用 synced 時間戳,每班必變)。
+    本機與 Actions 讀的是同一批檔(deploy 會同步),算出來一致。"""
+    h = hashlib.sha256()
+    h.update(index_html.encode('utf-8')); h.update(b'\0')
+    h.update(sw_tpl.encode('utf-8')); h.update(b'\0')
+    paths = []
+    for d in STATIC_DIRS:
+        base = os.path.join(repo_root, d)
+        for root, _dirs, files in os.walk(base):
+            _dirs.sort()
+            for f in sorted(files):
+                full = os.path.join(root, f)
+                paths.append((os.path.relpath(full, repo_root).replace(os.sep, '/'), full))
+    for f in SW_HASH_FILES:
+        full = os.path.join(repo_root, f)
+        if os.path.isfile(full):
+            paths.append((f, full))
+    for rel, full in sorted(paths):
+        h.update(rel.encode('utf-8')); h.update(b'\0')
+        with open(full, 'rb') as fh:
+            for chunk in iter(lambda: fh.read(1 << 16), b''):
+                h.update(chunk)
+        h.update(b'\0')
+    return h.hexdigest()[:12]
+
+def render_sw(sw_tpl, version):
+    """sw_template.js → sw.js:把版本號佔位符換成 static_version() 算出的內容雜湊(快取分版靠它,不要手寫)。"""
+    return sw_tpl.replace(SW_PLACEHOLDER, version)
 
 STATIC_DIRS = ('src', 'styles', 'vendor', 'assets')   # 前端程式、樣式、第三方單檔(vendor/:Chart.js 統計星圖、lz-string 與 qrcode 書架匯出)、圖示 / WebP 橫幅;源頭在倉庫根目錄,建置時一起複製到輸出資料夾
 STATIC_FILES = ('stats.html', 'manifest.webmanifest', 'banner.png', 'banner-mobile.png')   # 不經樣板的靜態頁(統計星圖)與根目錄單檔資源,同樣複製(沒有就略過)
+SW_HASH_FILES = ('stats.html', 'manifest.webmanifest')   # 參與 sw.js 版本雜湊的根目錄單檔(= SW PRECACHE 會快取的那兩個;banner PNG 不算,見 static_version)
 
 def copy_static(repo_root, out_dir):
     """把 repo_root 的 STATIC_DIRS 與 STATIC_FILES 複製到 out_dir(輸出就是倉庫根目錄時不動)。回傳複製了的資料夾 / 檔案名。"""
@@ -563,17 +594,19 @@ def copy_static(repo_root, out_dir):
     return copied
 
 def write_site(DATA, src_dir, out_dir, repo_root=None):
-    """輸出 data.json(含 _origin,有祕密時含 _canary)、index.html(含註解水印)、sw.js(版本號帶入),
+    """輸出 data.json(含 _origin,有祕密時含 _canary)、index.html(含註解水印)、sw.js(版本號 = 靜態資源內容雜湊),
     並複製 src/、styles/、vendor/、assets/ 與 stats.html / manifest / 橫幅 PNG。回傳 (樣板字串, 複製了哪些資料夾 / 檔案)。"""
     os.makedirs(out_dir, exist_ok=True)
     secret = canary.load_secret(src_dir)   # 環境變數 CANARY_SECRET 或 <src_dir>/canary.json;沒有就不埋 _canary
     io.open(os.path.join(out_dir, 'data.json'), 'w', encoding='utf-8').write(
         data_json(DATA, canary.canary_list(DATA, secret) if secret else None))
     tpl = io.open(os.path.join(src_dir, 'site_template.html'), encoding='utf-8').read()
-    io.open(os.path.join(out_dir, 'index.html'), 'w', encoding='utf-8').write(render_index(tpl, DATA, load_stmap(src_dir)))
+    index_html = render_index(tpl, DATA, load_stmap(src_dir))
+    io.open(os.path.join(out_dir, 'index.html'), 'w', encoding='utf-8').write(index_html)
+    repo_root = repo_root or os.path.join(src_dir, '..')
     sw_tpl = io.open(os.path.join(src_dir, 'sw_template.js'), encoding='utf-8').read()
-    io.open(os.path.join(out_dir, 'sw.js'), 'w', encoding='utf-8').write(render_sw(sw_tpl, DATA))
-    copied = copy_static(repo_root or os.path.join(src_dir, '..'), out_dir)
+    io.open(os.path.join(out_dir, 'sw.js'), 'w', encoding='utf-8').write(render_sw(sw_tpl, static_version(index_html, sw_tpl, repo_root)))
+    copied = copy_static(repo_root, out_dir)
     return tpl, copied
 
 # ---------- 檢查 ----------

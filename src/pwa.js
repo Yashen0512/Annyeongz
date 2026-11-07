@@ -1,7 +1,8 @@
 // PWA:註冊 service worker、顯示「有新收錄 / 新版本,點此重新整理」提示條、「安裝到桌面」按鈕。
 // 提示條 #updateBar 與安裝鈕 #installBtn 都在 site_template.html 裡,預設 hidden。
-//   - sw.js 在 data.json 背景更新且內容有變時 postMessage {type:'data-updated'} → 顯示提示條,點了重新整理
+//   - sw.js 在 data.json 背景更新且「篇數或資料更新時間(updated)」有變時 postMessage {type:'data-updated'} → 顯示提示條,點了重新整理(只換建置時間的班次不提示)
 //   - 新版 sw.js 安裝完成在等待(waiting)→ 同一條提示;點了送 {type:'skipWaiting'},controllerchange 後自動重新整理
+//     (sw.js 版本號是靜態資源的內容雜湊,只有程式/樣式/圖真的改了才會有「新版本」;單純資料更新不會)
 //   - 瀏覽器觸發 beforeinstallprompt 才顯示安裝鈕(已安裝或不支援的環境永遠不出現)
 const $ = (id) => document.getElementById(id);
 

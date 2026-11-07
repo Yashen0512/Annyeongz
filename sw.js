@@ -1,12 +1,13 @@
-// Annyeongz PWA service worker(樣板:build_site.py 會把 20261107-2113 換成本次建置的 synced 時間戳,輸出成 sw.js;
-// 不要手改 sw.js、也不要手寫版本號)。
+// Annyeongz PWA service worker(樣板:build_site.py 會把 a14d8efca5b3 換成「靜態資源內容雜湊」(static_version:index.html、本樣板、src/ styles/ vendor/ assets/ 與 stats.html 等),輸出成 sw.js;
+// 不要手改 sw.js、也不要手寫版本號。程式/樣式/圖沒變就不換版 → 讀者不會每班看到「🚀 網站有新版本」;只有資料變走 data.json 的 stale-while-revalidate)。
 //
 // 快取策略:
 //   靜態資源(index.html、CSS、JS、圖示、WebP 橫幅、manifest) cache-first;快取名帶 VERSION,新版本上線 → 安裝新快取、啟用時清掉舊版。
 //   資料檔 data.json(其他 .json 如 reactions_backup 亦同)  stale-while-revalidate:先回快取讓頁面秒開,背景抓新版寫回快取;
-//                                                           內容有變就 postMessage {type:'data-updated'} 給所有分頁,頁面顯示「有新收錄」提示條。
+//                                                           「篇數(total)或資料更新時間(updated)」有變才 postMessage {type:'data-updated'} 給所有分頁,頁面顯示「有新收錄」提示條
+//                                                           (不比 ETag:data.json 含每班建置時間 synced,ETag 每班必變,會把沒新文的班次也當成新收錄)。
 //   跨網域請求(Postype / Lofter / AO3 / AFF 等閱讀連結、Val Town 計數、GoatCounter) 一律不攔、不快取。
-const VERSION = '20261107-2113';
+const VERSION = 'a14d8efca5b3';
 const STATIC_CACHE = 'az-static-' + VERSION;
 const DATA_CACHE = 'az-data';           // 資料快取不分版(靠 stale-while-revalidate 自己換新)
 const DATA_FILE = 'data.json';
@@ -93,11 +94,16 @@ async function staleWhileRevalidate(e, req, notify) {
   return res || new Response('{}', { status: 504, statusText: 'offline', headers: { 'Content-Type': 'application/json' } });
 }
 
-/** 兩份回應內容是否不同:優先比 ETag / Last-Modified(GitHub Pages 兩者都有),沒有才比內文。 */
+/** 兩份 data.json 是否「對讀者有意義地」不同:比篇數(total,舊格式退回 articles.length)與資料更新時間(updated,全庫最新 last_edited)。
+ *  不比 ETag / Last-Modified / 全文:synced(建置時間)每班都變,那樣每天會白提示兩次。解析失敗才退回比全文。 */
 async function changed(a, b) {
-  const tag = (r) => r.headers.get('etag') || r.headers.get('last-modified') || '';
-  if (tag(a) && tag(b)) return tag(a) !== tag(b);
   const [x, y] = await Promise.all([a.text(), b.text()]);
+  const sig = (t) => {
+    try { const d = JSON.parse(t); return String(d.total != null ? d.total : (d.articles || []).length) + '|' + (d.updated || ''); }
+    catch (err) { return null; }
+  };
+  const sx = sig(x), sy = sig(y);
+  if (sx !== null && sy !== null) return sx !== sy;
   return x !== y;
 }
 
