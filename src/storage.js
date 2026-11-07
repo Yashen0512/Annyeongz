@@ -11,7 +11,21 @@ export const KEYS = {
   INTRO: 'azIntro',                 // sessionStorage:本分頁已播過開場動畫(src/intro.js 直接用字串,須同步)
   VIEW_PREFIX: 'azv_',              // sessionStorage:azv_<編號> = 同一分頁同一篇只計一次觀測
   LIST_STATE: 'azList',             // sessionStorage:主列表已載入張數與捲動位置 {sig, shown, y}(從詳情 / 分享頁 / 上一頁返回時還原)
+  CLIENT_ID: 'annyeongz_cid',       // localStorage:這台裝置的隨機匿名 ID(愛心 / 觀測的指紋用,不含任何個資;清除紀錄時不清)
 };
+
+/** 這台裝置的隨機匿名 ID(16 個十六進位字):第一次呼叫才產生並存起來;存不了就每次回新的(計數端只會當成新裝置)。 */
+export function clientId() {
+  try {
+    const v = localStorage.getItem(KEYS.CLIENT_ID);
+    if (v && /^[a-z0-9]{8,32}$/i.test(v)) return v;
+  } catch (e) {}
+  let id = '';
+  try { id = [...crypto.getRandomValues(new Uint8Array(8))].map((x) => x.toString(16).padStart(2, '0')).join(''); }
+  catch (e) { id = (Date.now().toString(16) + Math.random().toString(16).slice(2)).slice(0, 16); }
+  try { localStorage.setItem(KEYS.CLIENT_ID, id); } catch (e) {}
+  return id;
+}
 
 export const SHELF_TABS = ['fav', 'todo', 'read'];
 

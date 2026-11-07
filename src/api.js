@@ -2,14 +2,17 @@
 //   REACT_API  公開愛心數 / 觀測數(GET 讀全部、POST {no,type} 記一筆;留空 = 整個功能略過)
 //   REPORT_API 回報連結失效(POST {no,title,reason})
 //   STATS_API  即時瀏覽人次統計(GET)
+import { clientId } from './storage.js';
+
 const cfg = (typeof window !== 'undefined' && window.AZ_CONFIG) || {};
 export const REACT_API = cfg.REACT_API || '';
 export const REPORT_API = cfg.REPORT_API || '';
 export const STATS_API = cfg.STATS_API || '';
 
-/** 記一筆愛心/取消/觀測;回 Promise<boolean>(失敗不丟錯)。 */
+/** 記一筆愛心/取消/觀測;回 Promise<boolean>(失敗不丟錯)。
+ *  cid = 這台裝置的隨機匿名 ID,計數端拿它 + IP 做指紋:同一裝置同一篇只算一顆愛心 / 一天一次觀測(重送不會重複計數)。 */
 export function postReaction(no, type) {
-  return fetch(REACT_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ no, type }) })
+  return fetch(REACT_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ no, type, cid: clientId() }) })
     .then((r) => r.ok).catch(() => false);
 }
 

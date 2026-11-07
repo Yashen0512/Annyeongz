@@ -287,7 +287,7 @@ function filterByTag(enc) {
   selectTag(sel, fac, v);
   closeDetail(); render(); scrollToToolbar();
 }
-function filterName(enc) { const name = decodeURIComponent(enc); if (name) { authorFilter = name; closeDetail(); render(); scrollToToolbar(); } }
+function filterName(enc) { const name = decodeURIComponent(enc); if (name && authorWorks(D.articles, name, persons).length) { authorFilter = name; closeDetail(); render(); scrollToToolbar(); } }
 // 詳情視窗:Esc 關閉、←→ 切上下篇(依目前篩選+排序的清單)
 function navDetail(d) {
   if (!modalOpen()) return;
@@ -498,13 +498,19 @@ function copyURL(text) {
 }
 // 可分享的篩選網址:把目前篩選編進網址 #f=,別人打開就是同樣篩選
 function currentShare() { return { sel, modes, author: authorFilter, q: q.value, sort: $('sort').value }; }
+// 分面 → 該分面所有標籤值(分享網址 #f= 的白名單:不在資料裡的分面 / 標籤 / 作者一律丟掉,網址內容不可信)
+const FACET_VALS = new Map(D.facets.map((f) => [f.key, new Set((f.options || []).map((o) => o[0]))]));
 function applyShareHash() {
   const s = parseShareHash(location.hash); if (!s) return;
   clearSelection(sel, modes);
-  Object.assign(sel, s.sel); Object.assign(modes, s.modes);
-  authorFilter = s.author;
-  if (s.q !== undefined) q.value = s.q;
-  if (s.sort) $('sort').value = s.sort;
+  for (const key in s.sel) {
+    const vals = FACET_VALS.get(key), src = s.sel[key]; if (!vals || !src || typeof src !== 'object') continue;
+    for (const v in src) { if (vals.has(v) && (src[v] === 'on' || src[v] === 'exc')) (sel[key] || (sel[key] = {}))[v] = src[v]; }
+  }
+  for (const key in s.modes) { if (FACET_VALS.has(key) && s.modes[key] === 'and') modes[key] = 'and'; }
+  authorFilter = (typeof s.author === 'string' && s.author && authorWorks(D.articles, s.author, persons).length) ? s.author : null;
+  if (typeof s.q === 'string') q.value = s.q.slice(0, 200);
+  if (typeof s.sort === 'string' && [...$('sort').options].some((o) => o.value === s.sort)) $('sort').value = s.sort;
 }
 $('shareBtn').onclick = () => {
   const url = buildShareURL(currentShare(), location.origin + location.pathname), btn = $('shareBtn'), old = '🔗 複製篩選';
@@ -646,7 +652,7 @@ function updateToTop() {
   [toTop, toTopBar].forEach((b) => {
     if (!b || b.dataset.no === no) return;
     b.dataset.no = no;
-    b.innerHTML = no ? `↑ <span class="tno" aria-hidden="true">#${no}</span>` : '↑';
+    b.innerHTML = no ? `↑ <span class="tno" aria-hidden="true">#${R.esc(no)}</span>` : '↑';
     b.setAttribute('aria-label', no ? `回到頂部，目前在 #${no}` : '回到頂部');
   });
 }
@@ -711,13 +717,13 @@ function initSticky() {
 function renderStats(s, live) { R.renderStats($('statsCard'), s || D.stats, live); }
 function loadLiveStats() { fetchLiveStats().then((j) => { if (j) renderStats(j, true); }); }
 if (D.updated) { $('updatedNote').textContent = '🗺️ 星圖更新:' + D.updated; }
-if (D.synced) { $('syncedNote').innerHTML = '📡 訊號同步:' + D.synced + ' <span title="每天 08:31・21:01 自動更新&#10;안유진 08/31 · 장원영 09/01 🎂" style="cursor:help">🎂</span>'; }
+if (D.synced) { $('syncedNote').innerHTML = '📡 訊號同步:' + R.esc(D.synced) + ' <span title="每天 08:31・21:01 自動更新&#10;안유진 08/31 · 장원영 09/01 🎂" style="cursor:help">🎂</span>'; }
 // 頂欄下方「📡 最後更新:X」:X 是 synced 的相對時間(剛剛 / N 分鐘前 / N 小時前 / 昨天 / N 天前),title 放精確時間;分頁開著就每分鐘重算
 function renderLastUpdated() {
   const el = $('lastUp'), dt = parseSynced(D.synced);
   if (!el) return;
   if (!dt) { el.textContent = ''; return; }
-  el.innerHTML = `📡 最後更新：<span class="lu-t" title="訊號同步 ${D.synced}（台北時間）">${relativeTime(dt)}</span>`;
+  el.innerHTML = `📡 最後更新：<span class="lu-t" title="訊號同步 ${R.esc(D.synced)}（台北時間）">${R.esc(relativeTime(dt))}</span>`;
 }
 renderLastUpdated();
 setInterval(renderLastUpdated, 60000);

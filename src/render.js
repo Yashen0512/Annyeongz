@@ -12,6 +12,16 @@
 //   favs / readSet / todoSet(Set)、likeNum(no) 公開愛心數(0 不顯示)、viewNum(no) 觀測數
 import { sg, isExt, liveCount, personRefs } from './data.js';
 
+// ---- 跳脫(所有進 innerHTML 的資料一律經過這裡;資料來自 Notion、分享網址 #f=、?s= 匯入字串,都不可信)----
+/** HTML 文字 / 屬性值跳脫。 */
+export const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+/** 放進 inline onclick 的 JS 字串引數:先做成 JSON 字串常值(雙引號、反斜線都處理),再做 HTML 屬性跳脫。 */
+export const jsq = (s) => esc(JSON.stringify(String(s == null ? '' : s)));
+/** 連結 href:只放行 http(s),其餘(javascript: / data: …)一律改成 #。 */
+export const safeHref = (u) => (/^https?:\/\//i.test(String(u || '')) ? esc(u) : '#');
+/** 多行文字 → 跳脫後把換行換成 <br>。 */
+const nl2br = (s) => esc(s).replace(/\n/g, '<br>');
+
 /** 作者資料(以 ID 為主、名字為輔)→ {urls, dead}。 */
 function personInfo(ctx, name, id) {
   const p = ctx.persons ? ctx.persons.find(name, id) : null;
@@ -41,11 +51,11 @@ export function navBar(i, n, unit) {
 /** 書卡 / 詳情的 chip 列:文章狀態第一顆(家族色 + 符號),再來 原文已刪、文章類型、篇幅、結局。 */
 export function badges(a) {
   const b = [];
-  if (sg(a, '文章狀態')) b.push(`<span class="badge sb-${STKEY(sg(a, '文章狀態'))}">${stSym(sg(a, '文章狀態'))}${sg(a, '文章狀態')}</span>`);
+  if (sg(a, '文章狀態')) b.push(`<span class="badge sb-${STKEY(sg(a, '文章狀態'))}">${stSym(sg(a, '文章狀態'))}${esc(sg(a, '文章狀態'))}</span>`);
   if (a.dead) b.push('<span class="badge dead">原文已刪</span>');
-  if (sg(a, '文章類型')) b.push(`<span class="badge type">${sg(a, '文章類型')}</span>`);
-  if (sg(a, '文章篇幅')) b.push(`<span class="badge">${sg(a, '文章篇幅')}</span>`);
-  if (sg(a, '結局')) b.push(`<span class="badge ${endCls(sg(a, '結局'))}">${sg(a, '結局')}</span>`);
+  if (sg(a, '文章類型')) b.push(`<span class="badge type">${esc(sg(a, '文章類型'))}</span>`);
+  if (sg(a, '文章篇幅')) b.push(`<span class="badge">${esc(sg(a, '文章篇幅'))}</span>`);
+  if (sg(a, '結局')) b.push(`<span class="badge ${endCls(sg(a, '結局'))}">${esc(sg(a, '結局'))}</span>`);
   return b.join('');
 }
 
@@ -60,17 +70,17 @@ export function aliasLine(al) {
   const L = (al || '').split('\n').map((s) => s.trim()).filter(Boolean);
   if (!L.length) return '';
   const first = L[0].replace(/(》)\s*[(（].*$/, '$1');
-  return `<div class="persona alias"><span class="al-t">收錄：${first}</span>${L.length > 1 ? `<span class="al-n">等 ${L.length} 篇</span>` : ''}</div>`;
+  return `<div class="persona alias"><span class="al-t">收錄：${esc(first)}</span>${L.length > 1 ? `<span class="al-n">等 ${L.length} 篇</span>` : ''}</div>`;
 }
 
 /** 書卡標題鈕的內容:標題 + #編號 + ✓已讀 / 🔖 記號(syncCard 就地更新時也用這段,只換 <button> 的內容、不換元素,焦點不掉)。 */
 export function cardTitleHTML(a, ctx) {
-  return `${a.name || '(無標題)'} <span class="no">#${a.no}</span>${ctx.readSet.has(a.no) ? ' <span class="readmark">✓已讀</span>' : ''}${ctx.todoSet.has(a.no) ? ' <span class="todomark" title="待閱讀" aria-label="待閱讀">🔖</span>' : ''}`;
+  return `${esc(a.name || '(無標題)')} <span class="no">#${esc(a.no)}</span>${ctx.readSet.has(a.no) ? ' <span class="readmark">✓已讀</span>' : ''}${ctx.todoSet.has(a.no) ? ' <span class="todomark" title="待閱讀" aria-label="待閱讀">🔖</span>' : ''}`;
 }
 /** 書卡右上角的收藏鈕(❤️ / 🤍 + 公開愛心數)。 */
 export function favBtnHTML(a, ctx) {
   const lk = ctx.likeNum(a.no), on = ctx.favs.has(a.no);
-  return `<button type="button" class="fav-btn${on ? ' on' : ''}" onclick="event.stopPropagation();toggleFav('${a.no}')" title="收藏${lk ? '（' + lk + ' 人收藏）' : ''}" aria-label="收藏${lk ? '，' + lk + ' 人收藏' : ''}" aria-pressed="${on}">${favBtnInner(a, ctx)}</button>`;
+  return `<button type="button" class="fav-btn${on ? ' on' : ''}" onclick="event.stopPropagation();toggleFav(${jsq(a.no)})" title="收藏${lk ? '（' + lk + ' 人收藏）' : ''}" aria-label="收藏${lk ? '，' + lk + ' 人收藏' : ''}" aria-pressed="${on}">${favBtnInner(a, ctx)}</button>`;
 }
 const favBtnInner = (a, ctx) => { const lk = ctx.likeNum(a.no); return `${ctx.favs.has(a.no) ? '❤️' : '🤍'}${lk ? `<span class="fc" aria-hidden="true">${lk}</span>` : ''}`; };
 /** 就地更新一顆既有的收藏鈕(class / aria / 內容),不換掉元素:點的人焦點還在鈕上、鄰近版面不動。 */
@@ -93,9 +103,9 @@ export function cardHTML(a, ctx) {
   return `<button type="button" class="t card-open">${cardTitleHTML(a, ctx)}</button>
     ${favBtnHTML(a, ctx)}
     <div class="badges">${badges(a)}</div>
-    ${persona ? `<div class="persona">${persona}</div>` : ''}
+    ${persona ? `<div class="persona">${esc(persona)}</div>` : ''}
     ${aliasLine(a.alias)}
-    <div class="tg">${multiTags(a, ctx.facets).map((t) => `<button type="button" onclick="event.stopPropagation();filterByTag('${encodeURIComponent(t)}')" aria-label="篩選標籤：${t}">${t}</button>`).join('')}</div>`;
+    <div class="tg">${multiTags(a, ctx.facets).map((t) => `<button type="button" onclick="event.stopPropagation();filterByTag('${encodeURIComponent(t)}')" aria-label="篩選標籤：${esc(t)}">${esc(t)}</button>`).join('')}</div>`;
 }
 
 /** 主列表:把一批書卡接在 listEl 後面。整張卡滑鼠可點,鍵盤用標題 <button>(Enter / Space 的 click 會冒泡到卡片);
@@ -199,9 +209,9 @@ export function buildPanel(panelEl, facets, { onTag, onMode }) {
     const oid = 'fopts' + fi;
     const isStatus = f.key === '文章狀態';   // 標籤依家族上色 + 符號;標題旁有 (?) 說明
     const hid = 'fhelp' + fi;
-    h.innerHTML = `<button type="button" class="fh" aria-expanded="true" aria-controls="${oid}">${f.key}</button><span class="rt">`
+    h.innerHTML = `<button type="button" class="fh" aria-expanded="true" aria-controls="${oid}">${esc(f.key)}</button><span class="rt">`
       + (isStatus ? `<button type="button" class="fhelp" aria-expanded="false" aria-controls="${hid}" aria-label="文章狀態的定義">?</button>` : ``)
-      + (showMode ? `<button type="button" class="mode" role="switch" aria-checked="false" aria-label="${f.key}：全部符合" data-k="${f.key}">任一</button>` : ``)
+      + (showMode ? `<button type="button" class="mode" role="switch" aria-checked="false" aria-label="${esc(f.key)}：全部符合" data-k="${esc(f.key)}">任一</button>` : ``)
       + `<span class="arw" aria-hidden="true">▾</span></span>`;
     const opts = document.createElement('div'); opts.className = 'opts'; opts.id = oid;
     const fh = h.querySelector('.fh');
@@ -224,7 +234,7 @@ export function buildPanel(panelEl, facets, { onTag, onMode }) {
       const o = document.createElement('button'); o.type = 'button';
       const extra = isStatus && STKEY(val) ? 'st-' + STKEY(val) : '';
       o.className = 'opt' + (extra ? ' ' + extra : '');
-      o.innerHTML = `${isStatus ? stSym(val) : ''}${val} <span class="c" aria-hidden="true">${cnt}</span>`;   // 空白:可見文字「OOC 208」才包含在 aria-label 裡(axe label-content-name-mismatch)
+      o.innerHTML = `${isStatus ? stSym(val) : ''}${esc(val)} <span class="c" aria-hidden="true">${esc(cnt)}</span>`;   // 空白:可見文字「OOC 208」才包含在 aria-label 裡(axe label-content-name-mismatch)
       o.onclick = () => onTag(f.key, val);
       o._val = val; o._key = f.key; o._cnt = cnt; o._extra = extra; opts.appendChild(o);
     });
@@ -263,7 +273,7 @@ export function renderHot(wrap, facets, onPick) {
   all.sort((a, b) => b[1] - a[1]);
   wrap.innerHTML = '';
   all.slice(0, 16).forEach(([v, c, key]) => {
-    const o = document.createElement('button'); o.type = 'button'; o.className = 'opt'; o.innerHTML = `${v} <span class="c" aria-hidden="true">${c}</span>`;
+    const o = document.createElement('button'); o.type = 'button'; o.className = 'opt'; o.innerHTML = `${esc(v)} <span class="c" aria-hidden="true">${esc(c)}</span>`;
     o.setAttribute('aria-label', `${v}，${c} 篇`);
     o.onclick = () => onPick(key, v);
     wrap.appendChild(o);
@@ -277,7 +287,9 @@ export function renderSelBar(bar, chips, { onRemove, onClearAll }) {
   bar.style.display = 'flex';
   const head = document.createElement('span'); head.textContent = '目前條件:'; bar.appendChild(head);
   chips.forEach((c) => {
-    const el = document.createElement('button'); el.type = 'button'; el.className = 'fchip'; el.innerHTML = (c.exc ? '排除 ' : '') + c.val + ' <b aria-hidden="true">✕</b>';
+    const el = document.createElement('button'); el.type = 'button'; el.className = 'fchip';
+    el.append(document.createTextNode((c.exc ? '排除 ' : '') + c.val + ' '));   // 條件值可能來自分享網址 #f=,用文字節點而不是 innerHTML
+    const x = document.createElement('b'); x.setAttribute('aria-hidden', 'true'); x.textContent = '✕'; el.appendChild(x);
     el.setAttribute('aria-label', `移除條件：${c.exc ? '排除 ' : ''}${c.val}`);
     el.onclick = () => onRemove(c.key, c.val); bar.appendChild(el);
   });
@@ -291,10 +303,10 @@ export function renderSelBar(bar, chips, { onRemove, onClearAll }) {
 export function renderAuthorHead(el, name, count, ctx, onClear) {
   if (!name) { el.style.display = 'none'; return; }
   const info = personInfo(ctx, name), p = info.urls;
-  const links = Object.keys(p).map((k) => `<a class="plat" href="${p[k]}" target="_blank" rel="noopener">${k}</a>`).join('');
+  const links = Object.keys(p).map((k) => `<a class="plat" href="${safeHref(p[k])}" target="_blank" rel="noopener">${esc(k)}</a>`).join('');
   el.style.display = 'block';
   const deadTag = info.dead ? '<span class="deadauth">(已刪帳號)</span>' : '';
-  el.innerHTML = `<div class="ah-row"><span class="ah-name">✍️ ${name}${deadTag}</span><span class="ah-cnt">共 ${count} 篇</span>`
+  el.innerHTML = `<div class="ah-row"><span class="ah-name">✍️ ${esc(name)}${deadTag}</span><span class="ah-cnt">共 ${esc(count)} 篇</span>`
     + `<button type="button" class="ah-clear" aria-label="離開作者專頁，返回全部文章">✕ 返回全部</button></div>`
     + (links ? `<div class="ah-links">${links}</div>` : '');
   el.querySelector('.ah-clear').onclick = onClear;
@@ -308,17 +320,17 @@ export function renderStrip(wrap, items, { html, cls, onClick }) {
     c.innerHTML = html(x); c.onclick = () => onClick(x, i, c); wrap.appendChild(c);
   });
 }
-export const latestCardHTML = (a) => `<span class="st">${a.name || '(無標題)'}</span><span class="sm">#${a.no}${a.created ? ' · 收錄 ' + a.created : ''}</span>`;
-export const statusCardHTML = (a) => `<span class="st">${a.name || '(無標題)'}</span><span class="sm">#${a.no} · ${sg(a, '文章狀態') || '—'}${a.edited ? ' · ' + a.edited : ''}</span>`;
-export const annCardHTML = (x) => `<span class="st">${x.content}</span><span class="sm">${x.pin ? '📌 ' : ''}${x.date}</span>`;
+export const latestCardHTML = (a) => `<span class="st">${esc(a.name || '(無標題)')}</span><span class="sm">#${esc(a.no)}${a.created ? ' · 收錄 ' + esc(a.created) : ''}</span>`;
+export const statusCardHTML = (a) => `<span class="st">${esc(a.name || '(無標題)')}</span><span class="sm">#${esc(a.no)} · ${esc(sg(a, '文章狀態') || '—')}${a.edited ? ' · ' + esc(a.edited) : ''}</span>`;
+export const annCardHTML = (x) => `<span class="st">${esc(x.content)}</span><span class="sm">${x.pin ? '📌 ' : ''}${esc(x.date)}</span>`;
 export const annCardCls = (x) => 'scard ann-card' + (x.pin ? ' pin' : '');
 
 /** 公告全文彈窗內容。 */
 export function annHTML(x, i, n) {
   return `<button type="button" class="close" onclick="closeDetail()" aria-label="關閉">✕</button>
     <h2 id="sheetTitle">📻 星際廣播</h2>
-    <div class="ann-meta">${x.pin ? '📌 置頂 · ' : ''}${x.date}</div>
-    <div class="ann-full">${x.content}</div>` + navBar(i, n, '則');
+    <div class="ann-meta">${x.pin ? '📌 置頂 · ' : ''}${esc(x.date)}</div>
+    <div class="ann-full">${esc(x.content)}</div>` + navBar(i, n, '則');
 }
 
 /** 詳情:作者 / 譯者列(名字可點看全部 + 平台連結)。refs = [{name, id}](personRefs)。 */
@@ -326,12 +338,12 @@ export function personRow(label, refs, ctx) {
   if (!refs || !refs.length) return '';
   const inner = refs.map(({ name: nm, id }) => {
     const info = personInfo(ctx, nm, id), p = info.urls;
-    const links = Object.keys(p).map((k) => `<a class="plat pp" href="${p[k]}" target="_blank" rel="noopener">${k}</a>`).join('');
+    const links = Object.keys(p).map((k) => `<a class="plat pp" href="${safeHref(p[k])}" target="_blank" rel="noopener">${esc(k)}</a>`).join('');
     const see = `<a class="plat pp" href="#" onclick="filterName('${encodeURIComponent(nm)}');return false">看全部</a>`;
     const dead = info.dead ? '<span class="deadauth">(已刪帳號)</span>' : '';
-    return `<div class="person"><button type="button" class="aname" onclick="filterName('${encodeURIComponent(nm)}')" aria-label="${nm}，看這位的全部作品">${nm}</button>${dead} ${links} ${see}</div>`;
+    return `<div class="person"><button type="button" class="aname" onclick="filterName('${encodeURIComponent(nm)}')" aria-label="${esc(nm)}，看這位的全部作品">${esc(nm)}</button>${dead} ${links} ${see}</div>`;
   }).join('');
-  return `<div class="drow"><span class="dk">${label}</span><span class="dv">${inner}</span></div>`;
+  return `<div class="drow"><span class="dk">${esc(label)}</span><span class="dv">${inner}</span></div>`;
 }
 
 /** 原文已刪且沒有任何有效連結時,詳情頂端的橫幅。 */
@@ -348,10 +360,10 @@ export function linksHTML(a) {
   const idx = L.map((_, i) => i), live = liveCount(a) > 0;
   const order = idx.filter((i) => !L[i][2]).concat(idx.filter((i) => L[i][2]));   // 有效排前、失效排後
   const rows = order.map((i) => {
-    const l = L[i], u = l[1];
-    if (u.startsWith('annyeongz:')) return `<div class="lrow"><button type="button" class="plat" style="cursor:pointer;font-family:inherit" onclick="openByNo('${u.slice(10)}')">${l[0]} ↗</button></div>`;
-    if (l[2]) return `<div class="lrow"><a class="plat dead" href="${u}" target="_blank" rel="noopener"><s>${l[0]}</s> ❌</a><span class="lstat">已確認失效</span>${live ? '<div class="lnote">此連結已失效,可改讀其他連結</div>' : ''}</div>`;
-    return `<div class="lrow"><a class="plat" href="${u}" target="_blank" rel="noopener">${l[0]}</a><button type="button" class="lrep" onclick="toggleReport('rb${i}')" aria-expanded="false" aria-controls="rb${i}" aria-label="回報壞掉：${l[0]} 這個連結">回報壞掉</button>
+    const l = L[i], u = String(l[1] || ''), lb = esc(l[0]);
+    if (u.startsWith('annyeongz:')) return `<div class="lrow"><button type="button" class="plat" style="cursor:pointer;font-family:inherit" onclick="openByNo(${jsq(u.slice(10))})">${lb} ↗</button></div>`;
+    if (l[2]) return `<div class="lrow"><a class="plat dead" href="${safeHref(u)}" target="_blank" rel="noopener"><s>${lb}</s> ❌</a><span class="lstat">已確認失效</span>${live ? '<div class="lnote">此連結已失效,可改讀其他連結</div>' : ''}</div>`;
+    return `<div class="lrow"><a class="plat" href="${safeHref(u)}" target="_blank" rel="noopener">${lb}</a><button type="button" class="lrep" onclick="toggleReport('rb${i}')" aria-expanded="false" aria-controls="rb${i}" aria-label="回報壞掉：${lb} 這個連結">回報壞掉</button>
       <div class="repbox" id="rb${i}">
         <div class="q" id="rbq${i}">回報這個連結的問題:</div>
         <div class="opts" role="group" aria-labelledby="rbq${i}">
@@ -361,7 +373,7 @@ export function linksHTML(a) {
           <button type="button" class="ctl" aria-pressed="false" onclick="pickReason(this,1)">✏️ 其他</button>
         </div>
         <textarea rows="2" placeholder="請簡述問題…" aria-label="問題說明" style="display:none;width:100%;box-sizing:border-box;font-size:13px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);resize:vertical"></textarea>
-        <div style="margin-top:6px;display:flex;align-items:center;gap:8px"><button type="button" class="ctl" onclick="sendReport('${a.no}',${i})">送出回報</button><span class="rmsg" role="status" style="font-size:13px;color:var(--muted)"></span></div>
+        <div style="margin-top:6px;display:flex;align-items:center;gap:8px"><button type="button" class="ctl" onclick="sendReport(${jsq(a.no)},${i})">送出回報</button><span class="rmsg" role="status" style="font-size:13px;color:var(--muted)"></span></div>
       </div></div>`;
   }).join('');
   return `<div class="links">${rows}</div>${a.dead && live ? '<div class="deadnote">(此篇多數內容已失效,僅部分連結仍可閱讀)</div>' : ''}`;
@@ -396,25 +408,25 @@ export function detailHTML(a, ctx, { rel, navIndex, navLen }) {
   let rows = '';
   ctx.facets.forEach((f) => {
     if (f.type !== 'multi') return; const vals = [...new Set(a.tags[f.key] || [])]; if (!vals.length) return;
-    rows += `<div class="drow"><span class="dk">${f.key}</span><span class="dv">${vals.map((v) => `<button type="button" class="chip" onclick="filterByTag('${encodeURIComponent(v)}')" aria-label="篩選標籤：${v}">${v}</button>`).join('')}</span></div>`;
+    rows += `<div class="drow"><span class="dk">${esc(f.key)}</span><span class="dv">${vals.map((v) => `<button type="button" class="chip" onclick="filterByTag('${encodeURIComponent(v)}')" aria-label="篩選標籤：${esc(v)}">${esc(v)}</button>`).join('')}</span></div>`;
   });
-  const act = detailActState(a, ctx);
+  const act = detailActState(a, ctx), no = jsq(a.no);
   return `<button type="button" class="close" onclick="closeDetail()" aria-label="關閉">✕</button>
-    <h2 id="sheetTitle">${a.name || '(無標題)'} <span class="no">#${a.no}</span></h2>
+    <h2 id="sheetTitle">${esc(a.name || '(無標題)')} <span class="no">#${esc(a.no)}</span></h2>
     <div class="badges">${badges(a)}</div>
     <div class="detail-actions">
-      ${['fav', 'todo', 'read'].map((k) => `<button type="button" class="ctl${act[k].on ? ' on' : ''}" data-act="${k}" aria-pressed="${act[k].on}" onclick="${act[k].fn}('${a.no}')">${act[k].html}</button>`).join('\n      ')}
-      <button type="button" class="ctl" onclick="shareArticle('${a.no}', this)" title="複製這篇的分享連結(貼到社群會顯示預覽卡)" aria-label="分享，複製這篇的分享連結">🔗 分享</button>
+      ${['fav', 'todo', 'read'].map((k) => `<button type="button" class="ctl${act[k].on ? ' on' : ''}" data-act="${k}" aria-pressed="${act[k].on}" onclick="${act[k].fn}(${no})">${act[k].html}</button>`).join('\n      ')}
+      <button type="button" class="ctl" onclick="shareArticle(${no}, this)" title="複製這篇的分享連結(貼到社群會顯示預覽卡)" aria-label="分享，複製這篇的分享連結">🔗 分享</button>
     </div>
     ${deadBar(a)}
     ${vw ? `<div class="viewline">🔭 被觀測 ${vw.toLocaleString()} 次</div>` : ''}
     ${personRow('作者', personRefs(a).authors, ctx)}
     ${personRow('譯者', personRefs(a).translators, ctx)}
-    ${a.persona ? `<div class="drow"><span class="dk">人設</span><span class="dv">${a.persona.replace(/\n/g, '<br>')}</span></div>` : ''}
-    ${a.alias ? `<div class="drow"><span class="dk">收錄篇名</span><span class="dv">${a.alias.replace(/\n/g, '<br>')}</span></div>` : ''}
+    ${a.persona ? `<div class="drow"><span class="dk">人設</span><span class="dv">${nl2br(a.persona)}</span></div>` : ''}
+    ${a.alias ? `<div class="drow"><span class="dk">收錄篇名</span><span class="dv">${nl2br(a.alias)}</span></div>` : ''}
     ${rows}
     <div class="drow"><span class="dk">閱讀連結</span><span class="dv">${linksHTML(a)}</span></div>`
-    + (rel.length ? `<div class="drow"><span class="dk">類似的文</span><span class="dv related">${rel.map((x) => `<button type="button" class="relitem" onclick="openByNo('${x.no}')">${x.name || '(無標題)'}<span class="rno">#${x.no}</span></button>`).join('')}</span></div>` : '')
+    + (rel.length ? `<div class="drow"><span class="dk">類似的文</span><span class="dv related">${rel.map((x) => `<button type="button" class="relitem" onclick="openByNo(${jsq(x.no)})">${esc(x.name || '(無標題)')}<span class="rno">#${esc(x.no)}</span></button>`).join('')}</span></div>` : '')
     + navBar(navIndex, navLen, '篇');
 }
 
@@ -449,9 +461,6 @@ export function shelfToolsHTML() {
     + `</span>`;
 }
 
-/** HTML 跳脫(匯入字串可能來自網址 ?s=,內容不可信)。 */
-const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
 export const QR_MAX = 2000;   // 匯出字串超過這個長度就不畫 QR code(太密不好掃),改提示用複製
 
 /**
@@ -460,11 +469,11 @@ export const QR_MAX = 2000;   // 匯出字串超過這個長度就不畫 QR code
  */
 export function exportHTML({ payload, err, counts }) {
   const head = `<button type="button" class="close" onclick="closeDetail()" aria-label="關閉">✕</button><h2 id="sheetTitle">📤 匯出書架與已讀</h2>`;
-  if (!payload) return head + `<div class="xfer"><div class="xmsg err">⚠️ ${err || '匯出失敗'}</div></div>`;
+  if (!payload) return head + `<div class="xfer"><div class="xmsg err">⚠️ ${esc(err || '匯出失敗')}</div></div>`;
   const n = payload.length, tooLong = n > QR_MAX;
   return head + `<div class="xfer">
     <p>收藏 <b>${counts.shelf}</b> 篇、已讀 <b>${counts.read}</b> 篇、待閱讀 <b>${counts.todo}</b> 篇 → 字串 <b>${n.toLocaleString()}</b> 字。內容只有作品編號,不含任何個人資料。</p>
-    <textarea id="xpOut" rows="4" readonly spellcheck="false" aria-label="匯出字串">${payload}</textarea>
+    <textarea id="xpOut" rows="4" readonly spellcheck="false" aria-label="匯出字串">${esc(payload)}</textarea>
     <div class="row">
       <button type="button" class="ctl pri" id="xpCopy">📋 複製字串</button>
       <button type="button" class="ctl" id="xpLink" title="另一台裝置打開這個連結就會跳出匯入預覽">🔗 複製匯入連結</button>
