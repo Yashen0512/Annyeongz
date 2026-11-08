@@ -595,17 +595,19 @@ def copy_static(repo_root, out_dir):
 
 def write_site(DATA, src_dir, out_dir, repo_root=None):
     """輸出 data.json(含 _origin,有祕密時含 _canary)、index.html(含註解水印)、sw.js(版本號 = 靜態資源內容雜湊),
-    並複製 src/、styles/、vendor/、assets/ 與 stats.html / manifest / 橫幅 PNG。回傳 (樣板字串, 複製了哪些資料夾 / 檔案)。"""
+    並複製 src/、styles/、vendor/、assets/ 與 stats.html / manifest / 橫幅 PNG。回傳 (樣板字串, 複製了哪些資料夾 / 檔案)。
+    三個輸出檔一律 LF 換行(newline 固定):本機 Windows 與雲端 Linux 建置的位元組才會相同,否則 sw.js 每班翻一次 CRLF/LF,
+    瀏覽器當成新檔就跳「🚀 網站有新版本」(版本號相同也一樣,它只比位元組)。"""
     os.makedirs(out_dir, exist_ok=True)
     secret = canary.load_secret(src_dir)   # 環境變數 CANARY_SECRET 或 <src_dir>/canary.json;沒有就不埋 _canary
-    io.open(os.path.join(out_dir, 'data.json'), 'w', encoding='utf-8').write(
+    io.open(os.path.join(out_dir, 'data.json'), 'w', encoding='utf-8', newline='\n').write(
         data_json(DATA, canary.canary_list(DATA, secret) if secret else None))
     tpl = io.open(os.path.join(src_dir, 'site_template.html'), encoding='utf-8').read()
     index_html = render_index(tpl, DATA, load_stmap(src_dir))
-    io.open(os.path.join(out_dir, 'index.html'), 'w', encoding='utf-8').write(index_html)
+    io.open(os.path.join(out_dir, 'index.html'), 'w', encoding='utf-8', newline='\n').write(index_html)
     repo_root = repo_root or os.path.join(src_dir, '..')
     sw_tpl = io.open(os.path.join(src_dir, 'sw_template.js'), encoding='utf-8').read()
-    io.open(os.path.join(out_dir, 'sw.js'), 'w', encoding='utf-8').write(render_sw(sw_tpl, static_version(index_html, sw_tpl, repo_root)))
+    io.open(os.path.join(out_dir, 'sw.js'), 'w', encoding='utf-8', newline='\n').write(render_sw(sw_tpl, static_version(index_html, sw_tpl, repo_root)))
     copied = copy_static(repo_root, out_dir)
     return tpl, copied
 
