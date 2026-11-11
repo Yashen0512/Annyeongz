@@ -6,25 +6,46 @@
     <description>安員同人文索引站:最新收錄的 50 篇</description>
     <language>zh-Hant</language>
     <atom:link href="https://yashen0512.github.io/Annyeongz/feed.xml" rel="self" type="application/rss+xml"/>
-    <lastBuildDate>Tue, 10 Nov 2026 23:15:00 +0800</lastBuildDate>
+    <lastBuildDate>Wed, 11 Nov 2026 10:04:00 +0800</lastBuildDate>
+    <item>
+      <title>馴服法則 — 雨季</title>
+      <link>https://yashen0512.github.io/Annyeongz/p/1415/</link>
+      <guid isPermaLink="false">https://yashen0512.github.io/Annyeongz/p/1415/</guid>
+      <pubDate>Wed, 11 Nov 2026 10:04:00 +0800</pubDate>
+      <category>安/員</category>
+      <category>甜文</category>
+      <category>黑道/黑幫</category>
+      <category>⚠️題材警告</category>
+      <category>🚲腳踏車</category>
+      <category>SM</category>
+      <category>OOC</category>
+      <category>都市現實</category>
+      <category>未完</category>
+      <dc:creator>雨季</dc:creator>
+      <description>作者:雨季|標籤:安/員 · 甜文 · 黑道/黑幫 · ⚠️題材警告 · 🚲腳踏車 · SM · OOC · 都市現實 · 未完</description>
+    </item>
     <item>
       <title>B-831 — Cho</title>
       <link>https://yashen0512.github.io/Annyeongz/p/1414/</link>
       <guid isPermaLink="false">https://yashen0512.github.io/Annyeongz/p/1414/</guid>
       <pubDate>Tue, 10 Nov 2026 23:15:00 +0800</pubDate>
       <category>虐文</category>
+      <category>沉重壓抑</category>
       <category>逆年齡</category>
+      <category>失憶</category>
       <category>囚禁</category>
       <category>藥物</category>
       <category>病嬌向</category>
+      <category>CP潔癖勿入</category>
       <category>⚠️題材警告</category>
       <category>💰付費內容</category>
       <category>韓餐生吃</category>
       <category>都市現實</category>
       <category>短篇</category>
-      <category>建置中</category>
+      <category>BE</category>
+      <category>完結</category>
       <dc:creator>Cho</dc:creator>
-      <description>作者:Cho|標籤:虐文 · 逆年齡 · 囚禁 · 藥物 · 病嬌向 · ⚠️題材警告 · 💰付費內容 · 韓餐生吃 · 都市現實 · 短篇 · 建置中</description>
+      <description>作者:Cho|標籤:虐文 · 沉重壓抑 · 逆年齡 · 失憶 · 囚禁 · 藥物 · 病嬌向 · CP潔癖勿入 · ⚠️題材警告 · 💰付費內容 · 韓餐生吃 · 都市現實 · 短篇 · BE · 完結</description>
     </item>
     <item>
       <title>롬바드로 가자(去倫巴底吧) — noname</title>
@@ -956,23 +977,6 @@
       <category>完結</category>
       <dc:creator>一只大鹅</dc:creator>
       <description>作者:一只大鹅|標籤:甜文 · 日常 · 暗戀 · 校園 · 都市現實 · 中篇 · HE · 完結</description>
-    </item>
-    <item>
-      <title>사소한 문제들(瑣碎的問題) — 이닛(innit)</title>
-      <link>https://yashen0512.github.io/Annyeongz/p/1365/</link>
-      <guid isPermaLink="false">https://yashen0512.github.io/Annyeongz/p/1365/</guid>
-      <pubDate>Fri, 21 Aug 2026 13:14:00 +0800</pubDate>
-      <category>甜文</category>
-      <category>青梅</category>
-      <category>暗戀</category>
-      <category>同居</category>
-      <category>韓餐生吃</category>
-      <category>都市現實</category>
-      <category>短篇</category>
-      <category>HE</category>
-      <category>完結</category>
-      <dc:creator>이닛(innit)</dc:creator>
-      <description>作者:이닛(innit)|標籤:甜文 · 青梅 · 暗戀 · 同居 · 韓餐生吃 · 都市現實 · 短篇 · HE · 完結</description>
     </item>
   </channel>
 </rss>
