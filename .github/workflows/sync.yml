@@ -9,7 +9,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: pages-sync
   cancel-in-progress: false
 
 jobs:
