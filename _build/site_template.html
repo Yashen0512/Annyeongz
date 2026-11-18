@@ -162,11 +162,12 @@ __WATERMARK__
 <script>
 // 建置時注入(build_site.py):簡繁對照表 stmap.txt 兩行 = 繁字串 / 簡字串(搜尋簡繁互通)
 window.AZ_STMAP={t:"__STMAP_T__",s:"__STMAP_S__"};
-// 站外服務端點(Val Town):愛心/觀測計數、連結失效回報、即時統計;build_site.py 的架構自檢會檢查這三行
+// 站外服務端點:愛心/觀測計數、連結失效回報、即時統計;build_site.py 的架構自檢會檢查這三行
+// (Val Town 2027/01/10 關站,逐步搬到 Cloudflare Worker annyeongz-api;2026/11/18 先搬 STATS_API)
 window.AZ_CONFIG={
   REACT_API:"https://yashen0512--9bfe8c56c47511f1a61b1607ee4eb77e.web.val.run",
   REPORT_API:"https://yashen0512--925fd3b67dd111f1bfe71607ee4eb77e.web.val.run",
-  STATS_API:"https://yashen0512--8328cb68778d11f19f361607ee4eb77e.web.val.run"
+  STATS_API:"https://annyeongz-api.annyeongz.workers.dev/stats"
 };
 </script>
 <!-- 書架匯出 / 匯入用的 vendor 單檔(lz-string、qrcode)不在這裡載:main.js 的 ensureVendor() 在按下匯出 / 匯入時才插入 <script>,離線由 sw.js 預快取供應 -->
