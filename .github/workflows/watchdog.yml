@@ -1,0 +1,109 @@
+# Annyeongz 看門狗(GitHub Actions 版;取代 Val Town 的 annyeongz-watchdog,2026/11/19)
+#
+# 每天 10:00(台北)檢查網站 data.json 的「自動同步時間(synced)」。超過 2 天沒更新 → 這次執行失敗,
+# GitHub 會自動寄「Run failed」通知信給最後編輯這個檔的人;正常時安靜不吵。
+#
+# 為什麼放 GitHub 而不是 Cloudflare:每天 08:31 / 21:01 觸發同步的是 Cloudflare Worker(annyeongz-api)的排程,
+# 看門狗跟它分開放,Cloudflare 那邊的排程壞了這裡才抓得到。
+#
+# 安裝:在 GitHub 倉庫網頁新增檔案 .github/workflows/watchdog.yml,把本檔內容整份貼上。
+# 測試:Actions → Watchdog → Run workflow;勾「simulate_stale」會故意失敗,用來確認收得到通知信。
+# 本機副本:postype-translator\_cloudflare\github-watchdog.yml(改這裡再貼過去)。
+
+name: Watchdog
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # UTC 02:00 = 台北 10:00(GitHub 的排程可能晚幾分鐘到一小時,不影響)
+  workflow_dispatch:
+    inputs:
+      simulate_stale:
+        description: '測試用:打勾 = 假裝太久沒同步,讓這次執行失敗(確認收得到失敗通知信)'
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  check:
+    name: 檢查網站同步時間
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check synced time in data.json
+        env:
+          SIMULATE_STALE: ${{ inputs.simulate_stale }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, sys, time, urllib.request
+          from datetime import datetime, timedelta, timezone
+
+          DATA_URL = 'https://yashen0512.github.io/Annyeongz/data.json'
+          STALE_DAYS = 2          # synced 距今超過 2 天才算異常(正常每天兩班:08:31 / 21:01)
+          TPE = timezone(timedelta(hours=8))
+
+          def parse_synced(s):
+              """網站的台北時間字串「2026/10/31 4:25 PM」→ 有時區的 datetime;格式不符回傳 None"""
+              m = re.match(r'^(\d{4})/(\d{1,2})/(\d{1,2})\s+(\d{1,2}):(\d{2})\s*(AM|PM)?$', str(s or '').strip(), re.I)
+              if not m:
+                  return None
+              h, ap = int(m.group(4)), (m.group(6) or '').upper()
+              if ap == 'PM' and h < 12: h += 12
+              if ap == 'AM' and h == 12: h = 0
+              try:
+                  return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)), h, int(m.group(5)), tzinfo=TPE)
+              except ValueError:
+                  return None
+
+          def fetch_synced():
+              last = ''
+              for attempt in range(3):      # 暫時性的網路問題不要誤報
+                  try:
+                      req = urllib.request.Request('%s?t=%d' % (DATA_URL, time.time()),
+                                                   headers={'Cache-Control': 'no-store', 'User-Agent': 'annyeongz-watchdog/1.0'})
+                      with urllib.request.urlopen(req, timeout=30) as r:
+                          return json.loads(r.read().decode('utf-8')).get('synced'), ''
+                  except Exception as e:
+                      last = '抓取 data.json 失敗:%s' % e
+                      time.sleep(20)
+              return None, last
+
+          raw, err = fetch_synced()
+          synced = None
+          if not err:
+              if raw is None:
+                  err = 'data.json 裡沒有 synced 欄位(網站格式變了?)'
+              else:
+                  synced = parse_synced(raw)
+                  if synced is None:
+                      err = 'synced 欄位格式看不懂:「%s」' % raw
+
+          age_days = (datetime.now(timezone.utc) - synced).total_seconds() / 86400 if synced else None
+          simulate = os.environ.get('SIMULATE_STALE', '').lower() == 'true'
+          if simulate:
+              err = '(測試)手動勾了 simulate_stale,故意讓這次執行失敗;實際上次同步:%s' % raw
+
+          if not err and age_days is not None and age_days <= STALE_DAYS:
+              print('OK,上次同步 %s(%.2f 天前)' % (raw, age_days))
+              sys.exit(0)
+
+          problem = err or '網站已 %.1f 天沒有自動同步(上次 synced:%s)' % (age_days, raw)
+          lines = [
+              '看門狗檢查發現異常:' + problem,
+              '',
+              '檢查來源:' + DATA_URL,
+              '',
+              '排查順序:',
+              '1. 本倉庫 Actions → Sync from Notion:最近幾班有沒有跑、是否失敗',
+              '2. 完全沒有新的執行紀錄 → Cloudflare 後台 → Workers → annyeongz-api → Logs,看 08:31 / 21:01 的排程有沒有觸發、是否 401(GH_DISPATCH_TOKEN 過期?到期日 2027/07/05)',
+              '3. 有跑但網站沒更新 → 看 Deploy 步驟,或是否卡在等待中的發佈工作',
+              '4. 都正常 → 可能是 GitHub Pages 暫時故障,在本機跑一次 更新網站.bat,再手動 Run workflow「Sync from Notion」',
+          ]
+          print('\n'.join(lines))
+          print('::error title=Annyeongz 網站可能停止自動更新了::' + problem)
+          summary = os.environ.get('GITHUB_STEP_SUMMARY')
+          if summary:
+              with open(summary, 'a', encoding='utf-8') as f:
+                  f.write('## ⚠️ Annyeongz 網站可能停止自動更新了\n\n' + '\n'.join(l if l else '' for l in lines) + '\n')
+          sys.exit(1)
+          PY
