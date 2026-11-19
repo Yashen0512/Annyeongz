@@ -35,7 +35,7 @@ src/                       前端程式(ES modules,無框架)
   render.js                書卡(createLazyList 分批渲染)、輪播小卡、分類面板、條件列、詳情 / 公告彈窗、統計卡的 DOM 產生
   related.js               「類似的文」相似度(純函式)
   reactions.js             公開愛心數 / 觀測數的本機狀態與同步
-  api.js                   站外服務(Val Town)的 fetch 包裝
+  api.js                   站外服務(Cloudflare Worker annyeongz-api)的 fetch 包裝
   intro.js                 開場動畫(傳統 script,非 module;需同步執行)
   stats.js                 統計星圖:統計純函式(每月分組 / 排行 / 比例 / 年度已刪)+ Chart.js 設定物件 + createCharts
   stats_page.js            統計星圖的組裝:讀 CSS 變數當圖表顏色、主題切換重畫、「全部 / 排除已刪」、計數讀取與備份退路
@@ -77,7 +77,8 @@ _build/                    建置工具(Python,只用標準庫;build_pages.py �
   notion_writeback.py      把巡檢結果寫回 Notion(❌ 標記 / 作者改名 + 曾用名);預設 dry-run,--go 才寫
   link_status.json         每個連結的上次狀態、連續天數、上次檢查時間(commit 進 repo;巡檢排程每天更新)
 .github/workflows/         sync.yml(同步 Notion + 建置 + 部署)、static.yml(push main → 部署)、test.yml(PR → Vitest + pytest)、
-                           check_links.yml(每天 03:00 巡檢原文連結 + 寫回 Notion + 開 Issue)
+                           check_links.yml(每天 03:00 巡檢原文連結 + 寫回 Notion + 開 Issue)、
+                           watchdog.yml(每天 10:00 看門狗:data.json 的 synced 超過 2 天沒更新就失敗,GitHub 寄失敗通知信)
 requirements.txt           建置相依:只有 Pillow(build_pages.py 畫 OG 圖);sync.yml 與站長電腦都要裝;playwright 以註解列為可選(瀏覽器巡檢,只在站長本機手動裝)
 package.json / pytest.ini / requirements-dev.txt   只為了測試,部署用不到
 ```
@@ -104,7 +105,7 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
 
 - **兩條路徑,同一組腳本**:
   - GitHub Actions `sync.yml`:只有 `workflow_dispatch`(檔案裡**沒有 cron**),每天台灣時間 **08:31 與 21:01** 的自動執行是由外部
-    觸發這個 dispatch;`build_site.py` 會把這兩個時段後 8 分鐘內的建置時間貼齊顯示成 08:31 / 21:01(頁尾「訊號同步」)。
+    (Cloudflare Worker `annyeongz-api` 的 Cron Trigger;2026/11/18 前是 Val Town)觸發這個 dispatch;`build_site.py` 會把這兩個時段後 8 分鐘內的建置時間貼齊顯示成 08:31 / 21:01(頁尾「訊號同步」)。
     環境變數 `SITE_OUT=..` → 直接輸出到倉庫根目錄,
     然後 `git add index.html data.json sw.js p sitemap.xml feed.xml feed-updated.xml robots.txt _build/article_links.json _build/reactions_backup.json`
     commit 回 `main` 再部署。Actions 會先 `pip install -r requirements.txt`(Pillow)。
@@ -184,11 +185,11 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
 | `announcements` | 公告庫:`內容`、`日期`、`置頂`(checkbox) | |
 
 - **鐵則:作品 `No` 永不重編。** 站內跳轉(`annyeongz:<No>`)、書架與已讀的 localStorage、分享網址、`article_links.json` 的鍵、
-  愛心 / 觀測計數(Val Town)全都以 `No` 為鍵;改了編號等於把讀者的書架與所有計數弄丟。**10000 以上是活動系列專用號段**,
+  愛心 / 觀測計數(Cloudflare Worker 的資料庫)全都以 `No` 為鍵;改了編號等於把讀者的書架與所有計數弄丟。**10000 以上是活動系列專用號段**,
   一般文的下一個編號由 `build_site.py` 建置時印出(優先回填空號)。重複編號會在建置時印警告,要回 Notion 修。
 - **`dead`(原文已刪)的判定**(`build_site.is_dead`):Notion 頁面圖示是紅色(紅標),**或**頁面內文的閱讀連結名稱含 ❌ 的
   比例超過一半(站內互連 `annyeongz:編號` 不計入分子分母)。紅標 = Y 但還有沒標 ❌ 的連結,建置時會列出待人工確認。
-- **愛心數與觀測數不在資料檔裡**。它們是即時計數,存在 Val Town(`REACT_API`),格式 `{編號: [愛心, 觀測]}`,
+- **愛心數與觀測數不在資料檔裡**。它們是即時計數,存在 Cloudflare Worker `annyeongz-api` 的 D1 資料庫(`REACT_API`;2026/11/19 從 Val Town 搬過來),格式 `{編號: [愛心, 觀測]}`,
   由 `src/reactions.js` 在開站時 GET 回來;收藏 / 取消收藏 / 打開詳情時 POST `{no, type:'like'|'unlike'|'view'}`。
   `REACT_API` 留空或讀取失敗時只是不顯示數字(愛心 / 觀測排序會退回編號大→小),書架照常。
   `_build/reactions_backup.json` 是這份計數的備份。
@@ -276,7 +277,7 @@ GitHub Pages(static.yml:整個倉庫原樣上傳)
     新版 sw.js 安裝完成在等待時,頁面顯示「🚀 網站有新版本,點此重新整理」,點了送 `{type:'skipWaiting'}`,`controllerchange` 後自動重新整理。
   - `data.json` **stale-while-revalidate**(快取名 `az-data`,不分版):先回快取、背景抓新版;ETag / Last-Modified(都沒有才比內文)不同
     → `postMessage({type:'data-updated'})` → 頁面顯示「✨ 有新收錄,點此重新整理」(`#updateBar`)。
-  - 跨網域(Postype / Lofter / AO3 / AFF 閱讀連結、Val Town、GoatCounter)一律不攔、不快取。
+  - 跨網域(Postype / Lofter / AO3 / AFF 閱讀連結、Cloudflare Worker、GoatCounter)一律不攔、不快取。
   - 「⬇️ 安裝」鈕(`#installBtn`)只在 `beforeinstallprompt` 觸發時顯示;`appinstalled` 後隱藏。
   - 改了 `src/`、`styles/`、`assets/` 的檔名,記得同步 `_build/sw_template.js` 的 `PRECACHE` 清單與 `index.html` 的 modulepreload。
 
@@ -540,7 +541,7 @@ Lofter(1300 多筆,最大平台)、AO3、Asianfanfics 用 urllib 從任何 IP �
   commit 回 `main` 再部署。**改 HTML 一律改 `_build/site_template.html`**,`index.html` 會被下一次同步覆蓋。
   本機沒有 Notion CSV 時,可用現有 `data.json`(`expand_data` 還原)呼叫 `build_site.write_site(DATA, '_build', '.', repo_root='.')` 重產三個產物。
 - `index.html` 裡由建置 / 部署決定的東西:版權註解水印(`__WATERMARK__`)、`window.AZ_STMAP`(簡繁表)、`window.AZ_CONFIG`
-  (`REACT_API` / `REPORT_API` / `STATS_API` 三個 Val Town 端點;`build_site.py` 的架構自檢會檢查它們還在)、GoatCounter 追蹤碼。
+  (`REACT_API` / `REPORT_API` / `STATS_API` 三個端點,都在 Cloudflare Worker `annyeongz-api`,程式不在本倉庫;`build_site.py` 的架構自檢會檢查它們還在)、GoatCounter 追蹤碼。
 - 因為用 ES module,**本機要用 http 伺服器開**(`npm run serve` 或 `python3 -m http.server 8000`),直接雙擊 `index.html`(file://)不行。
 - `package.json` / `tests/` / `node_modules` 只為了測試,部署用不到(`node_modules` 不進版控)。
 - 改了 `src/`、`styles/`、`vendor/`、`assets/` 的檔名,記得同步 `_build/sw_template.js` 的 `PRECACHE` 清單與 `index.html` 的 modulepreload(版本號不用動,建置會帶)。
