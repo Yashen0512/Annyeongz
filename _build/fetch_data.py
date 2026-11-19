@@ -384,7 +384,7 @@ def main():
     try:
         _m = re.search(r'REACT_API[:=]"(https://[^"]+)"', io.open('site_template.html', encoding='utf-8').read())
         if _m:
-            with urllib.request.urlopen(urllib.request.Request(_m.group(1), headers={'Cache-Control': 'no-store'}), context=SSL_CTX, timeout=30) as _r:
+            with urllib.request.urlopen(urllib.request.Request(_m.group(1), headers={'Cache-Control': 'no-store', 'User-Agent': 'annyeongz-sync/1.0'}), context=SSL_CTX, timeout=30) as _r:
                 _cnt = json.loads(_r.read().decode('utf-8'))
             _sum = lambda d: sum(int(v[0]) + int(v[1]) for v in d.values())
             if isinstance(_cnt, dict) and _cnt:
