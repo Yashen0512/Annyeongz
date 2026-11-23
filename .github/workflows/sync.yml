@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -56,6 +56,17 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: '.'
+      # 發佈偶爾會因 GitHub 端暫時性錯誤失敗(2026/11/23 08:31 那班:剛上傳的打包檔查不到,
+      # 「No artifacts named "github-pages" were found」),結果要等下一班才上線。
+      # 所以第一次失敗不算數(continue-on-error),等 30 秒再試一次;第二次也失敗才讓整班失敗、寄通知信。
       - name: Deploy to GitHub Pages
         id: deployment
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+      - name: Wait before retrying deploy
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 30
+      - name: Deploy to GitHub Pages (retry)
+        id: deployment_retry
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v4
