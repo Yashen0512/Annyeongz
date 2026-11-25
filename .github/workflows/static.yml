@@ -26,7 +26,7 @@ jobs:
   deploy:
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -38,6 +38,17 @@ jobs:
         with:
           # Upload entire repository
           path: '.'
+      # 發佈偶爾會因 GitHub 端暫時性錯誤失敗(2026/11/25 14:59 的 #114、11/23 sync.yml 的 #336 都是:
+      # 剛上傳的打包檔查不到,「No artifacts named "github-pages" were found」),結果要等下一班同步才上線。
+      # 所以第一次失敗不算數(continue-on-error),等 30 秒再試一次;第二次也失敗才讓整個工作失敗、寄通知信。
       - name: Deploy to GitHub Pages
         id: deployment
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+      - name: Wait before retrying deploy
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 30
+      - name: Deploy to GitHub Pages (retry)
+        id: deployment_retry
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v5
