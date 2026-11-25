@@ -39,7 +39,12 @@ body.noscroll{overflow:hidden}
   .banner{aspect-ratio:2/1}                   /* 手機:<picture> 選到 2:1 方圖,完整顯示不裁切;比例先佔好,圖到了不跳版 */
   .banner .bimg{position:static;height:auto;aspect-ratio:2/1;object-fit:contain}
   .search{font-size:16px;padding:13px 18px}   /* 搜尋列加大 */
-  #toTop{width:56px;height:56px;font-size:27px;right:16px;bottom:16px}  /* 置頂鍵加大 */
+  /* 置頂鍵加大。寬度不寫死(以前 width:56px,扣掉內距只剩 26px,「↑ #10089」要 63px,編號會凸出圓圈):
+     只有 ↑ 時 min-width 讓它維持 56px 的圓,有編號時自動變成膠囊形,幾位數都放得下。
+     底部加上 safe-area(iPhone 橫條);更新提示條出現時往上讓(提示條在正下方中間,膠囊變寬後會疊到)。 */
+  #toTop{min-width:56px;height:56px;padding:0 16px;font-size:27px;right:16px;bottom:calc(env(safe-area-inset-bottom, 0px) + 16px)}
+  #toTop .tno{font-size:14px}
+  body:has(.update-bar:not([hidden])) #toTop{bottom:calc(env(safe-area-inset-bottom, 0px) + 74px)}
   .close{font-size:30px;line-height:1;top:14px}     /* 圓縮小一點、✕ 放大(使用者 2026/7/30 要求);寬與右距走 .sheet 的 --close-w / --close-r(標題的留白一起算) */
   .wrap{padding:12px}
   .brand{font-size:14px;letter-spacing:0}
@@ -57,7 +62,9 @@ body.noscroll{overflow:hidden}
   .scard .st{font-size:15px}
   .scard .sm{font-size:12px}
   .toolbar .count{margin-left:0;flex-basis:100%;font-size:14px}
-  /* 手機 sticky 壓縮版(main.js 捲過工具列時加 .mini):只留 🔧 篩選、排序、跳到 #、↑ 一排;其他那組(.tbx)搬進篩選面板頂部 */
+  /* 手機 sticky 壓縮版(main.js 捲過工具列時加 .mini):只留 🔧 篩選、排序、跳到 # 一排;其他那組(.tbx)搬進篩選面板頂部。
+     回到頂部只用右下角那顆 #toTop(捲超過 400px 就一直在):以前壓縮後改顯示列內的 #toTopBar、右下角那顆收起來,
+     兩顆在不同位置輪流出現,看起來像置頂鍵時有時無(2026/11/25 改)。#toTopBar 還在樣板裡,但 main.css 一律 display:none。 */
   .toolbar.mini{flex-wrap:nowrap;gap:8px;padding:8px 0;max-width:100%}
   .toolbar.mini .sech,.toolbar.mini .count,.toolbar.mini .tbx,.toolbar.mini .jumpbar label,.toolbar.mini .jumpbar button,.toolbar.mini .jmsg{display:none}   /* 「前往」也藏:輸入完離開欄位就跳(main.js) */
   .toolbar.mini .ctl{padding:8px 10px;font-size:14px}
@@ -65,8 +72,6 @@ body.noscroll{overflow:hidden}
   .toolbar.mini #sort{flex:1 1 0;min-width:0;width:0}   /* 不換行的一排裡只有排序會縮:basis 0 + min-width 0 + width 0 三個都給,WebKit 的 <select> 才肯縮到比選項文字窄(只給 min-width:0 不夠) */
   .toolbar.mini .jumpbar{flex:none;gap:4px}
   .toolbar.mini .jumpbar input{width:64px;padding:8px 8px}
-  .toolbar.mini #toTopBar{display:inline-flex;align-items:center;gap:4px;flex:none;white-space:nowrap}
-  body.tb-mini #toTop{display:none}   /* 壓縮列有 ↑ 了,右下角那顆收起來 */
   .snav{display:none}            /* 手機用滑的,不顯示箭頭 */
   .sheet{--sheet-px:16px;--close-w:48px;--close-r:14px;padding:20px var(--sheet-px);max-height:90vh}   /* 關閉鈕 48px:標題 padding-right 自動變成 14+48+10-16 = 56px */
   .dnav{bottom:-20px;margin:16px -16px -20px;padding:10px 16px}
@@ -74,4 +79,9 @@ body.noscroll{overflow:hidden}
   .drow{flex-direction:column;gap:2px;font-size:15px}    /* 詳情:標籤在上、值在下 */
   .dk{flex-basis:auto}
   .plat{padding:6px 13px;font-size:13.5px}
+  .astar{font-size:20px;min-width:30px;min-height:30px;line-height:30px}   /* 收藏作者的星:手機加大好點 */
+  .astar.ah-star,.ah-acts .ah-clear{font-size:14px;min-height:0;line-height:normal;padding:7px 14px}   /* 兩顆同字級、同內距,才會等高 */
+  .ah-acts{margin-left:0;flex-basis:100%}   /* 作者專頁標頭:名字 + 篇數一排,兩顆按鈕下一排靠左並排 */
+  .fa-name{font-size:14.5px;min-height:36px}
+  .fa-x{font-size:14px;min-width:36px;min-height:36px}
 }

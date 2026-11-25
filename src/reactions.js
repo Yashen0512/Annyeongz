@@ -1,4 +1,4 @@
-// 公開愛心數 + 觀測數(存 Val Town,匿名只記數字)。
+// 公開愛心數 + 觀測數(存 Cloudflare Worker 的資料庫,匿名只記數字)。
 // 讀取失敗也只是不顯示數字,書架照常運作;已標「原文已刪」的文不計數。
 import { KEYS, loadSet, saveSet, firstViewThisSession } from './storage.js';
 import { REACT_API, postReaction, fetchCounts } from './api.js';

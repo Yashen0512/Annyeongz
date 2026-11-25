@@ -1,5 +1,5 @@
 // 統計星圖(stats.html)的組裝:fetch data.json(精簡格式)→ expandData 還原、讀 CSS 變數當圖表顏色、主題切換、
-// 「全部 / 排除已刪」切換、愛心 / 觀測計數(Val Town,失敗退回 _build/reactions_backup.json)。計算與圖表設定都在 stats.js。
+// 「全部 / 排除已刪」切換、愛心 / 觀測計數(REACT_API,失敗退回 _build/reactions_backup.json)。計算與圖表設定都在 stats.js。
 // 資料載入與首頁同一條路:fetchData() → window.DATA → loadData()(expandData + normalizeData);抓到資料之後才跑 init()。
 import { loadData, fetchData } from './data.js';
 import { loadTheme, saveTheme } from './storage.js';
@@ -74,7 +74,7 @@ function setExcludeDead(v) {
   draw();
 }
 
-/** 愛心 / 觀測計數:先問 Val Town,失敗退回建置時的備份檔;都沒有就顯示提示。 */
+/** 愛心 / 觀測計數:先問 REACT_API,失敗退回建置時的備份檔;都沒有就顯示提示。 */
 async function loadCounts() {
   let j = REACT_API ? await fetchCounts() : null;
   if (!j) {

@@ -1,4 +1,4 @@
-// 站外服務(Val Town)的網路呼叫,只包 fetch、不碰 DOM。端點由 index.html 的 window.AZ_CONFIG 提供:
+// 站外服務(Cloudflare Worker annyeongz-api)的網路呼叫,只包 fetch、不碰 DOM。端點由 index.html 的 window.AZ_CONFIG 提供:
 //   REACT_API  公開愛心數 / 觀測數(GET 讀全部、POST {no,type} 記一筆;留空 = 整個功能略過)
 //   REPORT_API 回報連結失效(POST {no,title,reason})
 //   STATS_API  即時瀏覽人次統計(GET)

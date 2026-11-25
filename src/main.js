@@ -2,7 +2,8 @@
 // 狀態說明:
 //   sel / modes            標籤三態與任一/全部(見 filter.js)
 //   authorFilter           作者專頁
-//   shelfOn / shelfTab     書架模式與分頁
+//   shelfOn / shelfTab     書架模式與分頁(fav 已收藏 / todo 待閱讀 / read 已讀 / auth 收藏的作者)
+//   favAuthors             收藏的作者 / 譯者(Set,鍵 = Notion 作者頁 ID);「⭐ 作者」分頁列出這些人的全部作品
 //   lazyList               主列表分批渲染(每批 BATCH 張,捲到底前自動補;見 render.js createLazyList)
 //   _mode / _cur / _annIdx 詳情視窗:'art' 文章、'ann' 公告、'tool' 書架匯出 / 匯入 / 清除;_navList = 從哪一排點開(null = 主列表目前篩選+排序)
 //   _opener                打開詳情前的焦點元素(書卡標題鈕 / 輪播小卡 / 書架工具鈕),關閉後把焦點還回去(鍵盤使用者才不會迷路)
@@ -44,13 +45,41 @@ const BATCH = 40;   // 主列表每批書卡數:先畫 40 張,其餘捲到底前
 // 我的書架:收藏 + 待閱讀 + 已讀,存瀏覽器本機
 const favs = loadSet(KEYS.FAVS), readSet = loadSet(KEYS.READ), todoSet = loadSet(KEYS.TODO);
 let shelfTab = loadShelfTab();
-const SHELF = { fav: favs, todo: todoSet, read: readSet };
+// 收藏的作者 / 譯者(⭐):只存瀏覽器本機。存的是「鍵」= Notion 作者頁 ID(作者改名也不會斷);資料裡對不到 ID 的才用 'n:' + 名字。
+const favAuthors = loadSet(KEYS.FAV_AUTHORS);
+const authorKey = (name, id) => (id && persons.byId(id) ? id : (persons.idOf(name) || 'n:' + name));
+const isFavAuthor = (name, id) => favAuthors.has(authorKey(name, id));
+{ // 以前用名字收藏的(沒有 ID),現在資料裡有 ID 了就換成 ID
+  let moved = false;
+  [...favAuthors].forEach((k) => { if (typeof k !== 'string') { favAuthors.delete(k); moved = true; return; } if (k.startsWith('n:')) { const id = persons.idOf(k.slice(2)); if (id) { favAuthors.delete(k); favAuthors.add(id); moved = true; } } });
+  if (moved) saveSet(KEYS.FAV_AUTHORS, favAuthors);
+}
+// 收藏的作者 → {list: [{key, id, name, count, dead}](依收藏順序), nos: 這些人全部作品的編號 Set};favAuthors 一變就把 _faCache 清掉重算。
+// 作者頁已經不在資料裡(被刪 / 合併)或一篇作品都沒有的:不顯示、不計數,但紀錄留著(資料回來就會再出現)。
+let _faCache = null;
+function favAuthorData() {
+  if (_faCache) return _faCache;
+  const list = [], nos = new Set();
+  favAuthors.forEach((key) => {
+    const byName = key.startsWith('n:'), p = byName ? null : persons.byId(key);
+    const name = byName ? key.slice(2) : (p && p.name);
+    if (!name) return;
+    const works = authorWorks(D.articles, name, persons);
+    if (!works.length) return;
+    works.forEach((a) => nos.add(a.no));
+    list.push({ key, id: byName ? '' : key, name, count: works.length, dead: !!(p && p.dead) || deadAuthors.has(name) });
+  });
+  return (_faCache = { list, nos });
+}
+// 書架四個分頁各自的「集合」:前三個是編號 Set;作者那格是算出來的(size = 收藏的作者人數,has(編號) = 是不是這些人的作品),
+// 篩選(filter.js 只用 has)、分頁上的數字、空白文案(只用 size)都能照舊用。
+const SHELF = { fav: favs, todo: todoSet, read: readSet, auth: { get size() { return favAuthorData().list.length; }, has: (no) => favAuthorData().nos.has(no) } };
 
 // 公開愛心數 / 觀測數
 const reactions = createReactions({ favs, deadNos, onChange: () => { render(true); if (modalOpen() && _cur) openDetail(_cur); } });
 
 // 傳給 render.js 的畫面脈絡
-const ctx = { facets: D.facets, persons, deadAuthors, favs, readSet, todoSet, likeNum: reactions.likeNum, viewNum: reactions.viewNum };
+const ctx = { facets: D.facets, persons, deadAuthors, favs, readSet, todoSet, likeNum: reactions.likeNum, viewNum: reactions.viewNum, authorKey, isFavAuthor };
 
 const q = $('q');
 const topbarEl = document.querySelector('.topbar');
@@ -144,11 +173,43 @@ function updateShelfCounts() {
   });
 }
 function setShelfTab(k) { shelfTab = k; saveShelfTab(k); updateShelfBtn(); render(); }
+// ---- 收藏作者 ----
+/** 詳情的作者 / 譯者列、作者專頁標頭、「⭐ 作者」分頁的 ✕ 都呼叫這支(inline onclick):enc = encodeURIComponent(名字),id = 作者頁 ID(沒有就空字串)。 */
+function toggleFavAuthor(enc, id) {
+  let name = ''; try { name = decodeURIComponent(enc); } catch (e) { return; }
+  if (!name) return;
+  const key = authorKey(name, id);
+  favAuthors.has(key) ? favAuthors.delete(key) : favAuthors.add(key);
+  saveSet(KEYS.FAV_AUTHORS, favAuthors);
+  afterFavAuthors();
+}
+/** 收藏的作者變了(點星、匯入、清除):畫面上每顆星、分頁數字、作者那一排就地更新;正在看「⭐ 作者」分頁時清單內容也變了,才重畫清單。 */
+function afterFavAuthors() {
+  _faCache = null;
+  new Set([...document.querySelectorAll('.astar[data-ak]')].map((b) => b.dataset.ak)).forEach((k) => R.syncAuthorStars(k, favAuthors.has(k)));
+  updateShelfCounts(); renderFavAuthors();
+  if (shelfOn && shelfTab === 'auth') render(true);
+}
+/** 「⭐ 作者」分頁上方那一排收藏的作者。容器 #favAuthBar 不在樣板裡,第一次用到才建(接在書架分頁後面),舊的 index.html 也能用。 */
+function renderFavAuthors() {
+  let bar = $('favAuthBar');
+  const show = shelfOn && shelfTab === 'auth';
+  if (!bar) {
+    const tabs = $('shelfTabs'); if (!show || !tabs) return;
+    bar = document.createElement('div'); bar.id = 'favAuthBar'; bar.className = 'fa-bar'; tabs.after(bar);
+  }
+  const hadFocus = bar.contains(document.activeElement);
+  const html = show ? R.favAuthorsHTML(favAuthorData().list) : '';
+  bar.innerHTML = html; bar.style.display = html ? 'flex' : 'none';
+  // 按了某一顆的 ✕ 之後那顆不見了:焦點給剩下的第一位,都沒有了就回到「⭐ 作者」分頁鈕(不然會掉回 body)
+  if (hadFocus) (bar.querySelector('.fa-name') || $('shelfTabs')?.querySelector('.ctl.on'))?.focus();
+}
 function updateShelfBtn() {
   const b = $('shelfBtn'); if (b) { b.textContent = '📚 書架'; b.classList.toggle('on', shelfOn); b.setAttribute('aria-pressed', String(shelfOn)); }
   const tb = $('shelfTabs'); if (!tb) return;
   tb.style.display = shelfOn ? 'flex' : 'none';
   tb.innerHTML = R.shelfTabsHTML(SHELF, shelfTab) + R.shelfToolsHTML();
+  renderFavAuthors();
   updateSpace();   // 手機壓縮列:書架展開時不補 #tbSpace,分頁緊接工具列;收起再補回
 }
 
@@ -333,12 +394,12 @@ function ensureVendor() {
 }
 // 匯出:字串 + 複製 / 複製連結 / QR code(QR 內容是匯入連結,用相機掃到就直接開站)
 async function shelfExport() {
-  openTool(R.exportHTML({ payload: null, err: '⏳ 準備中…', counts: { shelf: favs.size, read: readSet.size, todo: todoSet.size } }));   // 先開視窗(焦點與 opener 在使用者動作當下記錄),再等 vendor
+  openTool(R.exportHTML({ payload: null, err: '⏳ 準備中…', counts: { shelf: favs.size, read: readSet.size, todo: todoSet.size, authors: favAuthors.size } }));   // 先開視窗(焦點與 opener 在使用者動作當下記錄),再等 vendor
   await ensureVendor();
   if (!modalOpen() || _mode !== 'tool') return;
   let payload = null, err = '';
-  try { payload = exportState({ favs, read: readSet, todo: todoSet }); } catch (e) { err = e.message; }
-  openTool(R.exportHTML({ payload, err, counts: { shelf: favs.size, read: readSet.size, todo: todoSet.size } }));
+  try { payload = exportState({ favs, read: readSet, todo: todoSet, authors: favAuthors }); } catch (e) { err = e.message; }
+  openTool(R.exportHTML({ payload, err, counts: { shelf: favs.size, read: readSet.size, todo: todoSet.size, authors: favAuthors.size } }));
   if (!payload) return;
   const link = buildImportURL(payload, siteBase());
   $('xpCopy').onclick = () => copyText(payload, 'xpMsg', '✓ 已複製字串,到另一台裝置的「📥 匯入」貼上');
@@ -375,7 +436,7 @@ function previewImportText(text) {
 }
 function renderImPreview(mode) {
   const pre = $('imPre'); if (!pre || !_imPending) return;
-  const st = previewImport({ favs, read: readSet, todo: todoSet }, _imPending, mode);
+  const st = previewImport({ favs, read: readSet, todo: todoSet, authors: favAuthors }, _imPending, mode);
   pre.innerHTML = R.importPreviewHTML(st, mode, _imPending.exportedAt); pre.style.display = '';
   pre.querySelectorAll('input[name=imMode]').forEach((r) => { r.onchange = () => renderImPreview(imMode()); });
   $('imGo').onclick = confirmImport;
@@ -383,12 +444,13 @@ function renderImPreview(mode) {
 function confirmImport() {
   if (!_imPending) return;
   const mode = imMode(); let r;
-  try { r = importState(_imText, { favs, read: readSet, todo: todoSet, mode }); }
+  try { r = importState(_imText, { favs, read: readSet, todo: todoSet, authors: favAuthors, mode }); }
   catch (e) { setMsg('imMsg', '⚠️ ' + e.message, 'err'); return; }
   reactions.markCounted(r.addedShelf);   // 匯入的收藏在原裝置已算過愛心,這裡不再 +1
   if (new RegExp('[?&]' + IMPORT_PARAM + '=').test(location.search)) history.replaceState(null, '', location.pathname + location.hash);   // 從 ?s= 連結來的:寫入後移除參數
   _imPending = null; _imText = '';
   afterMark();
+  afterFavAuthors();
   openTool(R.importDoneHTML(r, mode));
 }
 // 相機掃 QR(BarcodeDetector;不支援的瀏覽器沒有這顆按鈕)
@@ -423,17 +485,20 @@ function stopScan() {
 }
 // 清除所有紀錄:要輸入「清除」才能按
 function shelfClear() {
-  openTool(R.clearHTML({ fav: favs.size, todo: todoSet.size, read: readSet.size }));
+  openTool(R.clearHTML({ fav: favs.size, todo: todoSet.size, read: readSet.size, authors: favAuthors.size }));
   const inp = $('clIn'), go = $('clGo');
   inp.oninput = () => { go.disabled = inp.value.trim() !== R.CLEAR_WORD; };
   inp.onkeydown = (e) => { if (e.key === 'Enter' && !go.disabled) go.click(); };
   go.onclick = () => {
     if (inp.value.trim() !== R.CLEAR_WORD) return;
     [...favs].forEach((no) => reactions.onFavChange(no, false));   // 與逐篇取消收藏相同:已計入的公開愛心會扣回
-    clearAllRecords({ favs, read: readSet, todo: todoSet });
+    clearAllRecords({ favs, read: readSet, todo: todoSet, authors: favAuthors });
     reactions.forgetAll();
     shelfTab = 'fav';
     afterMark();
+    afterFavAuthors();
+    updateShelfBtn();              // 分頁跳回「已收藏」:分頁列重畫(亮起來的那顆、作者那一排)
+    if (shelfOn) render();         // 書架開著:清單也要跟著清空(以前停在已讀 / 待閱讀分頁清除後,清單要等下一次操作才更新)
     openTool(R.clearedHTML());
   };
   setTimeout(() => inp.focus(), 50);
@@ -622,7 +687,8 @@ window.addEventListener('resize', updateAllSnav);
 window.addEventListener('load', updateAllSnav);
 updateAllSnav();
 
-// ---- 回到頂部(桌機右下角 #toTop、手機壓縮工具列裡的 #toTopBar):顯示目前視窗最上方那張卡的編號「↑ #1305」----
+// ---- 回到頂部(右下角 #toTop,桌機手機都是這顆;捲超過 400px 就一直在):顯示目前視窗最上方那張卡的編號「↑ #1305」----
+// #toTopBar 是以前手機壓縮工具列裡的替身,2026/11/25 起 CSS 一律隱藏(兩顆輪流出現會像時有時無);樣板裡還有,所以這裡照樣同步它的內容。
 const toTop = $('toTop'), toTopBar = $('toTopBar');
 window.addEventListener('scroll', () => { if (!scrollLocked()) toTop.classList.toggle('show', window.scrollY > 400); });   // 鎖住時 scrollY 變 0,不要讓按鈕閃一下
 const goTop = (e, btn) => { if (e.detail) btn.blur(); window.scrollTo({ top: 0, behavior: scrollBehavior() }); };   // 滑鼠點才 blur(手機不留粉色殘影),鍵盤保留焦點
@@ -729,7 +795,7 @@ renderLastUpdated();
 setInterval(renderLastUpdated, 60000);
 
 // 詳情 / 書卡 HTML 字串裡的 inline onclick 會呼叫這些函式,所以要掛到 window(ES module 內的函式不是全域)
-Object.assign(window, { toggleFav, toggleTodo, toggleRead, setShelfTab, filterByTag, filterName, openByNo, shareArticle, closeDetail, navDetail, toggleReport, pickReason, sendReport, shelfExport, shelfImport, shelfClear });
+Object.assign(window, { toggleFav, toggleTodo, toggleRead, toggleFavAuthor, setShelfTab, filterByTag, filterName, openByNo, shareArticle, closeDetail, navDetail, toggleReport, pickReason, sendReport, shelfExport, shelfImport, shelfClear });
 
 // ---- 啟動 ----
 // 先把主列表第一批畫出來(使用者最先看到的),其餘工作拆成獨立小工作延後,避免單一長工作卡住互動。

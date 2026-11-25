@@ -2,14 +2,15 @@
 // 這裡只負責把資料變成 DOM / HTML 字串;狀態與事件的接線在 main.js。
 //
 // 注意:詳情與書卡的 HTML 字串裡用 inline onclick 呼叫下列全域函式(由 main.js 掛到 window):
-//   toggleFav / toggleTodo / toggleRead / setShelfTab / filterByTag / filterName / openByNo /
+//   toggleFav / toggleTodo / toggleRead / toggleFavAuthor / setShelfTab / filterByTag / filterName / openByNo /
 //   closeDetail / navDetail / toggleReport / pickReason / sendReport / shelfExport / shelfImport / shelfClear / shareArticle
 // 無障礙:所有可點的 span / div 都改成 <button>(鍵盤 Enter / Space 可用),狀態用 aria-pressed / aria-checked / aria-expanded 表達;
 //        每個彈窗內容的第一顆是關閉鈕(aria-label="關閉"),標題 h2 帶 id="sheetTitle" 給 <dialog aria-labelledby> 用。
 //
 // ctx(由 main.js 組好傳入)欄位:
 //   facets, persons(data.js makePersonLookup:以作者頁 ID 查名字 / 平台 / 已刪帳號)、deadAuthors(Set,相容舊資料),
-//   favs / readSet / todoSet(Set)、likeNum(no) 公開愛心數(0 不顯示)、viewNum(no) 觀測數
+//   favs / readSet / todoSet(Set)、likeNum(no) 公開愛心數(0 不顯示)、viewNum(no) 觀測數、
+//   authorKey(name, id) 收藏作者用的鍵(作者頁 ID,沒有才用 'n:' + 名字)、isFavAuthor(name, id) 是否已收藏
 import { sg, isExt, liveCount, personRefs } from './data.js';
 
 // ---- 跳脫(所有進 innerHTML 的資料一律經過這裡;資料來自 Notion、分享網址 #f=、?s= 匯入字串,都不可信)----
@@ -38,7 +39,33 @@ export const stSym = (s) => { const k = STKEY(s); return k ? `<span class="si" a
 // 面板「文章狀態」(?) 的定義(站長提供)
 export const STATUS_HELP = [['連載中', '持續更新中'], ['完結', '已完成'], ['未完', '原本連載但長期未更新'], ['斷更', '作者寫到一半後刪文']];
 
-export const SHELF_META = { fav: ['❤️', '已收藏'], todo: ['🔖', '待閱讀'], read: ['✓', '已讀'] };
+export const SHELF_META = { fav: ['❤️', '已收藏'], todo: ['🔖', '待閱讀'], read: ['✓', '已讀'], auth: ['⭐', '作者'] };
+
+// ---- 收藏作者(⭐):詳情的作者 / 譯者列、作者專頁標頭各有一顆星;書架「⭐ 作者」分頁上方列出收藏的作者 ----
+const starState = (nm, on) => ({ txt: on ? '★' : '☆', label: on ? `取消收藏作者 ${nm}` : `收藏作者 ${nm}`, title: on ? '已收藏這位作者(再點一下取消)' : '收藏這位作者(在 📚 書架 → ⭐ 作者 看)' });
+const starInner = (on, wide) => (on ? '★' : '☆') + (wide ? `<span class="as-t">${on ? ' 已收藏' : ' 收藏作者'}</span>` : '');
+/** 一顆收藏作者的星(inline onclick → main.js 的 toggleFavAuthor)。data-ak = 鍵,同一位作者在畫面上的每顆星靠它一起更新。
+ *  cls:'astar'(詳情,小顆)或 'astar ah-star'(作者專頁標頭,帶文字)。ctx 沒有 authorKey(舊的呼叫端)就不畫。 */
+export function authorStarHTML(nm, id, ctx, cls = 'astar') {
+  if (!ctx || !ctx.authorKey) return '';
+  const on = ctx.isFavAuthor(nm, id), st = starState(nm, on);
+  return `<button type="button" class="${cls}${on ? ' on' : ''}" data-ak="${esc(ctx.authorKey(nm, id))}" data-nm="${esc(nm)}" aria-pressed="${on}" aria-label="${esc(st.label)}" title="${esc(st.title)}" onclick="toggleFavAuthor('${encodeURIComponent(nm)}', ${jsq(id || '')})">${starInner(on, cls.includes('ah-star'))}</button>`;
+}
+/** 收藏 / 取消收藏作者之後:就地更新畫面上同一位作者的每顆星(詳情、作者專頁標頭),不重畫、焦點不掉。 */
+export function syncAuthorStars(key, on, root = document) {
+  root.querySelectorAll('.astar[data-ak]').forEach((b) => {
+    if (b.dataset.ak !== key) return;
+    const st = starState(b.dataset.nm || '', on);
+    b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); b.setAttribute('aria-label', st.label); b.title = st.title;
+    b.innerHTML = starInner(on, b.classList.contains('ah-star'));
+  });
+}
+/** 書架「⭐ 作者」分頁上方那一排:每位一顆 chip(名字 + 篇數,點了進作者專頁)+ ✕ 取消收藏。list = [{key, id, name, count, dead}]。 */
+export function favAuthorsHTML(list) {
+  if (!list.length) return '';
+  return `<span class="fa-h">收藏的作者</span>` + list.map((x) => `<span class="fa-chip"><button type="button" class="fa-name" onclick="filterName('${encodeURIComponent(x.name)}')" aria-label="${esc(x.name)}，共 ${esc(x.count)} 篇，看這位的全部作品">${esc(x.name)}${x.dead ? '<span class="deadauth">(已刪帳號)</span>' : ''}<span class="sc">${esc(x.count)}</span></button>`
+    + `<button type="button" class="fa-x" onclick="toggleFavAuthor('${encodeURIComponent(x.name)}', ${jsq(x.id || '')})" aria-label="取消收藏作者 ${esc(x.name)}" title="取消收藏">✕</button></span>`).join('');
+}
 
 /** 詳情/公告視窗底部:上一篇・下一篇。 */
 export function navBar(i, n, unit) {
@@ -185,6 +212,7 @@ const EMPTY = {
   fav: '🛸 書架還是一片虛空<br><span>點書卡右上角的 🤍 把喜歡的文收藏進來</span>',
   todo: '🔖 還沒有待閱讀的文<br><span>在文章詳情按「🔖 待閱讀」先存起來</span>',
   read: '✓ 還沒有標記已讀的文<br><span>在文章詳情按「標為已讀」記錄讀過的文</span>',
+  auth: '⭐ 還沒有收藏的作者<br><span>在文章詳情的作者名字旁邊,或作者專頁上方按 ☆ 收藏;這裡會列出他們的全部作品</span>',
 };
 /** 沒有結果:書架該分頁是空的用書架版文案,否則用「這片星域沒有符合條件的文」。 */
 export function emptyHTML(emptyShelfTab) {
@@ -193,7 +221,7 @@ export function emptyHTML(emptyShelfTab) {
     : '<div class="empty">🔭 這片星域沒有符合條件的文<br><span>換個座標試試:放寬條件,或點上方條件標籤把它移除</span></div>';
 }
 
-/** 書架分頁列(已收藏/待閱讀/已讀 + 數量)。 */
+/** 書架分頁列(已收藏/待閱讀/已讀/作者 + 數量)。sets[k] 只要有 size;作者那格是收藏的作者人數。 */
 export function shelfTabsHTML(sets, cur) {
   return Object.entries(SHELF_META).map(([k, [ic, lb]]) => `<button type="button" class="ctl${k === cur ? ' on' : ''}" aria-pressed="${k === cur}" onclick="setShelfTab('${k}')">${ic} ${lb} <span class="sc">${sets[k].size}</span></button>`).join('');
 }
@@ -307,7 +335,8 @@ export function renderAuthorHead(el, name, count, ctx, onClear) {
   el.style.display = 'block';
   const deadTag = info.dead ? '<span class="deadauth">(已刪帳號)</span>' : '';
   el.innerHTML = `<div class="ah-row"><span class="ah-name">✍️ ${esc(name)}${deadTag}</span><span class="ah-cnt">共 ${esc(count)} 篇</span>`
-    + `<button type="button" class="ah-clear" aria-label="離開作者專頁，返回全部文章">✕ 返回全部</button></div>`
+    // 兩顆按鈕包成一組(.ah-acts):桌機整組靠右;手機整組自己一排、靠左並排(不包的話「返回全部」會被單獨擠到下一排右邊)
+    + `<span class="ah-acts">${authorStarHTML(name, '', ctx, 'astar ah-star')}<button type="button" class="ah-clear" aria-label="離開作者專頁，返回全部文章">✕ 返回全部</button></span></div>`
     + (links ? `<div class="ah-links">${links}</div>` : '');
   el.querySelector('.ah-clear').onclick = onClear;
 }
@@ -341,7 +370,7 @@ export function personRow(label, refs, ctx) {
     const links = Object.keys(p).map((k) => `<a class="plat pp" href="${safeHref(p[k])}" target="_blank" rel="noopener">${esc(k)}</a>`).join('');
     const see = `<a class="plat pp" href="#" onclick="filterName('${encodeURIComponent(nm)}');return false">看全部</a>`;
     const dead = info.dead ? '<span class="deadauth">(已刪帳號)</span>' : '';
-    return `<div class="person"><button type="button" class="aname" onclick="filterName('${encodeURIComponent(nm)}')" aria-label="${esc(nm)}，看這位的全部作品">${esc(nm)}</button>${dead} ${links} ${see}</div>`;
+    return `<div class="person"><button type="button" class="aname" onclick="filterName('${encodeURIComponent(nm)}')" aria-label="${esc(nm)}，看這位的全部作品">${esc(nm)}</button>${dead}${authorStarHTML(nm, id, ctx)} ${links} ${see}</div>`;
   }).join('');
   return `<div class="drow"><span class="dk">${esc(label)}</span><span class="dv">${inner}</span></div>`;
 }
@@ -455,9 +484,9 @@ export function renderStats(el, s, live) {
  *  .shelf-tools 是 display:contents(main.css),三顆跟分頁鈕同在 #shelfTabs 這個 flex 容器裡靠左排、放不下就換行。 */
 export function shelfToolsHTML() {
   return `<span class="shelf-tools">`
-    + `<button type="button" class="ctl" onclick="shelfExport()" title="把書架與已讀帶到另一台裝置" aria-label="匯出，把書架與已讀帶到另一台裝置">📤 匯出</button>`
-    + `<button type="button" class="ctl" onclick="shelfImport()" title="從另一台裝置匯入書架與已讀" aria-label="匯入，從另一台裝置匯入書架與已讀">📥 匯入</button>`
-    + `<button type="button" class="ctl danger" onclick="shelfClear()" title="清掉這台裝置的收藏 / 待閱讀 / 已讀">🗑 清除所有紀錄</button>`
+    + `<button type="button" class="ctl" onclick="shelfExport()" title="把書架、已讀與收藏的作者帶到另一台裝置" aria-label="匯出，把書架、已讀與收藏的作者帶到另一台裝置">📤 匯出</button>`
+    + `<button type="button" class="ctl" onclick="shelfImport()" title="從另一台裝置匯入書架、已讀與收藏的作者" aria-label="匯入，從另一台裝置匯入書架、已讀與收藏的作者">📥 匯入</button>`
+    + `<button type="button" class="ctl danger" onclick="shelfClear()" title="清掉這台裝置的收藏 / 待閱讀 / 已讀 / 收藏作者">🗑 清除所有紀錄</button>`
     + `</span>`;
 }
 
@@ -472,7 +501,7 @@ export function exportHTML({ payload, err, counts }) {
   if (!payload) return head + `<div class="xfer"><div class="xmsg err">⚠️ ${esc(err || '匯出失敗')}</div></div>`;
   const n = payload.length, tooLong = n > QR_MAX;
   return head + `<div class="xfer">
-    <p>收藏 <b>${counts.shelf}</b> 篇、已讀 <b>${counts.read}</b> 篇、待閱讀 <b>${counts.todo}</b> 篇 → 字串 <b>${n.toLocaleString()}</b> 字。內容只有作品編號,不含任何個人資料。</p>
+    <p>收藏 <b>${counts.shelf}</b> 篇、已讀 <b>${counts.read}</b> 篇、待閱讀 <b>${counts.todo}</b> 篇${counts.authors != null ? `、收藏作者 <b>${counts.authors}</b> 位` : ''} → 字串 <b>${n.toLocaleString()}</b> 字。內容只有作品編號${counts.authors != null ? '與作者代號' : ''},不含任何個人資料。</p>
     <textarea id="xpOut" rows="4" readonly spellcheck="false" aria-label="匯出字串">${esc(payload)}</textarea>
     <div class="row">
       <button type="button" class="ctl pri" id="xpCopy">📋 複製字串</button>
@@ -506,10 +535,11 @@ export function importHTML({ canScan, prefill }) {
 export function importPreviewHTML(st, mode, exportedAt) {
   const when = exportedAt ? new Date(exportedAt) : null;
   const whenStr = when && !isNaN(when) ? `${when.getFullYear()}/${when.getMonth() + 1}/${when.getDate()} ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}` : '';
-  const removed = (st.removeShelf || st.removeRead || st.removeTodo)
-    ? `<div class="xmsg err">${mode === 'replace' ? '覆蓋模式' : '匯入後'}會移除目前的 ${st.removeShelf} 本書架、${st.removeRead} 篇已讀、${st.removeTodo} 篇待閱讀${mode !== 'replace' ? '(標為已讀的會自動移出待閱讀)' : ''}</div>` : '';
-  return `<div>將加入 <b>${st.addShelf}</b> 本書架、<b>${st.addRead}</b> 篇已讀、<b>${st.addTodo}</b> 篇待閱讀${whenStr ? `<span class="xwhen">(匯出於 ${whenStr})</span>` : ''}</div>
-    <div class="xmsg">匯入後:收藏 ${st.shelfTotal} 篇、已讀 ${st.readTotal} 篇、待閱讀 ${st.todoTotal} 篇</div>
+  const au = st.authorsTotal != null;   // 這台有收藏作者功能(main.js 有傳 authors)才顯示作者那幾個數字
+  const removed = (st.removeShelf || st.removeRead || st.removeTodo || st.removeAuthors)
+    ? `<div class="xmsg err">${mode === 'replace' ? '覆蓋模式' : '匯入後'}會移除目前的 ${st.removeShelf} 本書架、${st.removeRead} 篇已讀、${st.removeTodo} 篇待閱讀${au ? `、${st.removeAuthors} 位收藏作者` : ''}${mode !== 'replace' ? '(標為已讀的會自動移出待閱讀)' : ''}</div>` : '';
+  return `<div>將加入 <b>${st.addShelf}</b> 本書架、<b>${st.addRead}</b> 篇已讀、<b>${st.addTodo}</b> 篇待閱讀${au ? `、<b>${st.addAuthors}</b> 位收藏作者` : ''}${whenStr ? `<span class="xwhen">(匯出於 ${whenStr})</span>` : ''}</div>
+    <div class="xmsg">匯入後:收藏 ${st.shelfTotal} 篇、已讀 ${st.readTotal} 篇、待閱讀 ${st.todoTotal} 篇${au ? `、收藏作者 ${st.authorsTotal} 位` : ''}</div>
     <div class="row xmode">
       <label><input type="radio" name="imMode" value="merge"${mode !== 'replace' ? ' checked' : ''}> 合併(保留目前的,加上匯入的)</label>
       <label><input type="radio" name="imMode" value="replace"${mode === 'replace' ? ' checked' : ''}> 覆蓋(以匯入的為準)</label>
@@ -521,8 +551,8 @@ export function importPreviewHTML(st, mode, exportedAt) {
 export function importDoneHTML(r, mode) {
   return `<button type="button" class="close" onclick="closeDetail()" aria-label="關閉">✕</button><h2 id="sheetTitle">📥 匯入完成</h2>
   <div class="xfer">
-    <div class="xmsg ok">✅ 已${mode === 'replace' ? '覆蓋' : '合併'}:加入 ${r.addedShelf.length} 本書架、${r.addedRead.length} 篇已讀、${r.addedTodo.length} 篇待閱讀${r.removedShelf.length || r.removedTodo.length ? `,移除 ${r.removedShelf.length} 本書架、${r.removedTodo.length} 篇待閱讀` : ''}</div>
-    <p>書架、已讀與待閱讀存在這台裝置的瀏覽器裡;之後兩邊各自標記,想同步再匯出一次即可。</p>
+    <div class="xmsg ok">✅ 已${mode === 'replace' ? '覆蓋' : '合併'}:加入 ${r.addedShelf.length} 本書架、${r.addedRead.length} 篇已讀、${r.addedTodo.length} 篇待閱讀${r.addedAuthors ? `、${r.addedAuthors.length} 位收藏作者` : ''}${r.removedShelf.length || r.removedTodo.length || (r.removedAuthors && r.removedAuthors.length) ? `,移除 ${r.removedShelf.length} 本書架、${r.removedTodo.length} 篇待閱讀${r.removedAuthors ? `、${r.removedAuthors.length} 位收藏作者` : ''}` : ''}</div>
+    <p>書架、已讀、待閱讀與收藏的作者存在這台裝置的瀏覽器裡;之後兩邊各自標記,想同步再匯出一次即可。</p>
     <div class="row"><button type="button" class="ctl pri" onclick="closeDetail()">看書架</button></div>
   </div>`;
 }
@@ -532,12 +562,12 @@ export const CLEAR_WORD = '清除';
 export function clearHTML(counts) {
   return `<button type="button" class="close" onclick="closeDetail()" aria-label="關閉">✕</button><h2 id="sheetTitle">🗑 清除所有紀錄</h2>
   <div class="xfer">
-    <p>會清掉<b>這台裝置</b>的收藏 <b>${counts.fav}</b> 篇、待閱讀 <b>${counts.todo}</b> 篇、已讀 <b>${counts.read}</b> 篇,<b>無法復原</b>。建議先「📤 匯出」留一份備份。</p>
+    <p>會清掉<b>這台裝置</b>的收藏 <b>${counts.fav}</b> 篇、待閱讀 <b>${counts.todo}</b> 篇、已讀 <b>${counts.read}</b> 篇${counts.authors != null ? `、收藏作者 <b>${counts.authors}</b> 位` : ''},<b>無法復原</b>。建議先「📤 匯出」留一份備份。</p>
     <input type="text" id="clIn" autocomplete="off" placeholder="輸入「${CLEAR_WORD}」兩個字以確認" aria-label="確認文字">
     <div class="row"><button type="button" class="ctl danger" id="clGo" disabled>🗑 清除所有紀錄</button><button type="button" class="ctl" onclick="closeDetail()">取消</button><span class="xmsg" id="clMsg"></span></div>
   </div>`;
 }
 export function clearedHTML() {
   return `<button type="button" class="close" onclick="closeDetail()" aria-label="關閉">✕</button><h2 id="sheetTitle">🗑 已清除</h2>
-  <div class="xfer"><div class="xmsg ok">✅ 這台裝置的收藏 / 待閱讀 / 已讀都清掉了</div><div class="row"><button type="button" class="ctl pri" onclick="closeDetail()">關閉</button></div></div>`;
+  <div class="xfer"><div class="xmsg ok">✅ 這台裝置的收藏 / 待閱讀 / 已讀 / 收藏作者都清掉了</div><div class="row"><button type="button" class="ctl pri" onclick="closeDetail()">關閉</button></div></div>`;
 }

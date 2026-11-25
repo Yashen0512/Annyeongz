@@ -43,7 +43,7 @@
   .toolbar .jumpbar{margin-left:auto}
   .toolbar .count{margin-left:0;white-space:nowrap}
 }
-#toTopBar{display:none}           /* 手機壓縮列才有的 ↑(顯示目前最上方那張卡的編號) */
+#toTopBar{display:none}           /* 已停用(2026/11/25):以前手機壓縮列用它取代右下角的 #toTop,現在一律用 #toTop;元素還留在樣板裡,所以保留這條 */
 #tbSpace{height:0}                /* 手機壓縮時補回工具列少掉的高度,下面的版面不跳;書架展開時 main.js 設回 0,書架分頁緊接壓縮列 */
 .ctl{padding:7px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);cursor:pointer;font-size:13px}
 .ctl.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-t);font-weight:700}
@@ -87,10 +87,30 @@
 .ah-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .ah-name{font-size:18px;font-weight:800;color:var(--accent-t);overflow-wrap:anywhere;min-width:0}
 .ah-cnt{color:var(--muted);font-size:14px}
-.ah-clear{margin-left:auto;border:1px solid var(--accent);background:var(--card);color:var(--accent-t);border-radius:999px;padding:6px 13px;cursor:pointer;font-size:13px}
+.ah-clear{margin-left:auto;border:1px solid var(--accent);background:var(--card);color:var(--accent-t);border-radius:999px;padding:6px 13px;cursor:pointer;font-size:13px;font-family:inherit;line-height:normal;white-space:nowrap}
+/* 「☆ 收藏作者」+「✕ 返回全部」一組:桌機整組靠右;手機(responsive.css)整組自己一排靠左 */
+.ah-acts{margin-left:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.ah-acts .ah-clear{margin-left:0}
 .ah-links{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px}
 .aname{cursor:pointer;border-bottom:1px dashed var(--accent);font-weight:700;display:inline-block;min-height:24px;line-height:24px}
 .aname:hover{color:var(--accent-t)}
+/* 收藏作者(⭐,2026/11/25):詳情作者 / 譯者名字旁的小星(.astar)、作者專頁標頭的「☆ 收藏作者」(.astar.ah-star,外觀比照 .ah-clear)、
+   書架「⭐ 作者」分頁上方那一排收藏的作者(#favAuthBar.fa-bar,main.js 第一次用到才建;每位一顆 chip = 名字 + 篇數 + ✕)。
+   按鈕外觀自己歸零(不靠 base.css 那串選擇器):舊快取的 base.css 配新的 main.css 也不會跑出瀏覽器預設按鈕。點擊範圍至少 24px。 */
+.astar{font:inherit;margin:0 0 0 4px;padding:0 4px;border:0;background:none;appearance:none;-webkit-appearance:none;cursor:pointer;
+  color:var(--muted);font-size:17px;line-height:24px;min-width:24px;min-height:24px;vertical-align:baseline}
+.astar.on{color:var(--oe-t)}
+@media(hover:hover){.astar:not(.ah-star):hover{color:var(--oe-t)}}
+.astar.ah-star{margin:0;border:1px solid var(--accent);background:var(--card);color:var(--accent-t);border-radius:999px;padding:6px 13px;font-size:13px;line-height:normal;white-space:nowrap}
+.astar.ah-star.on{border-color:var(--oe-t);color:var(--oe-t);font-weight:700}
+.fa-bar{display:none;flex-wrap:wrap;gap:6px 8px;align-items:center;margin:0 0 10px;min-width:0}
+.fa-h{font-size:13px;color:var(--muted);margin-right:2px}
+.fa-chip{display:inline-flex;align-items:stretch;border:1px solid var(--line);border-radius:999px;background:var(--card);max-width:100%;min-width:0}
+.fa-name,.fa-x{font:inherit;margin:0;border:0;background:none;appearance:none;-webkit-appearance:none;cursor:pointer;min-height:30px}
+.fa-name{padding:3px 4px 3px 12px;font-size:13px;font-weight:600;color:var(--ink);text-align:left;overflow-wrap:anywhere;min-width:0;border-radius:999px 0 0 999px}
+.fa-name .sc{font-size:12px;opacity:.75;margin-left:5px;font-weight:400;font-variant-numeric:tabular-nums}
+.fa-x{padding:3px 11px 3px 7px;color:var(--muted);font-size:12px;min-width:30px;border-radius:0 999px 999px 0}
+@media(hover:hover){.fa-name:hover{color:var(--accent-t)}.fa-x:hover{color:var(--exc-t)}}
 /* 紅標:原文已刪 / 作者已刪帳號 */
 .badge.dead{background:var(--exc-soft);color:var(--exc-t);border:1px solid var(--exc);font-weight:700}
 .deadauth{color:var(--exc-t);font-size:.82em;margin-left:3px}

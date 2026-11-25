@@ -141,7 +141,7 @@ export function overview(D, today = new Date()) {
 }
 
 /**
- * 愛心 / 觀測散佈點。counts = {編號: [愛心, 觀測]}(Val Town 或備份檔格式)。
+ * 愛心 / 觀測散佈點。counts = {編號: [愛心, 觀測]}(REACT_API 或備份檔格式)。
  * 原文已刪的不計(首頁也不顯示它們的計數);沒有計數的篇不畫點。
  * @returns {{x:number, y:number, no:string, name:string}[]}
  */

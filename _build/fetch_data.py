@@ -379,7 +379,7 @@ def main():
         print('  統計:', {k: stats[k] for k in ('today', 'week', 'month', 'lastmonth', 'year', 'total')})
     else:
         print('  (無 goatcounter_token.txt,略過瀏覽統計)')
-    # ---- 愛心/查看數備份:把 Val Town 計數存成 reactions_backup.json(隨排程進 GitHub,歷史可回溯)----
+    # ---- 愛心/查看數備份:把 REACT_API(Cloudflare Worker annyeongz-api;2026/11/19 前是 Val Town)的計數存成 reactions_backup.json(隨排程進 GitHub,歷史可回溯)----
     # 新資料若比舊備份暴跌(>50%,可能是 val 被重建/清空)就不覆蓋,避免洗掉好備份。
     try:
         _m = re.search(r'REACT_API[:=]"(https://[^"]+)"', io.open('site_template.html', encoding='utf-8').read())

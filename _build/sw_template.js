@@ -6,7 +6,7 @@
 //   資料檔 data.json(其他 .json 如 reactions_backup 亦同)  stale-while-revalidate:先回快取讓頁面秒開,背景抓新版寫回快取;
 //                                                           「篇數(total)或資料更新時間(updated)」有變才 postMessage {type:'data-updated'} 給所有分頁,頁面顯示「有新收錄」提示條
 //                                                           (不比 ETag:data.json 含每班建置時間 synced,ETag 每班必變,會把沒新文的班次也當成新收錄)。
-//   跨網域請求(Postype / Lofter / AO3 / AFF 等閱讀連結、Val Town 計數、GoatCounter) 一律不攔、不快取。
+//   跨網域請求(Postype / Lofter / AO3 / AFF 等閱讀連結、Cloudflare Worker 的計數 / 回報 / 統計、GoatCounter) 一律不攔、不快取。
 const VERSION = '__SW_VERSION__';
 const STATIC_CACHE = 'az-static-' + VERSION;
 const DATA_CACHE = 'az-data';           // 資料快取不分版(靠 stale-while-revalidate 自己換新)

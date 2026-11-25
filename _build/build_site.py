@@ -644,7 +644,7 @@ def self_check(tpl, H, out_dir):
     """架構自檢:把「靜默失敗」變成看得到的警告。回傳警告清單(空 = 通過)。"""
     _warn = []
     # 1) 樣板端點還在不在(val 端點/計數器被改壞會導致統計或回報靜默失效);端點寫在 window.AZ_CONFIG 裡(KEY:"…")
-    #    端點可以是 Val Town(xxx--yyy.web.val.run)或 Cloudflare Worker(名稱.子網域.workers.dev/路徑);2026/11 起逐步搬到後者
+    #    端點是 Cloudflare Worker(名稱.子網域.workers.dev/路徑;2026/11/19 三個都已搬完);舊的 Val Town 格式(xxx--yyy.web.val.run)仍接受,方便必要時切回
     _ep = r'"https://(?:[a-z0-9-]+--[a-z0-9]+\.web\.val\.run|[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev/[a-z]+)"'
     for _name, _pat in (('即時統計 STATS_API', r'STATS_API[:=]' + _ep),
                         ('回報 REPORT_API', r'REPORT_API[:=]' + _ep),
