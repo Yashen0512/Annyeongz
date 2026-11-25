@@ -719,7 +719,7 @@ if (toTopBar) toTopBar.onclick = (e) => goTop(e, toTopBar);
 // 視窗裡的卡放在 _visCards,取 top 最小的那張。bars 高度變了(手機壓縮 / 頂欄換行)才重建觀察器。
 const _visCards = new Set();
 let _cardObs = null, _cardObsBars = -1;
-function cardObsBars() { return Math.round(topbarEl.offsetHeight + ($('toolbar') ? $('toolbar').offsetHeight : 0)); }
+function cardObsBars() { return Math.round(topbarEl.offsetHeight + stickyToolbarH()); }
 function buildCardObs() {
   if (!('IntersectionObserver' in window)) return;
   const bars = cardObsBars(); if (_cardObs && bars === _cardObsBars) return;
@@ -744,20 +744,27 @@ function updateToTop() {
   });
 }
 
-// ---- sticky 工具列:貼在頂欄下方(top = --topbar-h,量實際高度寫進 CSS 變數);捲過工具列(.stuck)底色同頂欄 + 細分隔線。
-//      手機(≤860px)捲過去改壓縮版(.mini):只留 🔧 篩選、排序、跳到 #、↑,其他那組(#tbExtra)搬進篩選面板頂部(#panelTools),
-//      #tbSpace 補回少掉的高度,下面的版面不跳;捲回最上面再搬回來。偵測用 IntersectionObserver 盯工具列前面的哨兵 #tbSentinel。
-//      例外:書架展開時(shelfOn)不補 #tbSpace(updateSpace),書架分頁 #shelfTabs 才會緊接在壓縮列下面、中間不留一大片空白;
-//      代價是書架開著捲過工具列那一下,下面的版面會往上收 / 往下推一次(壓縮前後的高度差),收起書架就恢復補高。桌機 _mini 永遠是 false,不受影響。
+// ---- sticky 工具列 ----
+// 桌機(>860px):整個工具列貼在頂欄下方(top = --topbar-h,量實際高度寫進 CSS 變數);貼住時(.stuck)底色同頂欄 + 細分隔線。
+//   偵測用 IntersectionObserver 盯工具列「前面」的哨兵 #tbSentinel(工具列頂端碰到頂欄 = 貼住)。
+// 手機 / 平板(≤860px):完整工具列不貼頂(responsive.css 設 position:static),跟著頁面捲走;「整個」捲過頂欄之後才換成壓縮列(.mini,
+//   只留 🔧 篩選、排序、跳到 #,貼在頂欄下方),其他那組(#tbExtra)搬進篩選面板頂部(#panelTools);捲回來、完整工具列要露出來時再換回去。
+//   偵測改盯工具列「後面」的哨兵 #tbEnd(接在 #tbSpace 後面,initSticky 動態建,不在樣板裡)。
+//   #tbSpace 補回壓縮後少掉的高度,下面的版面不跳。切換點在完整工具列的底端,所以 #tbSpace 那一塊永遠在頂欄下緣以上(被頂欄擋住或已捲出畫面),不會露出來。
+//   以前(2026/11/25 前)是工具列一碰到頂欄就壓縮、哨兵在前面:#tbSpace 補的那塊就在壓縮列正下方,手機上看起來是一大塊空白(站長實機回報);
+//   書架展開時還為此特別不補高(版面會跳一下),現在不需要這個例外了。
 const toolbar = $('toolbar'), tbSentinel = $('tbSentinel'), tbExtra = $('tbExtra'), tbSpace = $('tbSpace'), panelTools = $('panelTools');
+let tbEnd = null;   // 工具列(含 #tbSpace)後面的哨兵:它的位置在壓縮前後不變 = 完整工具列的底端
 const isMobile = () => window.innerWidth <= 860;
-let _stuck = false, _mini = false, _miniGap = 0, _tbObs = null;   // _miniGap:壓縮時工具列少掉的高度(整排 − 壓縮列)
-function updateSpace() { if (tbSpace) tbSpace.style.height = (_mini && !shelfOn ? _miniGap : 0) + 'px'; }
-function barsHeight() { return topbarEl.offsetHeight + (toolbar ? toolbar.offsetHeight : 0); }   // 跳到 #編號的偏移:頂欄 + 工具列(貼住時就在頂欄下方)
+let _stuck = false, _mini = false, _miniGap = 0, _tbObs = null, _obsMobile = null;   // _miniGap:壓縮時工具列少掉的高度(整排 − 壓縮列);_obsMobile:目前的觀察器是照手機還是桌機的方式盯
+function updateSpace() { if (tbSpace) tbSpace.style.height = (_mini ? _miniGap : 0) + 'px'; }
+// 目前「貼在頂欄下方、會蓋住內容」的工具列高度:桌機 = 整個工具列;手機 = 壓縮列,還沒壓縮時完整工具列在版面裡、不蓋住任何東西,算 0
+function stickyToolbarH() { return !toolbar || (isMobile() && !_mini) ? 0 : toolbar.offsetHeight; }
+function barsHeight() { return topbarEl.offsetHeight + stickyToolbarH(); }   // 跳到 #編號的偏移:頂欄 + 貼住的工具列
 const setVar = (name, px) => document.documentElement.style.setProperty(name, Math.round(px) + 'px');
 function measureBars() {
   setVar('--topbar-h', topbarEl.offsetHeight);
-  setVar('--toolbar-h', toolbar ? toolbar.offsetHeight : 0);
+  setVar('--toolbar-h', stickyToolbarH());
   buildCardObs();
 }
 function setMini(on) {
@@ -781,6 +788,8 @@ function setStuck(on) {
 function watchToolbar() {
   if (!tbSentinel || !('IntersectionObserver' in window)) return;
   if (_tbObs) _tbObs.disconnect();
+  _obsMobile = isMobile();
+  const target = _obsMobile && tbEnd ? tbEnd : tbSentinel;   // 手機盯工具列底端(整個捲過去才壓縮),桌機盯頂端(一碰到頂欄就貼住)
   const top = Math.round(topbarEl.offsetHeight);
   // root 的上緣往下縮頂欄高度、下緣往外放很大:哨兵只要在頂欄下緣以下(含視窗外下方)都算相交,
   // 跑到頂欄下緣以上才不相交 = 捲過工具列了。下緣不放大的話,哨兵從「視窗下方」直接捲到「頂欄上方」都是不相交,觀察器不會觸發。
@@ -788,16 +797,24 @@ function watchToolbar() {
     const e = es[es.length - 1];
     setStuck(!e.isIntersecting && e.boundingClientRect.top < top);
   }, { rootMargin: `-${top}px 0px 100000px 0px`, threshold: 0 });
-  _tbObs.observe(tbSentinel);
+  _tbObs.observe(target);
 }
 function initSticky() {
+  if (tbSpace && !tbEnd) {   // 樣式寫在行內:不靠樣板與 CSS 檔,舊快取的頁面配新程式也能用
+    tbEnd = document.createElement('div'); tbEnd.id = 'tbEnd'; tbEnd.setAttribute('aria-hidden', 'true');
+    tbEnd.style.cssText = 'height:1px;margin-top:-1px;visibility:hidden;pointer-events:none';
+    tbSpace.after(tbEnd);
+  }
   measureBars(); watchToolbar();
   if ('ResizeObserver' in window) {
     let tm = 0;
     new ResizeObserver(() => { clearTimeout(tm); tm = setTimeout(() => { measureBars(); watchToolbar(); }, 60); }).observe(topbarEl);   // 頂欄換行(手機搜尋列換到第二行)→ 重量、重盯
     if (toolbar) new ResizeObserver(() => measureBars()).observe(toolbar);
   }
-  window.addEventListener('resize', () => { setMini(_stuck && isMobile()); measureBars(); });
+  window.addEventListener('resize', () => {
+    if (isMobile() !== _obsMobile) watchToolbar();   // 跨過 860px(轉向 / 拉視窗):換盯另一個哨兵,狀態由新觀察器的第一次回報重設
+    setMini(_stuck && isMobile()); measureBars();
+  });
 }
 
 // ---- 頁尾:統計 / 更新時間 ----
