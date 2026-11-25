@@ -82,6 +82,7 @@ body.noscroll{overflow:hidden}
   .astar{font-size:20px;min-width:30px;min-height:30px;line-height:30px}   /* 收藏作者的星:手機加大好點 */
   .astar.ah-star,.ah-acts .ah-clear{font-size:14px;min-height:0;line-height:normal;padding:7px 14px}   /* 兩顆同字級、同內距,才會等高 */
   .ah-acts{margin-left:0;flex-basis:100%}   /* 作者專頁標頭:名字 + 篇數一排,兩顆按鈕下一排靠左並排 */
-  .fa-name{font-size:14.5px;min-height:36px}
-  .fa-x{font-size:14px;min-width:36px;min-height:36px}
+  .ac-name{font-size:17px}                    /* 作者卡:手機字級跟書卡標題同級 */
+  .ac-meta{font-size:13.5px}
+  .acard .astar{font-size:24px;min-width:44px;min-height:44px;line-height:44px}
 }

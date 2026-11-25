@@ -2,7 +2,7 @@
 // 這裡只負責把資料變成 DOM / HTML 字串;狀態與事件的接線在 main.js。
 //
 // 注意:詳情與書卡的 HTML 字串裡用 inline onclick 呼叫下列全域函式(由 main.js 掛到 window):
-//   toggleFav / toggleTodo / toggleRead / toggleFavAuthor / setShelfTab / filterByTag / filterName / openByNo /
+//   toggleFav / toggleTodo / toggleRead / toggleFavAuthor / openFavAuthor / setShelfTab / filterByTag / filterName / openByNo /
 //   closeDetail / navDetail / toggleReport / pickReason / sendReport / shelfExport / shelfImport / shelfClear / shareArticle
 // 無障礙:所有可點的 span / div 都改成 <button>(鍵盤 Enter / Space 可用),狀態用 aria-pressed / aria-checked / aria-expanded 表達;
 //        每個彈窗內容的第一顆是關閉鈕(aria-label="關閉"),標題 h2 帶 id="sheetTitle" 給 <dialog aria-labelledby> 用。
@@ -41,7 +41,7 @@ export const STATUS_HELP = [['連載中', '持續更新中'], ['完結', '已完
 
 export const SHELF_META = { fav: ['❤️', '已收藏'], todo: ['🔖', '待閱讀'], read: ['✓', '已讀'], auth: ['⭐', '作者'] };
 
-// ---- 收藏作者(⭐):詳情的作者 / 譯者列、作者專頁標頭各有一顆星;書架「⭐ 作者」分頁上方列出收藏的作者 ----
+// ---- 收藏作者(⭐):詳情的作者 / 譯者列、作者專頁標頭各有一顆星;書架「⭐ 作者」分頁先列出收藏的作者(一位一張卡),點了才看那位的作品 ----
 const starState = (nm, on) => ({ txt: on ? '★' : '☆', label: on ? `取消收藏作者 ${nm}` : `收藏作者 ${nm}`, title: on ? '已收藏這位作者(再點一下取消)' : '收藏這位作者(在 📚 書架 → ⭐ 作者 看)' });
 const starInner = (on, wide) => (on ? '★' : '☆') + (wide ? `<span class="as-t">${on ? ' 已收藏' : ' 收藏作者'}</span>` : '');
 /** 一顆收藏作者的星(inline onclick → main.js 的 toggleFavAuthor)。data-ak = 鍵,同一位作者在畫面上的每顆星靠它一起更新。
@@ -51,7 +51,7 @@ export function authorStarHTML(nm, id, ctx, cls = 'astar') {
   const on = ctx.isFavAuthor(nm, id), st = starState(nm, on);
   return `<button type="button" class="${cls}${on ? ' on' : ''}" data-ak="${esc(ctx.authorKey(nm, id))}" data-nm="${esc(nm)}" aria-pressed="${on}" aria-label="${esc(st.label)}" title="${esc(st.title)}" onclick="toggleFavAuthor('${encodeURIComponent(nm)}', ${jsq(id || '')})">${starInner(on, cls.includes('ah-star'))}</button>`;
 }
-/** 收藏 / 取消收藏作者之後:就地更新畫面上同一位作者的每顆星(詳情、作者專頁標頭),不重畫、焦點不掉。 */
+/** 收藏 / 取消收藏作者之後:就地更新畫面上同一位作者的每顆星(詳情、作者專頁標頭、作者卡),不重畫、焦點不掉。 */
 export function syncAuthorStars(key, on, root = document) {
   root.querySelectorAll('.astar[data-ak]').forEach((b) => {
     if (b.dataset.ak !== key) return;
@@ -60,11 +60,17 @@ export function syncAuthorStars(key, on, root = document) {
     b.innerHTML = starInner(on, b.classList.contains('ah-star'));
   });
 }
-/** 書架「⭐ 作者」分頁上方那一排:每位一顆 chip(名字 + 篇數,點了進作者專頁)+ ✕ 取消收藏。list = [{key, id, name, count, dead}]。 */
-export function favAuthorsHTML(list) {
-  if (!list.length) return '';
-  return `<span class="fa-h">收藏的作者</span>` + list.map((x) => `<span class="fa-chip"><button type="button" class="fa-name" onclick="filterName('${encodeURIComponent(x.name)}')" aria-label="${esc(x.name)}，共 ${esc(x.count)} 篇，看這位的全部作品">${esc(x.name)}${x.dead ? '<span class="deadauth">(已刪帳號)</span>' : ''}<span class="sc">${esc(x.count)}</span></button>`
-    + `<button type="button" class="fa-x" onclick="toggleFavAuthor('${encodeURIComponent(x.name)}', ${jsq(x.id || '')})" aria-label="取消收藏作者 ${esc(x.name)}" title="取消收藏">✕</button></span>`).join('');
+/** 書架「⭐ 作者」分頁的作者列表:一位一張卡(.acard,不是書卡 .card:沒有編號、不進置頂鍵的觀察器)。
+ *  整張卡的主要區塊是一顆按鈕(名字 + 篇數 + 最新收錄日期,點了看那位的作品),右邊是收藏的星(點了取消收藏)。
+ *  rows = [{key, id, name, count 全部篇數, n 符合目前篩選的篇數, dead, latestStr}]。 */
+export function favAuthorCardsHTML(rows, ctx) {
+  return rows.map((x) => {
+    const cnt = x.n !== x.count ? `符合 ${esc(x.n)} / ${esc(x.count)} 篇` : `共 ${esc(x.count)} 篇`;
+    return `<div class="acard"><button type="button" class="acard-open" data-nm="${esc(x.name)}" onclick="openFavAuthor('${encodeURIComponent(x.name)}')" aria-label="${esc(x.name)}，${cnt}，看這位的作品">`
+      + `<span class="ac-name">✍️ ${esc(x.name)}${x.dead ? '<span class="deadauth">(已刪帳號)</span>' : ''}</span>`
+      + `<span class="ac-meta">${cnt}${x.latestStr ? ` · 最新收錄 ${esc(x.latestStr)}` : ''}</span></button>`
+      + authorStarHTML(x.name, x.id, ctx) + `</div>`;
+  }).join('');
 }
 
 /** 詳情/公告視窗底部:上一篇・下一篇。 */
@@ -212,7 +218,7 @@ const EMPTY = {
   fav: '🛸 書架還是一片虛空<br><span>點書卡右上角的 🤍 把喜歡的文收藏進來</span>',
   todo: '🔖 還沒有待閱讀的文<br><span>在文章詳情按「🔖 待閱讀」先存起來</span>',
   read: '✓ 還沒有標記已讀的文<br><span>在文章詳情按「標為已讀」記錄讀過的文</span>',
-  auth: '⭐ 還沒有收藏的作者<br><span>在文章詳情的作者名字旁邊,或作者專頁上方按 ☆ 收藏;這裡會列出他們的全部作品</span>',
+  auth: '⭐ 還沒有收藏的作者<br><span>在文章詳情的作者名字旁邊,或作者專頁上方按 ☆ 收藏;收藏後這裡會列出作者,點名字看他的作品</span>',
 };
 /** 沒有結果:書架該分頁是空的用書架版文案,否則用「這片星域沒有符合條件的文」。 */
 export function emptyHTML(emptyShelfTab) {
@@ -327,8 +333,9 @@ export function renderSelBar(bar, chips, { onRemove, onClearAll }) {
   bar.appendChild(all);
 }
 
-/** 作者專頁標頭(名字、篇數、平台連結、返回全部)。name 為 null 時隱藏。 */
-export function renderAuthorHead(el, name, count, ctx, onClear) {
+/** 作者專頁標頭(名字、篇數、平台連結、返回全部)。name 為 null 時隱藏。
+ *  backLabel:返回鈕的字(預設「返回全部」;從書架「⭐ 作者」分頁點進來的是「返回作者列表」)。 */
+export function renderAuthorHead(el, name, count, ctx, onClear, backLabel) {
   if (!name) { el.style.display = 'none'; return; }
   const info = personInfo(ctx, name), p = info.urls;
   const links = Object.keys(p).map((k) => `<a class="plat" href="${safeHref(p[k])}" target="_blank" rel="noopener">${esc(k)}</a>`).join('');
@@ -336,7 +343,7 @@ export function renderAuthorHead(el, name, count, ctx, onClear) {
   const deadTag = info.dead ? '<span class="deadauth">(已刪帳號)</span>' : '';
   el.innerHTML = `<div class="ah-row"><span class="ah-name">✍️ ${esc(name)}${deadTag}</span><span class="ah-cnt">共 ${esc(count)} 篇</span>`
     // 兩顆按鈕包成一組(.ah-acts):桌機整組靠右;手機整組自己一排、靠左並排(不包的話「返回全部」會被單獨擠到下一排右邊)
-    + `<span class="ah-acts">${authorStarHTML(name, '', ctx, 'astar ah-star')}<button type="button" class="ah-clear" aria-label="離開作者專頁，返回全部文章">✕ 返回全部</button></span></div>`
+    + `<span class="ah-acts">${authorStarHTML(name, '', ctx, 'astar ah-star')}<button type="button" class="ah-clear" aria-label="${backLabel ? '離開這位作者，' + esc(backLabel) : '離開作者專頁，返回全部文章'}">✕ ${esc(backLabel || '返回全部')}</button></span></div>`
     + (links ? `<div class="ah-links">${links}</div>` : '');
   el.querySelector('.ah-clear').onclick = onClear;
 }

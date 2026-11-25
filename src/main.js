@@ -3,7 +3,7 @@
 //   sel / modes            標籤三態與任一/全部(見 filter.js)
 //   authorFilter           作者專頁
 //   shelfOn / shelfTab     書架模式與分頁(fav 已收藏 / todo 待閱讀 / read 已讀 / auth 收藏的作者)
-//   favAuthors             收藏的作者 / 譯者(Set,鍵 = Notion 作者頁 ID);「⭐ 作者」分頁列出這些人的全部作品
+//   favAuthors             收藏的作者 / 譯者(Set,鍵 = Notion 作者頁 ID);「⭐ 作者」分頁先列出這些作者(一位一張卡),點了才看那位的作品
 //   lazyList               主列表分批渲染(每批 BATCH 張,捲到底前自動補;見 render.js createLazyList)
 //   _mode / _cur / _annIdx 詳情視窗:'art' 文章、'ann' 公告、'tool' 書架匯出 / 匯入 / 清除;_navList = 從哪一排點開(null = 主列表目前篩選+排序)
 //   _opener                打開詳情前的焦點元素(書卡標題鈕 / 輪播小卡 / 書架工具鈕),關閉後把焦點還回去(鍵盤使用者才不會迷路)
@@ -54,7 +54,8 @@ const isFavAuthor = (name, id) => favAuthors.has(authorKey(name, id));
   [...favAuthors].forEach((k) => { if (typeof k !== 'string') { favAuthors.delete(k); moved = true; return; } if (k.startsWith('n:')) { const id = persons.idOf(k.slice(2)); if (id) { favAuthors.delete(k); favAuthors.add(id); moved = true; } } });
   if (moved) saveSet(KEYS.FAV_AUTHORS, favAuthors);
 }
-// 收藏的作者 → {list: [{key, id, name, count, dead}](依收藏順序), nos: 這些人全部作品的編號 Set};favAuthors 一變就把 _faCache 清掉重算。
+// 收藏的作者 → {list: [{key, id, name, count, dead, latest, latestStr}], nos: 這些人全部作品的編號 Set};favAuthors 一變就把 _faCache 清掉重算。
+// list 依「最新收錄的作品」新 → 舊排(最近有新文的作者排前面;同一天維持收藏順序),latestStr 是那篇的收錄日期。
 // 作者頁已經不在資料裡(被刪 / 合併)或一篇作品都沒有的:不顯示、不計數,但紀錄留著(資料回來就會再出現)。
 let _faCache = null;
 function favAuthorData() {
@@ -66,13 +67,15 @@ function favAuthorData() {
     if (!name) return;
     const works = authorWorks(D.articles, name, persons);
     if (!works.length) return;
-    works.forEach((a) => nos.add(a.no));
-    list.push({ key, id: byName ? '' : key, name, count: works.length, dead: !!(p && p.dead) || deadAuthors.has(name) });
+    let newest = null;
+    works.forEach((a) => { nos.add(a.no); if (a.ck && (!newest || a.ck > newest.ck)) newest = a; });
+    list.push({ key, id: byName ? '' : key, name, count: works.length, dead: !!(p && p.dead) || deadAuthors.has(name), latest: newest ? newest.ck : 0, latestStr: newest ? newest.created : '' });
   });
+  list.sort((a, b) => b.latest - a.latest);
   return (_faCache = { list, nos });
 }
 // 書架四個分頁各自的「集合」:前三個是編號 Set;作者那格是算出來的(size = 收藏的作者人數,has(編號) = 是不是這些人的作品),
-// 篩選(filter.js 只用 has)、分頁上的數字、空白文案(只用 size)都能照舊用。
+// 分頁上的數字(只用 size)、作者列表的篩選與穿越蟲洞(filter.js 只用 has)都能照舊用。
 const SHELF = { fav: favs, todo: todoSet, read: readSet, auth: { get size() { return favAuthorData().list.length; }, has: (no) => favAuthorData().nos.has(no) } };
 
 // 公開愛心數 / 觀測數
@@ -130,7 +133,9 @@ function keepSheetFocus(fill) {
 function filterState() {
   return {
     sel, modes, author: authorFilter, lookup: persons, term: foldZH(q.value.trim()),
-    shelf: shelfOn ? SHELF[shelfTab] : null, shelfTab,
+    // 作者分頁:還沒點進某位作者時範圍是「收藏作者的全部作品」(作者列表的篇數、穿越蟲洞用);
+    // 點進某位之後就是那位的作品,不再限制(從詳情點到沒收藏的作者也看得到,標頭的 ☆ 可以順手收藏)
+    shelf: !shelfOn ? null : (shelfTab === 'auth' ? (authorFilter ? null : SHELF.auth) : SHELF[shelfTab]), shelfTab,
     hideRead: !!$('hideRead')?.checked, readSet,
     hideDead: !!$('hideDead')?.checked,
   };
@@ -172,44 +177,54 @@ function updateShelfCounts() {
     if (SHELF[k] && sc) sc.textContent = SHELF[k].size;
   });
 }
-function setShelfTab(k) { shelfTab = k; saveShelfTab(k); updateShelfBtn(); render(); }
+function setShelfTab(k) { shelfTab = k; saveShelfTab(k); if (k === 'auth') authorFilter = null; updateShelfBtn(); render(); }   // 進作者分頁一律先看作者列表
 // ---- 收藏作者 ----
-/** 詳情的作者 / 譯者列、作者專頁標頭、「⭐ 作者」分頁的 ✕ 都呼叫這支(inline onclick):enc = encodeURIComponent(名字),id = 作者頁 ID(沒有就空字串)。 */
+/** 詳情的作者 / 譯者列、作者專頁標頭、「⭐ 作者」分頁作者卡上的星都呼叫這支(inline onclick):enc = encodeURIComponent(名字),id = 作者頁 ID(沒有就空字串)。 */
 function toggleFavAuthor(enc, id) {
   let name = ''; try { name = decodeURIComponent(enc); } catch (e) { return; }
   if (!name) return;
   const key = authorKey(name, id);
   favAuthors.has(key) ? favAuthors.delete(key) : favAuthors.add(key);
   saveSet(KEYS.FAV_AUTHORS, favAuthors);
-  afterFavAuthors();
+  afterFavAuthors(false);
 }
-/** 收藏的作者變了(點星、匯入、清除):畫面上每顆星、分頁數字、作者那一排就地更新;正在看「⭐ 作者」分頁時清單內容也變了,才重畫清單。 */
-function afterFavAuthors() {
+/** 收藏的作者變了(點星、匯入、清除):畫面上每顆星、分頁數字就地更新。
+ *  redraw = true(匯入)才重畫作者列表;點星不重畫——在作者列表上取消收藏,那張卡先留著(星變 ☆,點錯可以馬上點回來),
+ *  下次進這個分頁才不見;跟書卡上按愛心不會把卡抽走是同一個做法。 */
+function afterFavAuthors(redraw) {
   _faCache = null;
   new Set([...document.querySelectorAll('.astar[data-ak]')].map((b) => b.dataset.ak)).forEach((k) => R.syncAuthorStars(k, favAuthors.has(k)));
-  updateShelfCounts(); renderFavAuthors();
-  if (shelfOn && shelfTab === 'auth') render(true);
+  updateShelfCounts();
+  if (!inAuthorList()) return;
+  if (redraw) render(true); else $('count').textContent = authorCountText(authorListData());
 }
-/** 「⭐ 作者」分頁上方那一排收藏的作者。容器 #favAuthBar 不在樣板裡,第一次用到才建(接在書架分頁後面),舊的 index.html 也能用。 */
-function renderFavAuthors() {
-  let bar = $('favAuthBar');
-  const show = shelfOn && shelfTab === 'auth';
-  if (!bar) {
-    const tabs = $('shelfTabs'); if (!show || !tabs) return;
-    bar = document.createElement('div'); bar.id = 'favAuthBar'; bar.className = 'fa-bar'; tabs.after(bar);
-  }
-  const hadFocus = bar.contains(document.activeElement);
-  const html = show ? R.favAuthorsHTML(favAuthorData().list) : '';
-  bar.innerHTML = html; bar.style.display = html ? 'flex' : 'none';
-  // 按了某一顆的 ✕ 之後那顆不見了:焦點給剩下的第一位,都沒有了就回到「⭐ 作者」分頁鈕(不然會掉回 body)
-  if (hadFocus) (bar.querySelector('.fa-name') || $('shelfTabs')?.querySelector('.ctl.on'))?.focus();
+// ---- 書架「⭐ 作者」分頁:先列出收藏的作者(一位一張卡),點了才看那位的作品(authorFilter),標頭的「返回作者列表」回到這裡 ----
+const inAuthorList = () => shelfOn && shelfTab === 'auth' && !authorFilter;
+/** 作者列表的資料:{rows: [{...作者, n: 符合目前篩選的篇數}], total: 收藏的作者人數, filtered: 目前有沒有被篩選縮小}。
+ *  標籤 / 搜尋 / 隱藏已讀 / 隱藏原文已刪在這裡的意思是「只留有符合作品的作者」,點進去看到的就是那幾篇;沒下任何條件就是全部作者。 */
+function authorListData() {
+  const all = favAuthorData().list, hits = filterArticles(D.articles, filterState());
+  const rows = all.map((x) => ({ ...x, n: authorWorks(hits, x.name, persons).length })).filter((x) => x.n > 0);
+  return { rows, total: all.length, filtered: rows.length !== all.length || rows.some((x) => x.n !== x.count) };
 }
+const authorCountText = (d) => (d.rows.length !== d.total ? `共 ${d.rows.length} / ${d.total} 位作者` : `共 ${d.total} 位作者`);
+function renderAuthorList() {
+  const list = $('list'), d = authorListData();
+  $('count').textContent = authorCountText(d);
+  announce('liveCount', `收藏的作者 ${d.rows.length} 位`);
+  { const pb = document.querySelector('.pbdone'); if (pb) pb.textContent = `看 ${d.rows.length} 位 ✓`; }
+  R.renderAuthorHead($('authorHead'), null, 0, ctx, null);
+  lazyList.set([], false); resetCardObs();   // 這裡沒有書卡:清掉分批清單與置頂鍵上的編號
+  list.innerHTML = d.rows.length ? R.favAuthorCardsHTML(d.rows, ctx) : R.emptyHTML(d.total === 0 ? 'auth' : null);
+  R.syncStyles(sel, modes); renderSelBar();
+}
+/** 作者卡(inline onclick):進那位作者的作品,焦點給標頭的「返回作者列表」(鍵盤使用者不會掉回頁首)。 */
+function openFavAuthor(enc) { filterName(enc); if (authorFilter) $('authorHead').querySelector('.ah-clear')?.focus({ preventScroll: true }); }
 function updateShelfBtn() {
   const b = $('shelfBtn'); if (b) { b.textContent = '📚 書架'; b.classList.toggle('on', shelfOn); b.setAttribute('aria-pressed', String(shelfOn)); }
   const tb = $('shelfTabs'); if (!tb) return;
   tb.style.display = shelfOn ? 'flex' : 'none';
   tb.innerHTML = R.shelfTabsHTML(SHELF, shelfTab) + R.shelfToolsHTML();
-  renderFavAuthors();
   updateSpace();   // 手機壓縮列:書架展開時不補 #tbSpace,分頁緊接工具列;收起再補回
 }
 
@@ -237,15 +252,21 @@ const lazyList = R.createLazyList($('list'), $('more'), {
 // keepPos = true(搜尋 / 排序 / 勾選框 / 收藏重繪)時維持已顯示的張數,不跳回第一批(對應原站「不跳回第 1 頁」的行為)
 function render(keepPos) {
   const list = $('list');
+  if (inAuthorList()) { renderAuthorList(); return; }   // 書架「⭐ 作者」分頁、還沒點進某位作者:畫作者列表,不畫書卡
+  const inAuth = shelfOn && shelfTab === 'auth';
   const hits = currentHits();
   $('count').textContent = `共 ${hits.length} / ${D.total} 篇`;
   announce('liveCount', `找到 ${hits.length} 篇`);   // 篩選結果數變化 → aria-live 宣告
   { const pb = document.querySelector('.pbdone'); if (pb) pb.textContent = `看 ${hits.length} 篇 ✓`; }
   R.renderAuthorHead($('authorHead'), authorFilter, authorFilter ? authorWorks(D.articles, authorFilter, persons).length : 0, ctx,
-    () => { authorFilter = null; render(); scrollToToolbar(); });
+    () => {
+      const was = authorFilter; authorFilter = null; render(); scrollToToolbar();
+      // 回到作者列表:焦點還給剛剛那位的卡
+      if (inAuthorList()) [...$('list').querySelectorAll('.acard-open')].find((b) => b.dataset.nm === was)?.focus({ preventScroll: true });
+    }, inAuth ? '返回作者列表' : '');
   if (!hits.length) {
-    lazyList.set([], false);
-    list.innerHTML = R.emptyHTML(shelfOn && SHELF[shelfTab].size === 0 ? shelfTab : null);
+    lazyList.set([], false); resetCardObs();   // 沒有書卡了:置頂鍵上的編號也清掉
+    list.innerHTML = R.emptyHTML(shelfOn && !inAuth && SHELF[shelfTab].size === 0 ? shelfTab : null);
     R.syncStyles(sel, modes); renderSelBar(); return;
   }
   lazyList.set(hits, !!keepPos);
@@ -450,7 +471,7 @@ function confirmImport() {
   if (new RegExp('[?&]' + IMPORT_PARAM + '=').test(location.search)) history.replaceState(null, '', location.pathname + location.hash);   // 從 ?s= 連結來的:寫入後移除參數
   _imPending = null; _imText = '';
   afterMark();
-  afterFavAuthors();
+  afterFavAuthors(true);
   openTool(R.importDoneHTML(r, mode));
 }
 // 相機掃 QR(BarcodeDetector;不支援的瀏覽器沒有這顆按鈕)
@@ -496,8 +517,8 @@ function shelfClear() {
     reactions.forgetAll();
     shelfTab = 'fav';
     afterMark();
-    afterFavAuthors();
-    updateShelfBtn();              // 分頁跳回「已收藏」:分頁列重畫(亮起來的那顆、作者那一排)
+    afterFavAuthors(false);
+    updateShelfBtn();              // 分頁跳回「已收藏」:分頁列重畫(亮起來的那顆)
     if (shelfOn) render();         // 書架開著:清單也要跟著清空(以前停在已讀 / 待閱讀分頁清除後,清單要等下一次操作才更新)
     openTool(R.clearedHTML());
   };
@@ -548,7 +569,7 @@ $('reset').onclick = () => {
   $('hideRead').checked = false; $('hideDead').checked = false; q.value = ''; $('sort').value = 'old';
   updateShelfBtn(); render();
 };
-$('shelfBtn').onclick = () => { shelfOn = !shelfOn; updateShelfBtn(); render(); scrollToToolbar(); };
+$('shelfBtn').onclick = () => { shelfOn = !shelfOn; if (shelfOn && shelfTab === 'auth') authorFilter = null; updateShelfBtn(); render(); scrollToToolbar(); };   // 打開書架剛好停在作者分頁:先看作者列表
 // 注意:原站把 render 直接當事件處理器,事件物件被當成 keepPage(真值),所以搜尋/排序/勾選時不會跳回第 1 頁;這裡維持同樣行為。
 $('hideRead').onchange = () => render(true);
 $('hideDead').onchange = () => render(true);
@@ -795,7 +816,7 @@ renderLastUpdated();
 setInterval(renderLastUpdated, 60000);
 
 // 詳情 / 書卡 HTML 字串裡的 inline onclick 會呼叫這些函式,所以要掛到 window(ES module 內的函式不是全域)
-Object.assign(window, { toggleFav, toggleTodo, toggleRead, toggleFavAuthor, setShelfTab, filterByTag, filterName, openByNo, shareArticle, closeDetail, navDetail, toggleReport, pickReason, sendReport, shelfExport, shelfImport, shelfClear });
+Object.assign(window, { toggleFav, toggleTodo, toggleRead, toggleFavAuthor, openFavAuthor, setShelfTab, filterByTag, filterName, openByNo, shareArticle, closeDetail, navDetail, toggleReport, pickReason, sendReport, shelfExport, shelfImport, shelfClear });
 
 // ---- 啟動 ----
 // 先把主列表第一批畫出來(使用者最先看到的),其餘工作拆成獨立小工作延後,避免單一長工作卡住互動。
