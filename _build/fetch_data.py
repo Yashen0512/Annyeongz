@@ -71,6 +71,25 @@ def query_all(db_id):
 def p(pg, name): return pg['properties'].get(name)
 def p_title(pr): return ''.join(x['plain_text'] for x in pr['title']).strip() if pr and pr.get('type') == 'title' else ''
 def p_rich(pr):  return ''.join(x['plain_text'] for x in pr['rich_text']) if pr and pr.get('type') == 'rich_text' else ''
+
+# 公告內文:頁面本文的區塊 → 純文字(一個區塊一行,空段落 = 空行,段落內的換行照留;項目清單前面加「・」、編號清單加「1. 」)。
+# Notion 的標題只能寫一行,分好幾段的公告(例如 2026/11 搬家預告)寫在本文,網站照原樣顯示換行(.ann-full 是 pre-wrap)。
+ANN_TEXT_BLOCKS = ('paragraph', 'heading_1', 'heading_2', 'heading_3', 'bulleted_list_item', 'numbered_list_item', 'quote', 'callout', 'toggle', 'to_do')
+def blocks_text(blocks):
+    lines, n = [], 0
+    for b in blocks or []:
+        t = b.get('type')
+        if t not in ANN_TEXT_BLOCKS: continue
+        s = ''.join(x.get('plain_text', '') for x in (b.get(t) or {}).get('rich_text', []))
+        if t == 'numbered_list_item':
+            n += 1; s = '%d. %s' % (n, s)
+        else:
+            n = 0
+            if t == 'bulleted_list_item': s = '・' + s
+        lines.append(s.rstrip())
+    while lines and not lines[0].strip(): lines.pop(0)
+    while lines and not lines[-1].strip(): lines.pop()
+    return '\n'.join(lines)
 def p_multi(pr): return ', '.join(o['name'] for o in pr['multi_select']) if pr and pr.get('type') == 'multi_select' else ''
 def p_relation(pr): return [r['id'] for r in pr['relation']] if pr and pr.get('type') == 'relation' else []
 def p_checkbox(pr): return bool(pr['checkbox']) if pr and pr.get('type') == 'checkbox' else False
@@ -306,7 +325,11 @@ def main():
         print('抓公告…')
         arows = []
         for pg in query_all(announce_db):
-            content = p_rich(p(pg, '內容')) or p_title(p(pg, '內容'))
+            # 本文有字就用本文(可以分段、保留換行),沒有才用標題「內容」(以前的一句話公告都是寫在標題)
+            body = ''
+            try: body = blocks_text(api('GET', 'https://api.notion.com/v1/blocks/%s/children?page_size=100' % pg['id']).get('results', []))
+            except Exception as e: print('  (有一則公告讀不到本文,改用標題:%s)' % e)
+            content = body if body.strip() else (p_rich(p(pg, '內容')) or p_title(p(pg, '內容')))
             if not content.strip(): continue
             arows.append([content, fmt_date(p_date_start(p(pg, '日期'))),
                           'Yes' if p_checkbox(p(pg, '置頂')) else 'No'])
