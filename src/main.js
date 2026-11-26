@@ -230,6 +230,8 @@ function updateShelfBtn() {
 
 // ---- 主題切換(深/淺,記憶於 localStorage,預設深色配合品牌)----
 const _root = document.documentElement;
+// 這台裝置在這個網域有沒有自己選過深淺色:下一行 applyTheme 會把預設值也存起來,所以要在那之前記下(搬家時沿用舊網域的設定用,見 takeMigration)
+const _hadTheme = (() => { try { return localStorage.getItem(KEYS.THEME) !== null; } catch (e) { return true; } })();
 function applyTheme(t) {
   if (_root.getAttribute('data-theme') !== t) _root.setAttribute('data-theme', t);   // 沒變就不重設(改 data-theme 會讓整頁樣式重算;開站時 head 的小 script 已先設好)
   saveTheme(t);
@@ -528,6 +530,55 @@ function shelfClear() {
 function applyImportParam() {
   if (!new RegExp('[?&]' + IMPORT_PARAM + '=').test(location.search)) return;
   shelfImport(extractPayload(location.href));
+}
+
+// ---- 搬家:舊網址(GitHub Pages)的轉址頁把讀者在舊網域的書架打包,放在 #azmig=<匯出字串>&cid=…&theme=…&h=<原本的 hash> 帶過來 ----
+// (轉址頁在倉庫 _redirect/index.html。)同一個網域的書架只存在那個網域,換網址不搬就會變空書架。
+// takeMigration():同步、在 applyShareHash 之前跑——把網址的 hash 還原成原本的(#f= 篩選網址照常運作),
+//                  順便沿用舊網域的匿名代號(愛心不重複計)與深淺色(這邊都還沒有時才用)。
+// applyMigration():背景載入 lz-string 後直接合併匯入(聯集,不會刪掉這邊已有的紀錄),不跳確認視窗,完成後跳一句提示;
+//                  同一份資料只匯入一次(簽章記在 KEYS.MIGRATED),重複點舊連結不會把這邊後來取消的收藏又加回來。
+const MIG_RE = /^#azmig=([A-Za-z0-9+\-$]+)((?:&[a-z]+=[^&]*)*)$/;
+function takeMigration() {
+  const m = location.hash.match(MIG_RE);
+  if (!m) return null;
+  const opt = {};
+  m[2].split('&').filter(Boolean).forEach((kv) => { const i = kv.indexOf('='); opt[kv.slice(0, i)] = kv.slice(i + 1); });
+  let orig = '';
+  try { orig = opt.h ? decodeURIComponent(opt.h) : ''; } catch (e) { orig = ''; }
+  if (orig && orig[0] !== '#') orig = '';
+  history.replaceState(null, '', location.pathname + location.search + orig);
+  try {
+    if (opt.cid && /^[a-z0-9]{8,32}$/i.test(opt.cid) && !localStorage.getItem(KEYS.CLIENT_ID)) localStorage.setItem(KEYS.CLIENT_ID, opt.cid);
+    if ((opt.theme === 'dark' || opt.theme === 'light') && !_hadTheme) applyTheme(opt.theme);   // applyTheme 會一併存起來
+  } catch (e) { /* 存不了就算了,書架照樣匯入 */ }
+  return m[1];
+}
+/** 字串簽章(FNV-1a 32 位元 + 長度),只用來判斷「這份搬家資料匯入過沒」。 */
+const sig32 = (s) => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return s.length + ':' + (h >>> 0).toString(16); };
+async function applyMigration(payload) {
+  if (!payload) return;
+  const sig = sig32(payload);
+  try { if (localStorage.getItem(KEYS.MIGRATED) === sig) return; } catch (e) {}
+  await ensureVendor();
+  let r;
+  try { r = importState(payload, { favs, read: readSet, todo: todoSet, authors: favAuthors, mode: 'merge' }); }
+  catch (e) { console.warn('[搬家] 舊網址的書架匯入失敗:', e.message); return; }
+  try { localStorage.setItem(KEYS.MIGRATED, sig); } catch (e) {}
+  reactions.markCounted(r.addedShelf);   // 這些收藏在舊網址已算過愛心,這裡不再 +1
+  updateShelfBtn(); afterFavAuthors(false); render(true);
+  const parts = [['收藏', r.addedShelf.length, '篇'], ['待閱讀', r.addedTodo.length, '篇'], ['已讀', r.addedRead.length, '篇'], ['收藏作者', (r.addedAuthors || []).length, '位']]
+    .filter((x) => x[1] > 0).map((x) => `${x[0]} ${x[1]} ${x[2]}`);
+  if (parts.length) showMigToast('📦 已從舊網址帶入你的書架：' + parts.join('、'));
+}
+function showMigToast(text, waited = 0) {
+  const intro = document.getElementById('intro');   // 開場動畫(🐶🐰 相遇,src/intro.js)還在播就等它結束,不然提示會被蓋住
+  if (intro && intro.isConnected && waited < 6000) { setTimeout(() => showMigToast(text, waited + 200), 200); return; }
+  const t = document.createElement('div');
+  t.className = 'mig-toast'; t.setAttribute('role', 'status'); t.textContent = text;
+  document.body.appendChild(t);
+  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 600); }, 6000);
+  t.onclick = () => t.remove();
 }
 
 // ---- 連結回報 ----
@@ -840,11 +891,13 @@ Object.assign(window, { toggleFav, toggleTodo, toggleRead, toggleFavAuthor, open
 // PWA(service worker、安裝鈕、更新提示)在 src/pwa.js,由 boot.js 啟動。
 const defer = (fn) => ('requestIdleCallback' in window ? requestIdleCallback(fn, { timeout: 800 }) : setTimeout(fn, 1));
 initSticky();                                // 先量頂欄高度(sticky 工具列的 top)、掛上哨兵與書卡觀察器,再畫第一批
+const _mig = takeMigration();               // 從舊網址搬過來:先把 hash 還原(要在 applyShareHash 之前),書架等下面再匯入
 updateShelfBtn(); applyShareHash(); renderHot(); render();
 renderAnn(); renderLatest(); renderStatus();
 document.body.classList.remove('loading');   // 主內容(資料到了才有意義)此時一次顯示;輪播區塊有固定高度,之後補上不會推動版面
 restoreList();                               // 從詳情 / 分享頁 / 上一頁回來:已載入張數與捲動位置照舊
 applyImportParam(); openSharedArticle();     // ?s= 匯入預覽、?p= 分享頁導回來開詳情
+applyMigration(_mig);                        // 舊網址帶來的書架:背景匯入,完成後跳提示
 defer(() => {
   R.buildPanel($('panel'), D.facets, {
     onTag: (key, val) => { cycleTag(sel, key, val); render(); },

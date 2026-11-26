@@ -13,6 +13,7 @@ export const KEYS = {
   VIEW_PREFIX: 'azv_',              // sessionStorage:azv_<編號> = 同一分頁同一篇只計一次觀測
   LIST_STATE: 'azList',             // sessionStorage:主列表已載入張數與捲動位置 {sig, shown, y}(從詳情 / 分享頁 / 上一頁返回時還原)
   CLIENT_ID: 'annyeongz_cid',       // localStorage:這台裝置的隨機匿名 ID(愛心 / 觀測的指紋用,不含任何個資;清除紀錄時不清)
+  MIGRATED: 'annyeongz_migrated',   // localStorage:已匯入過的搬家資料簽章(舊網址轉址頁帶來的 #azmig=,同一份不重複匯入;清除紀錄時不清)
 };
 
 /** 這台裝置的隨機匿名 ID(16 個十六進位字):第一次呼叫才產生並存起來;存不了就每次回新的(計數端只會當成新裝置)。 */

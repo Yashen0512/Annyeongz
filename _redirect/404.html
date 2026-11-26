@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Annyeongz 平行宇宙搬家了</title>
+<link rel="canonical" href="https://annyeongz-universe.pages.dev/">
+<meta property="og:title" content="Annyeongz 平行宇宙搬到新座標了">
+<meta property="og:description" content="Annyeongz Destiny 編號#09010831多元宇宙">
+<meta property="og:url" content="https://annyeongz-universe.pages.dev/">
+<meta property="og:image" content="https://annyeongz-universe.pages.dev/banner-mobile.png">
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; }
+  body { background: #15161b; color: #e8e6f0; font-family: system-ui, -apple-system, "Segoe UI", "Microsoft JhengHei", "PingFang TC", sans-serif;
+         display: flex; align-items: center; justify-content: center; text-align: center; padding: 0 16px; box-sizing: border-box; }
+  main { max-width: 420px; }
+  .icon { font-size: 56px; line-height: 1; margin-bottom: 12px; }
+  h1 { font-size: 22px; margin: 0 0 10px; }
+  p { margin: 0 0 22px; color: #a9a6b8; line-height: 1.7; }
+  a { display: inline-block; padding: 10px 22px; border-radius: 999px; background: #e58aa0; color: #15161b; text-decoration: none; font-weight: 700; word-break: break-all; }
+</style>
+<!-- 讀者書架打包用的壓縮元件(和網站 vendor/lz-string.min.js 同一份);載不到也照樣轉址,只是書架不帶 -->
+<script src="/Annyeongz/lz-string.min.js"></script>
+</head>
+<body>
+<main>
+  <div class="icon">🛸</div>
+  <h1 id="t">平行宇宙搬到新座標了</h1>
+  <p id="m">正在帶你過去，書架也會一起搬過去…</p>
+  <a id="go" href="https://annyeongz-universe.pages.dev/">前往新座標</a>
+</main>
+<script>
+// Annyeongz 平行宇宙「舊網址轉址頁」(yashen0512.github.io/Annyeongz/ 的首頁與 404 頁都是這一份;
+// 由 _cloudflare/build_redirect.py 產生,不要直接改輸出檔)。
+//
+// 1. 網址照原樣轉到新網址:/Annyeongz/<路徑>?<參數>#<hash> → 新網址/<路徑>?<參數>#<hash>
+//    分享頁 /Annyeongz/p/<編號>/ 直接轉成 新網址/?p=<編號>(新站的分享頁會再轉一次首頁並丟掉 hash,書架會帶不過去)
+// 2. 書架(收藏、待閱讀、已讀、收藏的作者)只存在舊網域的瀏覽器裡 → 在這裡打包成跟「📤 匯出」一樣的字串,
+//    放在新網址的 #azmig=… 帶過去,新站 src/main.js 的 takeMigration / applyMigration 會直接匯入、不跳確認。
+//    同時帶上匿名代號(愛心不重複計)、深淺色;原本的 hash(#f= 篩選網址)放在 &h= 由新站還原。
+//    網址本來就有 ?s=(讀者自己備份的匯入連結)或要去統計頁時不帶書架,照原樣轉。
+// 3. 不是 /Annyeongz 開頭的網址(同網域的其他專案)只顯示找不到,不轉。
+(function () {
+  var NEW = 'https://annyeongz-universe.pages.dev/';
+  var path = location.pathname;
+  if (!/^\/annyeongz(\/|$)/i.test(path)) {
+    document.getElementById('t').textContent = '找不到這個頁面';
+    document.getElementById('m').textContent = '';
+    document.getElementById('go').style.display = 'none';
+    document.querySelector('.icon').textContent = '🌀';
+    return;
+  }
+  var rest = path.replace(/^\/annyeongz\/?/i, ''), search = location.search, hash = location.hash;
+  var share = rest.match(/^p\/(\d+)\/?(index\.html)?$/i);
+  if (share) { rest = ''; search = '?p=' + share[1] + (search ? '&' + search.slice(1) : ''); }
+  else if (/^index\.html$/i.test(rest)) rest = '';
+
+  var target = NEW + rest + search, mig = '';
+  if (!/[?&]s=/.test(search) && !/^stats(\.html)?$/i.test(rest)) { try { mig = pack(); } catch (e) { mig = ''; } }
+  if (mig) {
+    var cid = get('annyeongz_cid'), theme = get('azTheme');
+    target += '#azmig=' + mig
+      + (cid && /^[a-z0-9]{8,32}$/i.test(cid) ? '&cid=' + cid : '')
+      + (theme === 'dark' || theme === 'light' ? '&theme=' + theme : '')
+      + (hash ? '&h=' + encodeURIComponent(hash) : '');
+  } else {
+    target += hash;
+  }
+  document.getElementById('go').href = target;
+  location.replace(target);
+
+  function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function list(k) {
+    var a; try { a = JSON.parse(get(k) || '[]'); } catch (e) { return []; }
+    if (Object.prototype.toString.call(a) !== '[object Array]') return [];
+    var out = [], seen = {};
+    for (var i = 0; i < a.length; i++) { var x = String(a[i] == null ? '' : a[i]).replace(/^\s+|\s+$/g, ''); if (x && !seen[x]) { seen[x] = 1; out.push(x); } }
+    return out;
+  }
+  // 跟網站 src/storage.js 的 exportState 同一個格式(v=1);沒有任何紀錄就不帶。
+  // 刻意不放 exportedAt(匯出時間):舊網域的資料不會再變,每次打包出來的字串就一模一樣,
+  // 新站靠這點判斷「這份已經匯入過」,讀者重複點舊連結不會把新站後來取消的收藏又加回來。
+  function pack() {
+    if (!window.LZString) return '';
+    var au = list('annyeongz_fav_authors').filter(function (x) { return x.length <= 200; }).slice(0, 5000);
+    var o = { v: 1, shelf: list('annyeongz_favs'), read: list('annyeongz_read'), todo: list('annyeongz_todo'), authors: au };
+    if (!o.shelf.length && !o.read.length && !o.todo.length && !o.authors.length) return '';
+    return window.LZString.compressToEncodedURIComponent(JSON.stringify(o));
+  }
+})();
+</script>
+</body>
+</html>
