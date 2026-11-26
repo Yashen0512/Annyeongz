@@ -76,8 +76,11 @@ def p_rich(pr):  return ''.join(x['plain_text'] for x in pr['rich_text']) if pr 
 # 網站照原樣顯示換行(.ann-full 是 pre-wrap)。對應方式跟 Notion 畫面一致:
 #   區塊與區塊之間 = 空一行(Notion 貼上文字時,空行分開的每一段會變成一個區塊,畫面上有段距);
 #   區塊裡的換行(Shift+Enter、貼上時的單一換行)照留;連續的清單項目之間不空行,項目前面加「・」、編號清單加「1. 」;空白區塊略過。
+#   手打的「・」條列也算清單:這一段以「・」(或 •、‧)開頭、上一段的最後一行也是條列 → 只換行不空行
+#   (所以條列時按 Enter 或 Shift+Enter 都一樣;2026/11/26 搬家預告的「📌 搬家之後」就是這樣)。
 ANN_TEXT_BLOCKS = ('paragraph', 'heading_1', 'heading_2', 'heading_3', 'bulleted_list_item', 'numbered_list_item', 'quote', 'callout', 'toggle', 'to_do')
 ANN_LIST_BLOCKS = ('bulleted_list_item', 'numbered_list_item', 'to_do')
+ANN_BULLETS = ('・', '•', '‧')
 def blocks_text(blocks):
     out, n, prev_list = '', 0, False
     for b in blocks or []:
@@ -86,16 +89,17 @@ def blocks_text(blocks):
         s = ''.join(x.get('plain_text', '') for x in (b.get(t) or {}).get('rich_text', [])).strip('\n').rstrip()
         if not s.strip():
             continue
-        is_list = t in ANN_LIST_BLOCKS
         if t == 'numbered_list_item':
             n += 1; s = '%d. %s' % (n, s)
         else:
             n = 0
             if t == 'bulleted_list_item': s = '・' + s
+        is_list = t in ANN_LIST_BLOCKS or s.lstrip().startswith(ANN_BULLETS)
         if out:
-            out += '\n' if (is_list and prev_list) else '\n\n'
+            tail_list = prev_list or out.rsplit('\n', 1)[-1].lstrip().startswith(ANN_BULLETS)
+            out += '\n' if (is_list and tail_list) else '\n\n'
         out += s
-        prev_list = is_list
+        prev_list = t in ANN_LIST_BLOCKS or s.rsplit('\n', 1)[-1].lstrip().startswith(ANN_BULLETS)
     return out
 def p_multi(pr): return ', '.join(o['name'] for o in pr['multi_select']) if pr and pr.get('type') == 'multi_select' else ''
 def p_relation(pr): return [r['id'] for r in pr['relation']] if pr and pr.get('type') == 'relation' else []
