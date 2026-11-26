@@ -570,7 +570,7 @@ def render_sw(sw_tpl, version):
     return sw_tpl.replace(SW_PLACEHOLDER, version)
 
 STATIC_DIRS = ('src', 'styles', 'vendor', 'assets')   # 前端程式、樣式、第三方單檔(vendor/:Chart.js 統計星圖、lz-string 與 qrcode 書架匯出)、圖示 / WebP 橫幅;源頭在倉庫根目錄,建置時一起複製到輸出資料夾
-STATIC_FILES = ('stats.html', 'manifest.webmanifest', 'banner.png', 'banner-mobile.png')   # 不經樣板的靜態頁(統計星圖)與根目錄單檔資源,同樣複製(沒有就略過)
+STATIC_FILES = ('stats.html', '404.html', 'manifest.webmanifest', 'banner.png', 'banner-mobile.png')   # 不經樣板的靜態頁(統計星圖、找不到頁面)與根目錄單檔資源,同樣複製(沒有就略過)
 SW_HASH_FILES = ('stats.html', 'manifest.webmanifest')   # 參與 sw.js 版本雜湊的根目錄單檔(= SW PRECACHE 會快取的那兩個;banner PNG 不算,見 static_version)
 
 def copy_static(repo_root, out_dir):

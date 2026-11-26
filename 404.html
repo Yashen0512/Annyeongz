@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>找不到這個頁面｜Annyeongz 平行宇宙</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; }
+  body { background: #15161b; color: #e8e6f0; font-family: system-ui, -apple-system, "Segoe UI", "Microsoft JhengHei", "PingFang TC", sans-serif;
+         display: flex; align-items: center; justify-content: center; text-align: center; padding: 0 16px; box-sizing: border-box; }
+  main { max-width: 420px; }
+  .icon { font-size: 56px; line-height: 1; margin-bottom: 12px; }
+  h1 { font-size: 22px; margin: 0 0 10px; }
+  p { margin: 0 0 22px; color: #a9a6b8; line-height: 1.7; }
+  a { display: inline-block; padding: 10px 22px; border-radius: 999px; background: #ff8fb1; color: #15161b; text-decoration: none; font-weight: 700; }
+</style>
+</head>
+<body>
+<main>
+  <div class="icon">🌀</div>
+  <h1>這個座標沒有星球</h1>
+  <p>你要找的頁面不存在，可能是網址打錯了，或這篇已經搬家。</p>
+  <a id="home" href="/">回到平行宇宙</a>
+</main>
+<script>
+// 404 頁不在固定位置(任何找不到的網址都會顯示它),所以首頁位置用網址判斷:
+// 舊站在 GitHub Pages 的 /Annyeongz/ 底下,新站在根目錄。
+(function () {
+  var path = location.pathname;
+  var base = /^\/Annyeongz(\/|$)/i.test(path) ? '/Annyeongz/' : '/';
+  document.getElementById('home').href = base;
+  // 新收錄的作品分享頁可能還沒產生:/p/<編號>/ 直接交給首頁打開那一篇
+  var m = path.match(/\/p\/(\d+)\/?$/);
+  if (m) location.replace(base + '?p=' + m[1]);
+})();
+</script>
+</body>
+</html>
