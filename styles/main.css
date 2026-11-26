@@ -173,6 +173,7 @@
 .ann-card.pin{border-color:var(--accent);background:var(--accent-soft)}
 .ann-meta{font-size:13px;color:var(--muted);margin:-4px 0 12px}
 .ann-full{font-size:15px;line-height:1.8;white-space:pre-wrap;word-break:break-word}
+.ann-full a{color:var(--accent-t);text-decoration:underline;text-underline-offset:2px;word-break:break-all}
 /* 詳情/公告視窗底部:上一篇・下一篇(固定在視窗底) */
 .dnav{position:sticky;bottom:-24px;margin:18px -26px -24px;padding:10px 26px;background:var(--card);
       border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:8px}

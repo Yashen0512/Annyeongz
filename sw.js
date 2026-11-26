@@ -1,4 +1,4 @@
-// Annyeongz PWA service worker(樣板:build_site.py 會把 de2cb10da0c1 換成「靜態資源內容雜湊」(static_version:index.html、本樣板、src/ styles/ vendor/ assets/ 與 stats.html 等),輸出成 sw.js;
+// Annyeongz PWA service worker(樣板:build_site.py 會把 d0b14eda18c2 換成「靜態資源內容雜湊」(static_version:index.html、本樣板、src/ styles/ vendor/ assets/ 與 stats.html 等),輸出成 sw.js;
 // 不要手改 sw.js、也不要手寫版本號。程式/樣式/圖沒變就不換版 → 讀者不會每班看到「🚀 網站有新版本」;只有資料變走 data.json 的 stale-while-revalidate)。
 //
 // 快取策略:
@@ -7,7 +7,7 @@
 //                                                           「篇數(total)或資料更新時間(updated)」有變才 postMessage {type:'data-updated'} 給所有分頁,頁面顯示「有新收錄」提示條
 //                                                           (不比 ETag:data.json 含每班建置時間 synced,ETag 每班必變,會把沒新文的班次也當成新收錄)。
 //   跨網域請求(Postype / Lofter / AO3 / AFF 等閱讀連結、Cloudflare Worker 的計數 / 回報 / 統計、GoatCounter) 一律不攔、不快取。
-const VERSION = 'de2cb10da0c1';
+const VERSION = 'd0b14eda18c2';
 const STATIC_CACHE = 'az-static-' + VERSION;
 const DATA_CACHE = 'az-data';           // 資料快取不分版(靠 stale-while-revalidate 自己換新)
 const DATA_FILE = 'data.json';
@@ -24,10 +24,23 @@ const PRECACHE = [
   './vendor/lz-string.min.js', './vendor/qrcode.js',
 ];
 
+/** 轉址過的回應(Response.redirected)不能拿來回應頁面導覽,瀏覽器會直接報錯(net::ERR_FAILED)。
+ *  Cloudflare Pages 會把 /index.html、/stats.html 308 轉成 /、/stats,所以存進快取前一律重新包成乾淨的回應。 */
+async function clean(res) {
+  if (!res || !res.redirected) return res;
+  const body = await res.blob();
+  return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
+}
+
 self.addEventListener('install', (e) => {
   e.waitUntil((async () => {
     const c = await caches.open(STATIC_CACHE);
-    await c.addAll(PRECACHE);
+    // 等同 c.addAll(PRECACHE)(任何一項失敗就整個安裝失敗),只是每個回應先經過 clean()
+    await Promise.all(PRECACHE.map(async (u) => {
+      const res = await fetch(u);
+      if (!res.ok) throw new Error('預先快取失敗:' + u + ' ' + res.status);
+      await c.put(u, await clean(res));
+    }));
     // 資料也先抓一份進快取,第一次安裝後就能離線看;失敗(離線中安裝)不影響安裝
     try { await (await caches.open(DATA_CACHE)).add(DATA_FILE); } catch (err) { /* 下次 fetch 再補 */ }
   })());
@@ -65,11 +78,13 @@ async function cacheFirst(req) {
     const res = await fetch(req);
     if (res.ok && res.type === 'basic') {
       const c = await caches.open(STATIC_CACHE);
-      c.put(req, res.clone());
+      const fresh = await clean(res);
+      c.put(req, fresh.clone());
+      return fresh;
     }
     return res;
   } catch (err) {
-    if (isNav) { const idx = await caches.match('./index.html'); if (idx) return idx; }
+    if (isNav) { const idx = (await caches.match('./')) || (await caches.match('./index.html')); if (idx) return idx; }
     return new Response('', { status: 504, statusText: 'offline' });
   }
 }

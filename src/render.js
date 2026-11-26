@@ -22,6 +22,22 @@ export const jsq = (s) => esc(JSON.stringify(String(s == null ? '' : s)));
 export const safeHref = (u) => (/^https?:\/\//i.test(String(u || '')) ? esc(u) : '#');
 /** 多行文字 → 跳脫後把換行換成 <br>。 */
 const nl2br = (s) => esc(s).replace(/\n/g, '<br>');
+/** 純文字裡的 http(s) 網址變成可點的連結,其餘一律跳脫(公告內容用)。網址只收 ASCII 字元(後面直接接中文也不會黏進去),
+ *  結尾的英文標點不算進網址;站外連結開新分頁,本站連結在原分頁開。 */
+const URL_RE = /https?:\/\/[A-Za-z0-9\-._~:/?#@!$&*+,;=%]+/g;
+export function linkify(s) {
+  const str = String(s == null ? '' : s);
+  let out = '', last = 0;
+  for (const m of str.matchAll(URL_RE)) {
+    const url = m[0].replace(/[.,;:!?]+$/, '');
+    out += esc(str.slice(last, m.index));
+    let ext = true;
+    try { ext = new URL(url).origin !== location.origin; } catch (e) { /* 測試環境沒有 location:當站外 */ }
+    out += `<a href="${safeHref(url)}"${ext ? ' target="_blank" rel="noopener"' : ''}>${esc(url)}</a>`;
+    last = m.index + url.length;
+  }
+  return out + esc(str.slice(last));
+}
 
 /** 作者資料(以 ID 為主、名字為輔)→ {urls, dead}。 */
 function personInfo(ctx, name, id) {
@@ -366,7 +382,7 @@ export function annHTML(x, i, n) {
   return `<button type="button" class="close" onclick="closeDetail()" aria-label="關閉">✕</button>
     <h2 id="sheetTitle">📻 星際廣播</h2>
     <div class="ann-meta">${x.pin ? '📌 置頂 · ' : ''}${esc(x.date)}</div>
-    <div class="ann-full">${esc(x.content)}</div>` + navBar(i, n, '則');
+    <div class="ann-full">${linkify(x.content)}</div>` + navBar(i, n, '則');
 }
 
 /** 詳情:作者 / 譯者列(名字可點看全部 + 平台連結)。refs = [{name, id}](personRefs)。 */
